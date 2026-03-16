@@ -14,6 +14,10 @@ struct SettingsView: View {
     @State private var showTCPConnectAlert: Bool  = false
     @State private var tcpConnectError: String?   = nil
 
+    private var trimmedTCPAddress: String {
+        tcpConnectAddress.trimmingCharacters(in: .whitespaces)
+    }
+
     var blockedList: [(id: String, name: String)] {
         appState.blockedPeers.sorted().map { id in
             let name = appState.blockedPeerNames[id] ?? String(id.prefix(12)) + "…"
@@ -133,8 +137,7 @@ struct SettingsView: View {
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                             Button("Connect") {
-                                let addr = tcpConnectAddress.trimmingCharacters(in: .whitespaces)
-                                if let err = appState.connectViaTCP(address: addr) {
+                                if let err = appState.connectViaTCP(address: trimmedTCPAddress) {
                                     tcpConnectError    = err
                                     showTCPConnectAlert = true
                                 } else {
@@ -142,7 +145,7 @@ struct SettingsView: View {
                                 }
                             }
                             .buttonStyle(.bordered)
-                            .disabled(tcpConnectAddress.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(trimmedTCPAddress.isEmpty)
                         }
                     }
                 } header: {

@@ -1129,7 +1129,7 @@ public final class ChatManager: @unchecked Sendable {
         case .text:                  displayBody = content.body
         case .image:                 displayBody = content.body.isEmpty ? "📷 Photo" : content.body
         case .audio:                 displayBody = content.body.isEmpty ? "🎤 Voice message" : content.body
-        case .groupInvite:           displayBody = content.body           // dead code; handled above
+        case .groupInvite:           return                               // dead code; handled above
         case .senderKeyDistribution: return                               // dead code; handled above
         }
 

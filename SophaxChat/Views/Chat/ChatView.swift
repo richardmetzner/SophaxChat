@@ -229,7 +229,7 @@ struct ChatView: View {
 
             // Input bar
             HStack(spacing: 10) {
-                // ── Attachment button ─────────────────────────────────────────
+                // ── Attachment buttons ────────────────────────────────────────
                 PhotosPicker(
                     selection: $photoPickerItem,
                     matching: .images
@@ -248,6 +248,14 @@ struct ChatView: View {
                         }
                         photoPickerItem = nil
                     }
+                }
+
+                Button {
+                    showingCamera = true
+                } label: {
+                    Image(systemName: "camera")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
                 }
 
                 // ── Text field ────────────────────────────────────────────────
@@ -638,8 +646,6 @@ struct ForwardPickerView: View {
     @Environment(\.dismiss) private var dismiss
     let message: StoredMessage
 
-    @State private var didForward = false
-
     var body: some View {
         NavigationStack {
             Group {
@@ -653,7 +659,6 @@ struct ForwardPickerView: View {
                     List(appState.peers) { peer in
                         Button {
                             appState.forwardMessage(message, toPeerID: peer.id)
-                            didForward = true
                             dismiss()
                         } label: {
                             HStack(spacing: 12) {
@@ -725,7 +730,7 @@ private struct SafetyNumberBlock: View {
 
             let groups = safetyNumber.split(separator: " ")
             LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 3), spacing: 10) {
-                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                ForEach(groups, id: \.self) { group in
                     Text(group)
                         .font(.system(.body, design: .monospaced).bold())
                         .padding(10)

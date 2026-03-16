@@ -142,7 +142,6 @@ struct ChatListView: View {
                     }
                 }
             }
-            .refreshable { }
         }
         .onChange(of: appState.reconnectedPeer?.id) { _, peerID in
             reconnectBannerPeer = appState.reconnectedPeer

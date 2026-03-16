@@ -22,7 +22,6 @@ struct GroupChatView: View {
 
     // Attachment / camera
     @State private var photoPickerItem: PhotosPickerItem? = nil
-    @State private var showingCamera       = false
 
     // PTT recording
     @StateObject private var voiceRecorder = VoiceRecorder()

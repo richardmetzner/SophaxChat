@@ -183,13 +183,7 @@ final class AppState: ObservableObject {
     }
 
     func sendGroupImage(_ image: UIImage, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {
-        var quality: CGFloat = 0.75
-        var jpegData: Data? = image.jpegData(compressionQuality: quality)
-        while let d = jpegData, d.count > 400_000, quality > 0.1 {
-            quality -= 0.1
-            jpegData = image.jpegData(compressionQuality: quality)
-        }
-        guard let data = jpegData else { return }
+        guard let data = compressedJPEG(image) else { return }
         chatManager?.sendGroupAttachment(data, mimeType: "image/jpeg",
                                          groupID: group.id, members: group.memberIDs,
                                          expiresAt: expiresAt, replyToID: replyToID)
@@ -250,16 +244,19 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Compress `image` to JPEG under 400 KB and send as an encrypted attachment.
     func sendImage(_ image: UIImage, toPeerID peerID: String, expiresAt: Date? = nil) {
-        var quality: CGFloat = 0.75
-        var jpegData: Data? = image.jpegData(compressionQuality: quality)
-        while let d = jpegData, d.count > 400_000, quality > 0.1 {
-            quality -= 0.1
-            jpegData = image.jpegData(compressionQuality: quality)
-        }
-        guard let data = jpegData else { return }
+        guard let data = compressedJPEG(image) else { return }
         chatManager?.sendAttachment(data, mimeType: "image/jpeg", toPeerID: peerID, expiresAt: expiresAt)
+    }
+
+    private func compressedJPEG(_ image: UIImage) -> Data? {
+        var quality: CGFloat = 0.75
+        var data: Data? = image.jpegData(compressionQuality: quality)
+        while let d = data, d.count > 400_000, quality > 0.1 {
+            quality -= 0.1
+            data = image.jpegData(compressionQuality: quality)
+        }
+        return data
     }
 
     /// Send a recorded M4A audio clip as an encrypted attachment.
