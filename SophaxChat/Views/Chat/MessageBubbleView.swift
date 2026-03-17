@@ -78,6 +78,13 @@ struct MessageBubbleView: View {
                         Divider()
                         Button {
                             UIPasteboard.general.string = message.body
+                            // Auto-clear after 60 s so sensitive text doesn't linger in the clipboard
+                            let copied = message.body
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                                if UIPasteboard.general.string == copied {
+                                    UIPasteboard.general.string = ""
+                                }
+                            }
                         } label: {
                             Label("Copy", systemImage: "doc.on.doc")
                         }

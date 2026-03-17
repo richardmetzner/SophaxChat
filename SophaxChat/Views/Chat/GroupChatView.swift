@@ -19,6 +19,7 @@ struct GroupChatView: View {
     // Disappearing messages
     @State private var disappearingInterval: DisappearingInterval = .off
     private var disappearingKey: String { "com.sophax.disappearingInterval.group.\(group.id)" }
+    private var draftKey: String { "com.sophax.draft.group.\(group.id)" }
 
     // Attachment / camera
     @State private var photoPickerItem: PhotosPickerItem? = nil
@@ -139,6 +140,10 @@ struct GroupChatView: View {
                    let interval = DisappearingInterval(rawValue: saved) {
                     disappearingInterval = interval
                 }
+                messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
+            }
+            .onDisappear {
+                UserDefaults.standard.set(messageText, forKey: draftKey)
             }
         }
     }
@@ -299,6 +304,9 @@ struct GroupChatView: View {
                 .font(.body)
                 .lineLimit(1...6)
                 .focused($isInputFocused)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.sentences)
+                .textContentType(.none)
             if isTextNonEmpty {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -317,7 +325,9 @@ struct GroupChatView: View {
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         messageText = ""
+        UserDefaults.standard.removeObject(forKey: draftKey)
         let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
         appState.sendGroupMessage(text, group: group, expiresAt: expiresAt, replyToID: replyingTo?.id)
         replyingTo = nil
@@ -447,6 +457,12 @@ private struct GroupMessageBubble: View {
                     }
                     Button {
                         UIPasteboard.general.string = message.body
+                        let copied = message.body
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                            if UIPasteboard.general.string == copied {
+                                UIPasteboard.general.string = ""
+                            }
+                        }
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
                     }

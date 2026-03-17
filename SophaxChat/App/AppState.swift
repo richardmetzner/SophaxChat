@@ -9,6 +9,7 @@ import UIKit
 import AVFoundation
 import LocalAuthentication
 import UserNotifications
+import ReplayKit
 import SophaxChatCore
 
 @MainActor
@@ -69,6 +70,11 @@ final class AppState: ObservableObject {
     /// Set to a peer that just came back online; triggers reconnect banner in UI.
     @Published var reconnectedPeer: KnownPeer? = nil
 
+    /// True while iOS screen recording is active — shown as a security warning banner.
+    @Published var isScreenBeingRecorded: Bool = false
+    /// Momentarily true after the user takes a screenshot — shown as a brief warning.
+    @Published var didTakeScreenshot: Bool = false
+
     /// Username cache for blocked peers (persisted so they're still readable after restart).
     private(set) var blockedPeerNames: [String: String] = [:]
     private var typingTimeouts: [String: Task<Void, Never>] = [:]
@@ -125,10 +131,36 @@ final class AppState: ObservableObject {
             self.chatManager     = manager
             self.isSetupComplete = true
             requestNotificationPermission()
+            startScreenSecurityMonitor()
 
             loadExistingMessages(from: store)
         } catch {
             self.errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Screen security
+
+    /// Polls RPScreenRecorder every 1.5 s to detect active screen recording.
+    /// On macOS Catalyst, screen recording is normal OS behaviour — skip the warning.
+    private func startScreenSecurityMonitor() {
+        #if !targetEnvironment(macCatalyst)
+        Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            let recording = RPScreenRecorder.shared().isRecording
+            Task { @MainActor [weak self] in
+                self?.isScreenBeingRecorded = recording
+            }
+        }
+        #endif
+    }
+
+    /// Call when the OS reports a screenshot was taken.
+    func handleScreenshot() {
+        guard isSetupComplete else { return }
+        didTakeScreenshot = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            didTakeScreenshot = false
         }
     }
 

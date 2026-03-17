@@ -71,6 +71,7 @@ struct ChatView: View {
     @State private var renameText: String = ""
 
     private var disappearingKey: String { "com.sophax.disappearingInterval.\(peer.id)" }
+    private var draftKey: String { "com.sophax.draft.\(peer.id)" }
 
     private var messages: [StoredMessage] {
         appState.messages[peer.id] ?? []
@@ -128,6 +129,10 @@ struct ChatView: View {
                        let interval = DisappearingInterval(rawValue: saved) {
                         disappearingInterval = interval
                     }
+                    messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
+                }
+                .onDisappear {
+                    UserDefaults.standard.set(messageText, forKey: draftKey)
                 }
             }
 
@@ -264,6 +269,9 @@ struct ChatView: View {
                     .font(.body)
                     .lineLimit(1...6)
                     .focused($isInputFocused)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.sentences)
+                    .textContentType(.none)
                     .onChange(of: messageText) { _, newValue in
                         let nonEmpty = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         if nonEmpty {
@@ -443,12 +451,14 @@ struct ChatView: View {
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         // Stop typing indicator immediately on send
         typingTask?.cancel()
         typingTask = nil
         appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
         let reply = replyingTo
         messageText = ""
+        UserDefaults.standard.removeObject(forKey: draftKey)
         withAnimation { replyingTo = nil }
         let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
         appState.sendMessage(text, toPeerID: peer.id, expiresAt: expiresAt, replyToID: reply?.id)
