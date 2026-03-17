@@ -20,6 +20,9 @@ struct SophaxChatApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .onOpenURL { url in
+                    appState.handleIncomingLink(url)
+                }
                 // Prevent the app from appearing in the app switcher screenshot
                 // (reduces the risk of sensitive content being captured by iOS)
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in

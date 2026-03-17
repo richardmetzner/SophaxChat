@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var tcpConnectAddress: String = ""
     @State private var showTCPConnectAlert: Bool  = false
     @State private var tcpConnectError: String?   = nil
+    @State private var showingContactCard: Bool   = false
+    @State private var useCustomAddress: Bool     = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -79,40 +81,90 @@ struct SettingsView: View {
                     Toggle("Internet Mode", isOn: $appState.tcpEnabled)
 
                     if appState.tcpEnabled {
-                        // ── Tor / Orbot (recommended — zero config, solves NAT) ──────────
-                        Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Get Orbot — Tor VPN")
-                                        .foregroundStyle(.primary)
-                                    Text("Recommended: enable VPN mode in Orbot, then come back")
+                        // ── Your Tor address (auto-derived from identity key) ─────────────
+                        if let onionAddress = appState.derivedOnionAddress {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Text("Your Tor Address")
+                                        .font(.subheadline.weight(.medium))
+                                    Spacer()
+                                    // Orbot status indicator
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(appState.isOrbotDetected ? Color.green : Color.secondary.opacity(0.5))
+                                            .frame(width: 8, height: 8)
+                                        Text(appState.isOrbotDetected ? "Orbot active" : "Orbot offline")
+                                            .font(.caption2)
+                                            .foregroundStyle(appState.isOrbotDetected ? .green : .secondary)
+                                    }
+                                }
+                                Text(onionAddress)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .textSelection(.enabled)
+                                HStack(spacing: 8) {
+                                    Button {
+                                        UIPasteboard.general.string = onionAddress
+                                    } label: {
+                                        Label("Copy", systemImage: "doc.on.doc")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    Button {
+                                        showingContactCard = true
+                                    } label: {
+                                        Label("Share Card", systemImage: "qrcode")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+
+                        // ── Orbot install prompt (if not detected) ───────────────────────
+                        if !appState.isOrbotDetected {
+                            Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Install Orbot — Tor VPN")
+                                            .foregroundStyle(.primary)
+                                        Text("Enable VPN mode in Orbot to accept connections")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
+                            }
+                        }
+
+                        // ── Advanced: custom address override ────────────────────────────
+                        Toggle("Use Custom Address", isOn: $useCustomAddress)
+                            .font(.subheadline)
+                        if useCustomAddress {
+                            HStack {
+                                Text("My Address")
                                 Spacer()
-                                Image(systemName: "arrow.up.right")
-                                    .font(.caption)
+                                TextField("host:port or .onion:25519", text: $appState.myTCPAddress)
+                                    .keyboardType(.asciiCapable)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .multilineTextAlignment(.trailing)
                                     .foregroundStyle(.secondary)
                             }
                         }
 
-                        // ── Advanced: manual SOCKS5 proxy (Orbot proxy mode / other) ────
+                        // ── Advanced: manual SOCKS5 proxy ────────────────────────────────
                         HStack {
                             Text("SOCKS5 Proxy")
                             Spacer()
                             TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
-                                .keyboardType(.asciiCapable)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .multilineTextAlignment(.trailing)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        // ── Advanced: manual IP (for users with static public IP or .onion) ─
-                        HStack {
-                            Text("My Address")
-                            Spacer()
-                            TextField("host:port or .onion:25519", text: $appState.myTCPAddress)
                                 .keyboardType(.asciiCapable)
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
@@ -152,10 +204,13 @@ struct SettingsView: View {
                     Text("Internet Mode")
                 } footer: {
                     if appState.tcpEnabled {
-                        Text("Recommended: install Orbot and enable its VPN mode — all traffic automatically routes through Tor, no configuration needed here. Your peer's Orbot .onion address works as "My Address" on their device.\n\nWithout Tor, TCP requires a public IP + open port. All messages are end-to-end encrypted regardless — TCP is just a carrier.")
+                        Text("Your Tor address is derived from your identity key — it's permanent and requires no server. Install Orbot and enable VPN mode to accept incoming connections. Share your card with contacts so they can reach you from anywhere in the world.")
                     } else {
-                        Text("Extend beyond local Bluetooth/WiFi. The recommended approach is Tor via Orbot (decentralized, anonymous, solves NAT). Messages stay end-to-end encrypted over any transport.")
+                        Text("Extend beyond local Bluetooth/WiFi. Your Tor address is derived from your identity key — permanent, anonymous, no registration needed.")
                     }
+                }
+                .sheet(isPresented: $showingContactCard) {
+                    ContactCardView().environmentObject(appState)
                 }
 
                 #if SUPPORT_ENABLED

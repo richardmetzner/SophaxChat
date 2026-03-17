@@ -6,6 +6,7 @@
 
 import SwiftUI
 import UIKit
+import Network
 import AVFoundation
 import LocalAuthentication
 import UserNotifications
@@ -74,6 +75,8 @@ final class AppState: ObservableObject {
     @Published var isScreenBeingRecorded: Bool = false
     /// Momentarily true after the user takes a screenshot — shown as a brief warning.
     @Published var didTakeScreenshot: Bool = false
+    /// True when Orbot (SOCKS5 on 127.0.0.1:9050) is reachable. Probed on foreground.
+    @Published var isOrbotDetected: Bool = false
 
     /// Username cache for blocked peers (persisted so they're still readable after restart).
     private(set) var blockedPeerNames: [String: String] = [:]
@@ -489,10 +492,22 @@ final class AppState: ObservableObject {
         return true
     }
 
+    /// The Tor v3 .onion hostname derived from this device's identity key.
+    /// Nil only before identity is created (first launch before onboarding completes).
+    var derivedOnionHostname: String? { chatManager?.identity.onionHostname }
+
+    /// The full advertised Tor address (hostname:port) for display and sharing.
+    var derivedOnionAddress: String? {
+        guard let host = derivedOnionHostname else { return nil }
+        let port = tcpPort.isEmpty ? "25519" : tcpPort
+        return "\(host):\(port)"
+    }
+
     /// Called on `didBecomeActive` — reconnect to all known peers that have a TCP address.
     /// No-op if TCP is disabled or no peers have an address.
     /// Decentralized: connects directly peer-to-peer, no server involved.
     func reconnectTCPPeers() {
+        probeOrbot()
         guard tcpEnabled, let tcp = chatManager?.tcpTransport else { return }
         for peer in peers {
             guard let addr = peer.tcpAddress,
@@ -582,10 +597,79 @@ final class AppState: ObservableObject {
 
     private func applyTCPConfig() {
         guard let manager = chatManager else { return }
+        // Auto-populate our advertised address from the identity-derived .onion hostname
+        // if the user has not set a custom address. This means zero configuration:
+        // the user's Tor address is their identity key, no manual entry needed.
+        if myTCPAddress.isEmpty,
+           let hostname = chatManager?.identity.onionHostname {
+            let port = tcpPort.isEmpty ? "25519" : tcpPort
+            manager.myTCPAddress = "\(hostname):\(port)"
+        }
         if tcpEnabled {
             startTCPTransport(on: manager)
         } else {
             manager.stopTCP()
+        }
+    }
+
+    // MARK: - Orbot detection
+
+    /// Probes 127.0.0.1:9050 with a 1.5-second timeout to check whether Orbot's SOCKS5
+    /// proxy is reachable. Non-blocking — result published via `isOrbotDetected`.
+    func probeOrbot() {
+        let conn = NWConnection(
+            to: .hostPort(host: "127.0.0.1", port: 9050),
+            using: .tcp
+        )
+        nonisolated(unsafe) var handled = false
+        conn.stateUpdateHandler = { [weak self] state in
+            guard !handled else { return }
+            switch state {
+            case .ready:
+                handled = true
+                conn.cancel()
+                Task { @MainActor [weak self] in self?.isOrbotDetected = true }
+            case .failed, .cancelled:
+                handled = true
+                Task { @MainActor [weak self] in self?.isOrbotDetected = false }
+            default:
+                break
+            }
+        }
+        conn.start(queue: .global(qos: .background))
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.5) {
+            guard !handled else { return }
+            handled = true
+            conn.cancel()
+            Task { @MainActor [weak self] in self?.isOrbotDetected = false }
+        }
+    }
+
+    // MARK: - Deep link handling
+
+    /// Handles `sophaxchat://add?id=<peerID>&onion=<host>&port=<port>` contact card links.
+    func handleIncomingLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "sophaxchat",
+              url.host?.lowercased() == "add" else { return }
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        guard let items = components?.queryItems,
+              let peerID = items.first(where: { $0.name == "id" })?.value,
+              let onionHost = items.first(where: { $0.name == "onion" })?.value,
+              !peerID.isEmpty, onionHost.hasSuffix(".onion") else { return }
+        let portStr = items.first(where: { $0.name == "port" })?.value ?? "25519"
+        let address = "\(onionHost):\(portStr)"
+        guard Self.isValidTCPAddress(address) else { return }
+        // Store the address on the peer if we already know them, or remember it for later
+        if let idx = peers.firstIndex(where: { $0.id == peerID }) {
+            peers[idx].tcpAddress = address
+            savePeers()
+        } else {
+            // Store as a pending address keyed by peerID; will be applied when peer connects via mesh
+            UserDefaults.standard.set(address, forKey: "com.sophax.pendingOnion.\(peerID)")
+        }
+        // Attempt immediate TCP connect if TCP is enabled
+        if tcpEnabled {
+            connectViaTCP(address: address)
         }
     }
 

@@ -109,6 +109,14 @@ public final class IdentityManager: @unchecked Sendable {
     public var signingKeyPair: SigningKeyPair { signingPair }
     public var dhKeyPair: DHKeyPair { dhPair }
 
+    /// The Tor v3 .onion hostname derived from the identity's Ed25519 signing key.
+    /// Permanent and deterministic — equal to `<peerID>.onion` in structure but
+    /// computed via the Tor spec (SHA3-256 checksum + base32). Returns nil only if
+    /// the key is somehow not 32 bytes, which cannot happen in practice.
+    public var onionHostname: String? {
+        try? OnionAddress.from(ed25519PublicKey: publicIdentity.signingKeyPublic)
+    }
+
     /// Sign arbitrary data with the identity signing key.
     public func sign(_ data: Data) throws -> Data {
         let sig = try signingPair.privateKey.signature(for: data)

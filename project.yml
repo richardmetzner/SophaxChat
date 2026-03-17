@@ -60,6 +60,10 @@ targets:
           - processing
         BGTaskSchedulerPermittedIdentifiers:
           - com.sophax.mesh-refresh
+        CFBundleURLTypes:
+          - CFBundleURLName: com.sophax.sophaxchat
+            CFBundleURLSchemes:
+              - sophaxchat
 
   SophaxChatCore:
     type: framework
