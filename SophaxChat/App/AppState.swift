@@ -437,11 +437,23 @@ final class AppState: ObservableObject {
     }
 
     /// Validates "host:port" format. Splits on the last colon to support .onion and IPv4.
+    /// Rejects private/loopback addresses to prevent SSRF via peer-advertised TCP addresses.
     static func isValidTCPAddress(_ address: String) -> Bool {
         guard let colonIdx = address.lastIndex(of: ":") else { return false }
         let host = String(address[..<colonIdx])
         let portStr = String(address[address.index(after: colonIdx)...])
         guard !host.isEmpty, let port = UInt16(portStr), port > 0 else { return false }
+        // Allow .onion addresses (Tor hidden services) — these are always safe to connect to
+        if host.hasSuffix(".onion") { return true }
+        // Block loopback and private RFC-1918 ranges to prevent SSRF
+        let privateRanges = ["127.", "10.", "169.254.", "::1", "fc", "fd"]
+        let lc = host.lowercased()
+        if privateRanges.contains(where: { lc.hasPrefix($0) }) { return false }
+        if lc.hasPrefix("172.") {
+            let parts = lc.split(separator: ".")
+            if parts.count >= 2, let second = Int(parts[1]), (16...31).contains(second) { return false }
+        }
+        if lc.hasPrefix("192.168.") { return false }
         return true
     }
 
@@ -451,7 +463,9 @@ final class AppState: ObservableObject {
     func reconnectTCPPeers() {
         guard tcpEnabled, let tcp = chatManager?.tcpTransport else { return }
         for peer in peers {
-            guard let addr = peer.tcpAddress, !tcp.isConnected(peerID: peer.id) else { continue }
+            guard let addr = peer.tcpAddress,
+                  !tcp.isConnected(peerID: peer.id),
+                  Self.isValidTCPAddress(addr) else { continue }
             try? chatManager?.connectViaTCP(address: addr)
         }
     }

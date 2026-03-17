@@ -276,15 +276,22 @@ public final class TCPTransport: @unchecked Sendable {
         receiveBuffers[oid, default: Data()].append(data)
         var buf = receiveBuffers[oid] ?? Data()
         var frames: [Data] = []
+        var oversized = false
         while buf.count >= 4 {
             let length = buf.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-            guard length <= TCPTransport.maxFrameSize else { buf.removeAll(); break }
+            guard length <= TCPTransport.maxFrameSize else {
+                // Protocol violation: cancel the connection instead of silently dropping data.
+                buf.removeAll()
+                oversized = true
+                break
+            }
             guard buf.count >= 4 + Int(length) else { break }
             frames.append(Data(buf[4..<(4 + Int(length))]))
             buf = Data(buf[(4 + Int(length))...])
         }
         receiveBuffers[oid] = buf
         lock.unlock()
+        if oversized { connection.cancel(); return }
         frames.forEach { dispatch(frame: $0, from: connection) }
     }
 
