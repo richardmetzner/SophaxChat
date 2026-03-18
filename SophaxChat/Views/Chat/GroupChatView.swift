@@ -508,10 +508,10 @@ private struct GroupMessageBubble: View {
                         let allDelivered = delivered >= total
                         Image(systemName: allDelivered ? "checkmark.circle.fill" : "checkmark.circle")
                             .font(.caption2)
-                            .foregroundStyle(allDelivered ? Color.accentColor : .tertiary)
+                            .foregroundStyle(allDelivered ? Color.accentColor : Color(.tertiaryLabel))
                         Text("\(delivered)/\(total)")
                             .font(.caption2)
-                            .foregroundStyle(allDelivered ? Color.accentColor : .tertiary)
+                            .foregroundStyle(allDelivered ? Color.accentColor : Color(.tertiaryLabel))
                     }
                 }
             }
