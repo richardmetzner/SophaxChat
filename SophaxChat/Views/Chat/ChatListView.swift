@@ -48,7 +48,6 @@ struct ChatListView: View {
                     }
                 }
 
-                // Group conversations
                 if !appState.groups.isEmpty {
                     Section("Groups") {
                         ForEach(appState.groups) { group in
@@ -99,7 +98,6 @@ struct ChatListView: View {
                     }
                 }
 
-                // Empty state
                 if appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty {
                     Section {
                         VStack(spacing: 16) {
@@ -219,7 +217,6 @@ struct GroupConversationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Group avatar
             ZStack {
                 Circle()
                     .fill(Color.accentColor.opacity(0.15))

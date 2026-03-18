@@ -29,7 +29,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // Blocked peers
                 Section {
                     if blockedList.isEmpty {
                         Text("No blocked users")
@@ -60,7 +59,6 @@ struct SettingsView: View {
                     Text("Blocked users cannot send you messages. Unblocking allows future messages if they are nearby.")
                 }
 
-                // App lock
                 Section {
                     Toggle("App Lock", isOn: Binding(
                         get: { appState.appLockEnabled },
@@ -75,13 +73,11 @@ struct SettingsView: View {
                     Text("Require Face ID, Touch ID, or passcode to open SophaxChat.")
                 }
 
-                // Connect globally
                 Section {
                     Toggle("Connect Globally", isOn: $appState.tcpEnabled)
 
                     if appState.tcpEnabled {
                         if appState.isOrbotDetected {
-                            // ── Ready state ──────────────────────────────────────────────
                             Button {
                                 showingContactCard = true
                             } label: {
@@ -103,7 +99,6 @@ struct SettingsView: View {
                                 }
                             }
                         } else {
-                            // ── Setup step: get Orbot ────────────────────────────────────
                             Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
                                 HStack(spacing: 14) {
                                     Image(systemName: "globe.badge.chevron.backward")
@@ -125,7 +120,6 @@ struct SettingsView: View {
                             }
                         }
 
-                        // ── Advanced (collapsed by default) ──────────────────────────────
                         DisclosureGroup("Advanced") {
                             HStack {
                                 Text("SOCKS5 Proxy")
@@ -202,7 +196,6 @@ struct SettingsView: View {
                 }
                 #endif
 
-                // App info
                 Section {
                     HStack {
                         Text("Version")

@@ -234,7 +234,6 @@ struct ChatView: View {
 
             // Input bar
             HStack(spacing: 10) {
-                // ── Attachment buttons ────────────────────────────────────────
                 PhotosPicker(
                     selection: $photoPickerItem,
                     matching: .images
@@ -263,7 +262,6 @@ struct ChatView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                // ── Text field ────────────────────────────────────────────────
                 TextField("Message", text: $messageText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.body)
@@ -289,7 +287,6 @@ struct ChatView: View {
                         }
                     }
 
-                // ── Send button OR PTT ────────────────────────────────────────
                 if canSend {
                     Button(action: sendMessage) {
                         Image(systemName: "arrow.up.circle.fill")
@@ -452,7 +449,6 @@ struct ChatView: View {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        // Stop typing indicator immediately on send
         typingTask?.cancel()
         typingTask = nil
         appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
@@ -629,7 +625,6 @@ private struct QRCodeView: View {
         filter.message = Data(safetyNumber.utf8)
         filter.correctionLevel = "H"
         guard let output = filter.outputImage else { return nil }
-        // Scale up so it renders crisp
         let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
         guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
         return Image(decorative: cgImage, scale: 1)

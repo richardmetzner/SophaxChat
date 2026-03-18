@@ -81,14 +81,12 @@ struct RootView: View {
                     .transition(.opacity)
             }
 
-            // App lock overlay
             if appState.isAppLocked {
                 AppLockView()
                     .ignoresSafeArea()
                     .transition(.opacity)
             }
 
-            // Screen recording warning — shown while iOS screen recording is active
             if appState.isScreenBeingRecorded {
                 VStack {
                     HStack(spacing: 6) {
@@ -109,7 +107,6 @@ struct RootView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // Screenshot warning toast
             if appState.didTakeScreenshot {
                 VStack {
                     Spacer()

@@ -787,7 +787,6 @@ extension AppState: @preconcurrency ChatManagerDelegate {
                     verifiedPeers[peer.id] = existing.safetyNumber
                     saveVerifiedPeers()
                 }
-                // Replace the stored peer with the new key data
                 peers[idx] = peer
                 savePeers()
             } else {
@@ -816,7 +815,6 @@ extension AppState: @preconcurrency ChatManagerDelegate {
         appendMessage(message)
         unreadCounts[peerID, default: 0] += 1
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        // Post a local notification when the app is not in the foreground
         let appState = UIApplication.shared.applicationState
         if appState == .background || appState == .inactive {
             scheduleNotification(for: message, fromPeer: peerID)

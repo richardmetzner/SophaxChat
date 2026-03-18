@@ -64,7 +64,7 @@ struct IdentityView: View {
 
                             let groups = safetyNumber.split(separator: " ")
                             LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 3), spacing: 8) {
-                                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                                ForEach(groups, id: \.self) { group in
                                     Text(group)
                                         .font(.system(.footnote, design: .monospaced).bold())
                                         .padding(8)

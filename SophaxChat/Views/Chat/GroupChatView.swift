@@ -417,7 +417,7 @@ private struct GroupMessageBubble: View {
     @EnvironmentObject var appState: AppState
     let message:    StoredMessage
     let group:      GroupInfo
-    let replyingTo: StoredMessage?   // quoted message (nil if not a reply)
+    let replyingTo: StoredMessage?
     let onReply:    () -> Void
     let onForward:  () -> Void
 
@@ -433,7 +433,6 @@ private struct GroupMessageBubble: View {
             if isSent { Spacer(minLength: 60) }
 
             VStack(alignment: isSent ? .trailing : .leading, spacing: 2) {
-                // Sender name (only for received messages)
                 if !isSent && !senderName.isEmpty {
                     Text(senderName)
                         .font(.caption2.bold())
@@ -442,7 +441,6 @@ private struct GroupMessageBubble: View {
                 }
 
                 VStack(alignment: isSent ? .trailing : .leading, spacing: 4) {
-                    // Quoted reply preview
                     if let quoted = replyingTo {
                         QuotedBubble(message: quoted, isSentContext: isSent)
                     }
@@ -492,12 +490,10 @@ private struct GroupMessageBubble: View {
                     }
                 }
 
-                // Reaction pills
                 if let reactions = message.reactions, !reactions.isEmpty {
                     ReactionPillRow(reactions: reactions)
                 }
 
-                // Timestamp + delivery status footer
                 HStack(spacing: 4) {
                     Text(message.timestamp, style: .time)
                         .font(.caption2)
