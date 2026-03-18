@@ -14,7 +14,6 @@ struct SettingsView: View {
     @State private var showTCPConnectAlert: Bool  = false
     @State private var tcpConnectError: String?   = nil
     @State private var showingContactCard: Bool   = false
-    @State private var useCustomAddress: Bool     = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -76,63 +75,45 @@ struct SettingsView: View {
                     Text("Require Face ID, Touch ID, or passcode to open SophaxChat.")
                 }
 
-                // Internet mode — Tor-first
+                // Connect globally
                 Section {
-                    Toggle("Internet Mode", isOn: $appState.tcpEnabled)
+                    Toggle("Connect Globally", isOn: $appState.tcpEnabled)
 
                     if appState.tcpEnabled {
-                        // ── Your Tor address (auto-derived from identity key) ─────────────
-                        if let onionAddress = appState.derivedOnionAddress {
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 6) {
-                                    Text("Your Tor Address")
-                                        .font(.subheadline.weight(.medium))
+                        if appState.isOrbotDetected {
+                            // ── Ready state ──────────────────────────────────────────────
+                            Button {
+                                showingContactCard = true
+                            } label: {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.green)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Ready")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.primary)
+                                        Text("Share your address to connect with anyone")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                     Spacer()
-                                    // Orbot status indicator
-                                    HStack(spacing: 4) {
-                                        Circle()
-                                            .fill(appState.isOrbotDetected ? Color.green : Color.secondary.opacity(0.5))
-                                            .frame(width: 8, height: 8)
-                                        Text(appState.isOrbotDetected ? "Orbot active" : "Orbot offline")
-                                            .font(.caption2)
-                                            .foregroundStyle(appState.isOrbotDetected ? .green : .secondary)
-                                    }
-                                }
-                                Text(onionAddress)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                                    .textSelection(.enabled)
-                                HStack(spacing: 8) {
-                                    Button {
-                                        UIPasteboard.general.string = onionAddress
-                                    } label: {
-                                        Label("Copy", systemImage: "doc.on.doc")
-                                            .font(.caption)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    Button {
-                                        showingContactCard = true
-                                    } label: {
-                                        Label("Share Card", systemImage: "qrcode")
-                                            .font(.caption)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
+                                    Image(systemName: "qrcode")
+                                        .foregroundStyle(.secondary)
                                 }
                             }
-                            .padding(.vertical, 4)
-                        }
-
-                        // ── Orbot install prompt (if not detected) ───────────────────────
-                        if !appState.isOrbotDetected {
+                        } else {
+                            // ── Setup step: get Orbot ────────────────────────────────────
                             Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
-                                HStack {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "globe.badge.chevron.backward")
+                                        .font(.title2)
+                                        .foregroundStyle(.accentColor)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text("Install Orbot — Tor VPN")
+                                        Text("Install Orbot")
+                                            .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(.primary)
-                                        Text("Enable VPN mode in Orbot to accept connections")
+                                        Text("Enable Tor VPN inside Orbot — that's it")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -144,70 +125,63 @@ struct SettingsView: View {
                             }
                         }
 
-                        // ── Advanced: custom address override ────────────────────────────
-                        Toggle("Use Custom Address", isOn: $useCustomAddress)
-                            .font(.subheadline)
-                        if useCustomAddress {
+                        // ── Advanced (collapsed by default) ──────────────────────────────
+                        DisclosureGroup("Advanced") {
                             HStack {
-                                Text("My Address")
+                                Text("SOCKS5 Proxy")
                                 Spacer()
-                                TextField("host:port or .onion:25519", text: $appState.myTCPAddress)
+                                TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
                                     .keyboardType(.asciiCapable)
                                     .autocorrectionDisabled()
                                     .textInputAutocapitalization(.never)
                                     .multilineTextAlignment(.trailing)
                                     .foregroundStyle(.secondary)
                             }
-                        }
-
-                        // ── Advanced: manual SOCKS5 proxy ────────────────────────────────
-                        HStack {
-                            Text("SOCKS5 Proxy")
-                            Spacer()
-                            TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
-                                .keyboardType(.asciiCapable)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .multilineTextAlignment(.trailing)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        HStack {
-                            Text("TCP Port")
-                            Spacer()
-                            TextField("25519", text: $appState.tcpPort)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 70)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        // ── Direct connect ────────────────────────────────────────────────
-                        HStack {
-                            TextField("host:port", text: $tcpConnectAddress)
-                                .keyboardType(.asciiCapable)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                            Button("Connect") {
-                                if let err = appState.connectViaTCP(address: trimmedTCPAddress) {
-                                    tcpConnectError    = err
-                                    showTCPConnectAlert = true
-                                } else {
-                                    tcpConnectAddress = ""
-                                }
+                            HStack {
+                                Text("Port")
+                                Spacer()
+                                TextField("25519", text: $appState.tcpPort)
+                                    .keyboardType(.numberPad)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 70)
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.bordered)
-                            .disabled(trimmedTCPAddress.isEmpty)
+                            HStack {
+                                Text("Custom Address")
+                                Spacer()
+                                TextField("host:port", text: $appState.myTCPAddress)
+                                    .keyboardType(.asciiCapable)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .multilineTextAlignment(.trailing)
+                                    .foregroundStyle(.secondary)
+                            }
+                            HStack {
+                                TextField("Connect to host:port", text: $tcpConnectAddress)
+                                    .keyboardType(.asciiCapable)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                Button("Connect") {
+                                    if let err = appState.connectViaTCP(address: trimmedTCPAddress) {
+                                        tcpConnectError    = err
+                                        showTCPConnectAlert = true
+                                    } else {
+                                        tcpConnectAddress = ""
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(trimmedTCPAddress.isEmpty)
+                            }
                         }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
                 } header: {
-                    Text("Internet Mode")
+                    Text("Global")
                 } footer: {
-                    if appState.tcpEnabled {
-                        Text("Your Tor address is derived from your identity key — it's permanent and requires no server. Install Orbot and enable VPN mode to accept incoming connections. Share your card with contacts so they can reach you from anywhere in the world.")
-                    } else {
-                        Text("Extend beyond local Bluetooth/WiFi. Your Tor address is derived from your identity key — permanent, anonymous, no registration needed.")
-                    }
+                    Text(appState.tcpEnabled
+                         ? "Messages stay end-to-end encrypted. No server, no account — your identity is your address."
+                         : "Reach anyone in the world, not just nearby. Uses Tor for anonymity.")
                 }
                 .sheet(isPresented: $showingContactCard) {
                     ContactCardView().environmentObject(appState)

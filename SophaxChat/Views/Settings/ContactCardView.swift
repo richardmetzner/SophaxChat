@@ -1,9 +1,5 @@
 // ContactCardView.swift
 // SophaxChat
-//
-// Displays a shareable contact card: QR code + deep link for establishing
-// a Tor-based connection with another SophaxChat user anywhere in the world.
-// No server involved — the link encodes the peer's identity key and .onion address.
 
 import SwiftUI
 import CoreImage.CIFilterBuiltins
@@ -35,89 +31,67 @@ struct ContactCardView: View {
         filter.message         = Data(url.absoluteString.utf8)
         filter.correctionLevel = "M"
         guard let output = filter.outputImage else { return nil }
-        // Scale up to ~300×300 pt
-        let scale     = 8.0
-        let scaled    = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        guard let cg  = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        guard let cg = context.createCGImage(scaled, from: scaled.extent) else { return nil }
         return Image(uiImage: UIImage(cgImage: cg))
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 28) {
-                    // QR code
+            VStack(spacing: 0) {
+                Spacer()
+
+                // QR Code
+                Group {
                     if let qr = qrImage {
                         qr
                             .interpolation(.none)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 260, height: 260)
-                            .padding(16)
-                            .background(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 18))
-                            .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
                     } else {
-                        RoundedRectangle(cornerRadius: 18)
+                        RoundedRectangle(cornerRadius: 4)
                             .fill(Color(.systemGray5))
-                            .frame(width: 260, height: 260)
                             .overlay {
-                                Text("Address not available.\nComplete setup first.")
+                                Text("Complete setup first")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
                             }
                     }
+                }
+                .frame(width: 240, height: 240)
+                .padding(20)
+                .background(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .shadow(color: .black.opacity(0.1), radius: 20, y: 8)
 
-                    // Address display
-                    if let addr = appState.derivedOnionAddress {
-                        VStack(spacing: 6) {
-                            Text("Your Tor Address")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-                            Text(addr)
-                                .font(.system(.caption, design: .monospaced))
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(.primary)
-                                .textSelection(.enabled)
-                        }
-                        .padding(.horizontal, 24)
-                    }
+                Spacer().frame(height: 32)
 
-                    Text("Share this card with anyone, anywhere in the world.\nThey scan it with SophaxChat to connect securely over Tor.\nNo server. No registration. Fully encrypted.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
+                Text("Scan to add me")
+                    .font(.title2.weight(.semibold))
 
-                    // Action buttons
-                    VStack(spacing: 12) {
-                        if let url = contactURL {
-                            ShareLink(item: url) {
-                                Label("Share Link", systemImage: "square.and.arrow.up")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        }
+                Spacer().frame(height: 8)
 
-                        if let addr = appState.derivedOnionAddress {
-                            Button {
-                                UIPasteboard.general.string = addr
-                            } label: {
-                                Label("Copy Address", systemImage: "doc.on.doc")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                        }
+                Text("Open SophaxChat → tap \(Image(systemName: "plus")) → scan")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                // Share button
+                if let url = contactURL {
+                    ShareLink(item: url) {
+                        Text("Share")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.accentColor)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
                     .padding(.horizontal, 32)
+                    .padding(.bottom, 32)
                 }
-                .padding(.vertical, 32)
             }
-            .navigationTitle("Contact Card")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -125,6 +99,7 @@ struct ContactCardView: View {
                 }
             }
         }
+        .presentationDetents([.medium])
     }
 }
 
