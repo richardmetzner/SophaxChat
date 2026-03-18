@@ -87,17 +87,23 @@ enum Keccak {
             0x8000000080008081, 0x8000000000008080,
             0x0000000080000001, 0x8000000080008008,
         ]
+        // rho rotation amounts, indexed by source lane position (lanes[1]..lanes[24]).
+        // Each entry rho[i] is the rotation for lane i+1.
+        // Derived from FIPS 202 §3.2.2: rho offsets (x,y) -> (t+1)(t+2)/2 mod 64 along
+        // the rho/pi traversal path, then re-indexed by sequential lane order.
         let rho: [Int] = [
-             1,  3,  6, 10, 15, 21, 28, 36, 45, 55,
-             2, 14, 27, 41, 56,  8, 25, 43, 62, 18,
-            39, 61, 20, 44,
+             1, 62, 28, 27, 36, 44,  6, 55, 20,  3,
+            10, 43, 25, 39, 41, 45, 15, 21,  8, 18,
+             2, 61, 56, 14,
         ]
+        // pi destination indices (+1), indexed by source lane position (lanes[1]..lanes[24]).
+        // b[pi[i]-1] = rho-rotated(lanes[i+1]) implements the FIPS 202 §3.2.3 pi step.
         let pi: [Int] = [
-            10,  7, 11, 17, 18,
-             3,  5, 16,  8, 21,
-            24,  4, 15, 23, 19,
-            13, 12,  2, 20, 14,
-             1,  6, 22, 25,  9,
+            11, 21,  6, 16, 17,
+             2, 12, 22,  7,  8,
+            18,  3, 13, 23, 24,
+             9, 19,  4, 14, 15,
+            25, 10, 20,  5,
         ]
 
         var lanes = state.lanes

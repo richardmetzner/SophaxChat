@@ -187,12 +187,6 @@ struct SettingsView: View {
                          ? "Messages stay end-to-end encrypted. No server, no account — your identity is your address."
                          : "Reach anyone in the world, not just nearby. Uses Tor for anonymity.")
                 }
-                .sheet(isPresented: $showingContactCard) {
-                    ContactCardView().environmentObject(appState)
-                }
-                .sheet(isPresented: $showingTorOnboarding) {
-                    TorOnboardingView()
-                }
 
                 #if SUPPORT_ENABLED
                 Section {
@@ -245,6 +239,12 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) { tcpConnectError = nil }
             } message: {
                 Text(tcpConnectError ?? "")
+            }
+            .sheet(isPresented: $showingContactCard) {
+                ContactCardView().environmentObject(appState)
+            }
+            .sheet(isPresented: $showingTorOnboarding) {
+                TorOnboardingView()
             }
         }
     }

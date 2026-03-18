@@ -623,23 +623,30 @@ final class AppState: ObservableObject {
             to: .hostPort(host: "127.0.0.1", port: 9050),
             using: .tcp
         )
+        // Use a dedicated serial queue so reads and writes of `handled` are
+        // serialized — the NWConnection state handler and the timeout closure
+        // may fire concurrently on different threads.
+        let serialQ = DispatchQueue(label: "com.sophax.probeOrbot", qos: .background)
         nonisolated(unsafe) var handled = false
+
         conn.stateUpdateHandler = { [weak self] state in
-            guard !handled else { return }
-            switch state {
-            case .ready:
-                handled = true
-                conn.cancel()
-                Task { @MainActor [weak self] in self?.isOrbotDetected = true }
-            case .failed, .cancelled:
-                handled = true
-                Task { @MainActor [weak self] in self?.isOrbotDetected = false }
-            default:
-                break
+            serialQ.async {
+                guard !handled else { return }
+                switch state {
+                case .ready:
+                    handled = true
+                    conn.cancel()
+                    Task { @MainActor [weak self] in self?.isOrbotDetected = true }
+                case .failed, .cancelled:
+                    handled = true
+                    Task { @MainActor [weak self] in self?.isOrbotDetected = false }
+                default:
+                    break
+                }
             }
         }
-        conn.start(queue: .global(qos: .background))
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 1.5) {
+        conn.start(queue: serialQ)
+        serialQ.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard !handled else { return }
             handled = true
             conn.cancel()
