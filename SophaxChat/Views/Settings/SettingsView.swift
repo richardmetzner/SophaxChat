@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var showTCPConnectAlert: Bool  = false
     @State private var tcpConnectError: String?   = nil
     @State private var showingContactCard: Bool   = false
+    @State private var showingTorOnboarding: Bool = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -74,7 +75,16 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Connect Globally", isOn: $appState.tcpEnabled)
+                    Toggle("Connect Globally", isOn: Binding(
+                        get: { appState.tcpEnabled },
+                        set: { enabled in
+                            appState.tcpEnabled = enabled
+                            if enabled && !UserDefaults.standard.bool(forKey: "com.sophax.tor.onboardingShown") {
+                                showingTorOnboarding = true
+                                UserDefaults.standard.set(true, forKey: "com.sophax.tor.onboardingShown")
+                            }
+                        }
+                    ))
 
                     if appState.tcpEnabled {
                         if appState.isOrbotDetected {
@@ -179,6 +189,9 @@ struct SettingsView: View {
                 }
                 .sheet(isPresented: $showingContactCard) {
                     ContactCardView().environmentObject(appState)
+                }
+                .sheet(isPresented: $showingTorOnboarding) {
+                    TorOnboardingView()
                 }
 
                 #if SUPPORT_ENABLED

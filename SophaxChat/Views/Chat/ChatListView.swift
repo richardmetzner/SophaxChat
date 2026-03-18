@@ -11,6 +11,7 @@ struct ChatListView: View {
     @State private var showingIdentity    = false
     @State private var showingSettings    = false
     @State private var showingCreateGroup = false
+    @State private var showingScanner     = false
     @State private var peerToBlock: KnownPeer? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
 
@@ -120,6 +121,13 @@ struct ChatListView: View {
             }
             .navigationTitle("SophaxChat")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 4) {
                         Button {
@@ -175,6 +183,9 @@ struct ChatListView: View {
         }
         .sheet(isPresented: $showingCreateGroup) {
             CreateGroupView()
+        }
+        .sheet(isPresented: $showingScanner) {
+            ContactScannerView().environmentObject(appState)
         }
         .alert("Error", isPresented: Binding(
             get: { appState.errorMessage != nil },
