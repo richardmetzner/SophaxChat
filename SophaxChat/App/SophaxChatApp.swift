@@ -128,9 +128,31 @@ struct RootView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        // Contact card received toast
+        if let addr = appState.lastAddedContactAddress {
+            VStack {
+                Spacer()
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.plus")
+                        .foregroundStyle(.green)
+                    Text("Contact added — \(addr.prefix(16))…")
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
         .animation(.easeInOut(duration: 0.15), value: appState.isBlurred)
         .animation(.easeInOut(duration: 0.2), value: appState.isAppLocked)
         .animation(.easeInOut(duration: 0.3), value: appState.isScreenBeingRecorded)
         .animation(.spring(duration: 0.4), value: appState.didTakeScreenshot)
+        .animation(.spring(duration: 0.4), value: appState.lastAddedContactAddress)
     }
 }

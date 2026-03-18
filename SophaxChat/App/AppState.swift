@@ -77,6 +77,8 @@ final class AppState: ObservableObject {
     @Published var didTakeScreenshot: Bool = false
     /// True when Orbot (SOCKS5 on 127.0.0.1:9050) is reachable. Probed on foreground.
     @Published var isOrbotDetected: Bool = false
+    /// Momentarily non-nil after a contact card link is successfully parsed — shown as a toast.
+    @Published var lastAddedContactAddress: String? = nil
 
     /// Username cache for blocked peers (persisted so they're still readable after restart).
     private(set) var blockedPeerNames: [String: String] = [:]
@@ -670,6 +672,12 @@ final class AppState: ObservableObject {
         // Attempt immediate TCP connect if TCP is enabled
         if tcpEnabled {
             connectViaTCP(address: address)
+        }
+        // Show a brief toast so the user knows the card was received
+        lastAddedContactAddress = onionHost
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            lastAddedContactAddress = nil
         }
     }
 
