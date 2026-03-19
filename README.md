@@ -219,6 +219,7 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 | Disappearing messages (30s–7d) | ✅ | ✅ |
 | Forward message | ✅ | ✅ |
 | Message search | ✅ | ✅ |
+| Draft persistence (restored on re-open) | ✅ | ✅ |
 
 ### Groups
 
@@ -250,7 +251,31 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 | AES-256-GCM at-rest message storage | ✅ |
 | Block peer | ✅ |
 | TOFU key-change warning (Safety Number changed banner) | ✅ |
-| Notification content hiding on lock screen (M-4) | ✅ |
+| Notification content hiding on lock screen | ✅ |
+| Clipboard auto-clear (60s after copy) | ✅ |
+| Keyboard privacy (autocorrect disabled, no learning) | ✅ |
+| Screen recording warning banner | ✅ |
+| Screenshot notification toast | ✅ |
+
+### Global Reach (Tor)
+
+| Feature | Status |
+|---|---|
+| `.onion` address derived from identity key (no configuration) | ✅ |
+| Orbot auto-detection (SOCKS5 probe) | ✅ |
+| Contact Card — QR code + `sophaxchat://` deep link | ✅ |
+| QR scanner for adding contacts | ✅ |
+| `sophaxchat://add` deep link handling | ✅ |
+| Tor onboarding (first-run guide) | ✅ |
+
+### Local AI Assistant
+
+| Feature | Status |
+|---|---|
+| On-device AI (Apple Foundation Models, iOS 26+) | ✅ |
+| No server, no API key, no data leaves device | ✅ |
+| Conversation memory within session | ✅ |
+| Graceful fallback on unsupported devices | ✅ |
 
 ### Network & Transport
 
@@ -282,7 +307,9 @@ SophaxChat/
 │   │   ├── IdentityManager.swift    # Ed25519 + X25519 identity lifecycle
 │   │   ├── PreKeyManager.swift      # X3DH prekey pool (SPK + 20 OTPKs)
 │   │   ├── X3DH.swift              # X3DH sender and receiver implementation
-│   │   └── DoubleRatchet.swift     # Double Ratchet + Header Encryption (Signal spec §4.3)
+│   │   ├── DoubleRatchet.swift     # Double Ratchet + Header Encryption (Signal spec §4.3)
+│   │   ├── Keccak.swift            # Minimal SHA3-256 (Tor v3 .onion checksum)
+│   │   └── OnionAddress.swift      # Tor v3 .onion derivation from Ed25519 key
 │   ├── Group/
 │   │   └── GroupTypes.swift        # GroupInfo, SenderKeyState, SenderKeyDistributionMessage
 │   ├── Network/
@@ -297,12 +324,13 @@ SophaxChat/
 │
 ├── SophaxChat/                      # iOS/macOS SwiftUI application
 │   ├── App/
-│   │   ├── SophaxChatApp.swift     # App entry point + blur-on-background
-│   │   └── AppState.swift          # @MainActor observable state
+│   │   ├── SophaxChatApp.swift     # App entry point, security overlays, deep links
+│   │   └── AppState.swift          # @MainActor observable state, Orbot probe
 │   └── Views/
 │       ├── Onboarding/             # First-run username setup
+│       ├── AI/                     # Local AI assistant (Apple Foundation Models)
 │       ├── Chat/                   # Chat list, 1:1 and group bubbles, relay indicator
-│       └── Settings/               # Safety number verification, app lock
+│       └── Settings/               # Safety number, app lock, Contact Card, Tor setup
 │
 └── Tests/SophaxChatCoreTests/
     └── CryptoTests.swift           # X3DH symmetry + Double Ratchet correctness
@@ -358,33 +386,60 @@ ChatManager                  ← single coordinator, NSLock session mutex
 | iOS deployment target | 17.0+ |
 | macOS deployment target | 14.0+ (Catalyst) |
 | Physical devices | 2× iPhone (MultipeerConnectivity requires real hardware) |
-| XcodeGen | latest |
+| XcodeGen | latest (`brew install xcodegen`) |
 
 > **Note:** The Swift core library (`SophaxChatCore`) builds without Xcode via `swift build`. Physical devices are required to test P2P connectivity; the simulator does not support MultipeerConnectivity peer discovery.
 
-### Build
+### Run on iPhone
 
 ```sh
 # 1. Clone
 git clone https://github.com/sophaxtechnologies/SophaxChat.git
 cd SophaxChat
 
-# 2. Install XcodeGen
+# 2. Generate Xcode project
 brew install xcodegen
-
-# 3. Generate Xcode project
 xcodegen generate
 
-# 4. Open in Xcode
+# 3. Open in Xcode
 open SophaxChat.xcodeproj
 ```
 
-Then in Xcode:
-1. Select your development **Team** in the project settings (Signing & Capabilities)
-2. Choose a physical device as the build target
-3. **⌘R** to build and run
+In Xcode:
+1. Select your **Team** under Signing & Capabilities
+2. Plug in your iPhone, select it as the destination
+3. **⌘R**
 
-Repeat on the second device.
+Repeat on a second device to test messaging.
+
+### Run on Mac (Catalyst)
+
+The app runs natively on macOS via Mac Catalyst — no iOS simulator needed.
+
+```sh
+xcodegen generate
+open SophaxChat.xcodeproj
+```
+
+In Xcode:
+1. Select target **SophaxChat** → tab **General** → under **Deployment Info** enable the **Mac** checkbox → choose **Mac Catalyst**
+2. Set destination to **My Mac (Mac Catalyst)** in the toolbar
+3. Signing & Capabilities → select your Team (free Apple ID works)
+4. **⌘R**
+
+> **Free Apple ID:** Mac Catalyst apps run on your own Mac without any developer account. No 7-day re-signing limit (unlike iOS sideloading).
+
+**What works on Mac:**
+- Full encrypted messaging (1:1 and group)
+- Global reach via TCP + Tor (Orbot for Mac)
+- Local AI assistant (macOS 26 + Apple Intelligence)
+- QR Contact Cards (share / receive)
+- All security features (App Lock uses Touch ID on Mac)
+
+**What differs on Mac:**
+- Peer discovery uses WiFi (no Bluetooth mesh on macOS Catalyst)
+- Screen recording warning is disabled (screen recording is normal OS behavior on Mac)
+- Camera picker uses the Mac camera
 
 ### Verify the core library (no Xcode needed)
 
@@ -395,8 +450,7 @@ swift build
 ### Tests
 
 ```sh
-# Run in Xcode (Swift Testing framework)
-# Product → Test  (⌘U)
+# Run in Xcode: Product → Test (⌘U)
 ```
 
 Tests cover: X3DH key symmetry (with/without OTPK), Double Ratchet bidirectional messaging, out-of-order message delivery, session state persistence, associated data binding, and KDF distinctness.
@@ -494,6 +548,21 @@ Do not open public issues for security bugs.
 - [x] Pluggable transport adapter — `MessageTransport` protocol defined in `Network/MessageTransport.swift`. `MeshManager` is the production implementation (MultipeerConnectivity). Future adapters (LoRa, acoustic covert channel) implement the same `start/stop/send/broadcast/isConnected` surface. Adapter stubs and specification notes are in the protocol file.
 - [x] TCP internet transport — `TCPTransport.swift` (Network.framework, iOS 17+). 4-byte length-prefix framing, Hello exchange on connect, SOCKS5/Tor proxy support. ChatManager routes to TCP first when the peer is connected, falling back to BLE/WiFi mesh. Off by default; toggled in Settings under "Internet Mode".
 - [x] Internet mode Settings UI — TCP toggle, port field, public address entry ("My Address"), SOCKS5 proxy field, direct connect button (enter peer's host:port).
+
+### Completed (continued)
+
+- [x] Tor global reach — `.onion` v3 address derived from Ed25519 identity key (pure Swift, no Tor library). Address is permanent and tied to identity. `Keccak.swift` + `OnionAddress.swift`.
+- [x] Contact Card — QR code + `sophaxchat://add` deep link for sharing your Tor address out-of-band. Scanning adds the peer and connects automatically if Orbot is running.
+- [x] QR contact scanner — camera-based scanner (`DataScannerViewController`, iOS 16+) accessible from the chat list toolbar.
+- [x] Orbot auto-detection — probes `127.0.0.1:9050` via `NWConnection` on foreground; shows green "Orbot active" in Settings when running.
+- [x] Tor onboarding — 3-step guide shown on first "Connect Globally" toggle.
+- [x] Clipboard auto-clear — copied message text cleared from `UIPasteboard` after 60 seconds.
+- [x] Keyboard privacy — `autocorrectionDisabled()` + `.textContentType(.none)` on all message inputs; iOS keyboard cannot learn from messages.
+- [x] Screen recording detection — `RPScreenRecorder` polled every 1.5s; red warning banner shown while recording is active (iOS only).
+- [x] Screenshot notification — toast shown when user takes a screenshot while the app is open.
+- [x] Local AI assistant — `AIAssistantView` powered by Apple Foundation Models (`LanguageModelSession`, iOS 26+). Runs entirely on-device; no server, no API key, no data leaves the phone. Graceful fallback on unsupported devices.
+- [x] Message draft persistence — `messageText` saved to `UserDefaults` per peer/group on view disappear, restored on appear.
+- [x] Haptic feedback — `UIImpactFeedbackGenerator(.light)` on message send.
 
 ### Seeking external support
 
