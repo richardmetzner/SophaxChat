@@ -16,8 +16,8 @@ struct CreateGroupView: View {
     @FocusState private var nameFocused: Bool
 
     private var canCreate: Bool {
-        !groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && !selectedPeerIDs.isEmpty
+        let trimmed = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed.count <= 64 && !selectedPeerIDs.isEmpty
     }
 
     var body: some View {

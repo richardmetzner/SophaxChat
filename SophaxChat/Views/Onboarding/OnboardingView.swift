@@ -180,7 +180,7 @@ struct SecurityFeatureRow: View {
 private extension String {
     var isValidUsername: Bool {
         let trimmed = trimmingCharacters(in: .whitespaces)
-        return trimmed.count >= 1 && trimmed.count <= 32
+        return trimmed.count >= 1 && trimmed.count <= 64
     }
 }
 

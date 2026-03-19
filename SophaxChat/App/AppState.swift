@@ -482,10 +482,12 @@ final class AppState: ObservableObject {
         guard !host.isEmpty, let port = UInt16(portStr), port > 0 else { return false }
         // Allow .onion addresses (Tor hidden services) — these are always safe to connect to
         if host.hasSuffix(".onion") { return true }
-        // Block loopback and private RFC-1918 ranges to prevent SSRF
-        let privateRanges = ["127.", "10.", "169.254.", "::1", "fc", "fd"]
+        // Block loopback, link-local, and private RFC-1918/RFC-4193 ranges to prevent SSRF
+        let privateRanges = ["127.", "10.", "169.254.", "0.0.0.0",
+                             "::1", "0:0:0:0:0:0:0:1", "fc", "fd", "fe80"]
         let lc = host.lowercased()
         if privateRanges.contains(where: { lc.hasPrefix($0) }) { return false }
+        if lc == "0" || lc == "localhost" { return false }
         if lc.hasPrefix("172.") {
             let parts = lc.split(separator: ".")
             if parts.count >= 2, let second = Int(parts[1]), (16...31).contains(second) { return false }
