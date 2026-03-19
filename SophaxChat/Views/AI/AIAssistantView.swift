@@ -3,19 +3,26 @@
 //
 // Local AI assistant powered by Apple Foundation Models.
 // Runs entirely on-device — no server, no API key, no data leaves the phone.
-// Requires iOS 26+ with Apple Intelligence enabled.
+// Requires Xcode 26 SDK + iOS 26 with Apple Intelligence enabled.
 
 import SwiftUI
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
-// MARK: - Entry point (availability gate)
+// MARK: - Entry point
 
 struct AIAssistantView: View {
     var body: some View {
+#if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             AIAssistantViewImpl()
         } else {
             UnavailableView()
         }
+#else
+        UnavailableView()
+#endif
     }
 }
 
@@ -40,7 +47,9 @@ private struct UnavailableView: View {
     }
 }
 
-// MARK: - Main view (iOS 26+)
+// MARK: - Implementation (only compiled when FoundationModels SDK is present)
+
+#if canImport(FoundationModels)
 
 @available(iOS 26.0, *)
 private struct AIAssistantViewImpl: View {
@@ -66,25 +75,18 @@ private struct AIAssistantViewImpl: View {
         }
     }
 
-    // MARK: Messages
-
     private var messagesView: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    if ai.messages.isEmpty {
-                        emptyState
-                    }
-                    ForEach(ai.messages) { msg in
-                        AIBubble(message: msg)
-                    }
+                    if ai.messages.isEmpty { emptyState }
+                    ForEach(ai.messages) { msg in AIBubble(message: msg) }
                     if ai.isThinking {
                         HStack {
                             ThinkingBubble()
                             Spacer(minLength: 60)
                         }
                         .padding(.horizontal, 16)
-                        .id("thinking")
                     }
                     Color.clear.frame(height: 4).id("bottom")
                 }
@@ -121,8 +123,6 @@ private struct AIAssistantViewImpl: View {
         .padding(.horizontal, 40)
     }
 
-    // MARK: Input bar
-
     private var inputBar: some View {
         HStack(spacing: 12) {
             TextField("Message", text: $text, axis: .vertical)
@@ -134,7 +134,6 @@ private struct AIAssistantViewImpl: View {
                 .padding(.vertical, 10)
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 20))
-
             Button { send() } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 32))
@@ -158,8 +157,6 @@ private struct AIAssistantViewImpl: View {
         Task { await ai.send(trimmed) }
     }
 }
-
-// MARK: - Session model
 
 @available(iOS 26.0, *)
 @MainActor
@@ -205,15 +202,11 @@ private final class AISession: ObservableObject {
     }
 }
 
-// MARK: - Message model
-
 private struct AIMessage: Identifiable {
     let id = UUID()
     let body: String
     let isUser: Bool
 }
-
-// MARK: - Bubble
 
 private struct AIBubble: View {
     let message: AIMessage
@@ -234,8 +227,6 @@ private struct AIBubble: View {
     }
 }
 
-// MARK: - Thinking indicator
-
 private struct ThinkingBubble: View {
     @State private var animating = false
 
@@ -247,9 +238,7 @@ private struct ThinkingBubble: View {
                     .frame(width: 7, height: 7)
                     .offset(y: animating ? -4 : 0)
                     .animation(
-                        .easeInOut(duration: 0.45)
-                            .repeatForever()
-                            .delay(Double(i) * 0.15),
+                        .easeInOut(duration: 0.45).repeatForever().delay(Double(i) * 0.15),
                         value: animating
                     )
             }
@@ -261,6 +250,8 @@ private struct ThinkingBubble: View {
         .onAppear { animating = true }
     }
 }
+
+#endif
 
 #Preview {
     NavigationStack { AIAssistantView() }
