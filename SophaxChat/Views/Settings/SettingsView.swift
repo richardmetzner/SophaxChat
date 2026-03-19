@@ -1,7 +1,5 @@
 // SettingsView.swift
 // SophaxChat
-//
-// App settings: blocked peers and other user preferences.
 
 import SwiftUI
 import SophaxChatCore
@@ -30,203 +28,10 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    if blockedList.isEmpty {
-                        Text("No blocked users")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(blockedList, id: \.id) { entry in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.name)
-                                        .font(.subheadline.weight(.medium))
-                                    Text(String(entry.id.prefix(16)) + "…")
-                                        .font(.system(.caption2, design: .monospaced))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                Spacer()
-                                Button("Unblock") {
-                                    appState.unblockPeer(peerID: entry.id)
-                                }
-                                .font(.subheadline)
-                                .buttonStyle(.bordered)
-                                .tint(.accentColor)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Blocked Users")
-                } footer: {
-                    Text("Blocked users cannot send you messages. Unblocking allows future messages if they are nearby.")
-                }
-
-                Section {
-                    Toggle("App Lock", isOn: Binding(
-                        get: { appState.appLockEnabled },
-                        set: { enabled in
-                            appState.appLockEnabled = enabled
-                            if !enabled { appState.isAppLocked = false }
-                        }
-                    ))
-                } header: {
-                    Text("Security")
-                } footer: {
-                    Text("Require Face ID, Touch ID, or passcode to open SophaxChat.")
-                }
-
-                Section {
-                    Toggle("Connect Globally", isOn: Binding(
-                        get: { appState.tcpEnabled },
-                        set: { enabled in
-                            appState.tcpEnabled = enabled
-                            if enabled && !UserDefaults.standard.bool(forKey: "com.sophax.tor.onboardingShown") {
-                                showingTorOnboarding = true
-                                UserDefaults.standard.set(true, forKey: "com.sophax.tor.onboardingShown")
-                            }
-                        }
-                    ))
-
-                    if appState.tcpEnabled {
-                        if appState.isOrbotDetected {
-                            Button {
-                                showingContactCard = true
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.green)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Ready")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        Text("Share your address to connect with anyone")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "qrcode")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        } else {
-                            Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "globe.badge.chevron.backward")
-                                        .font(.title2)
-                                        .foregroundStyle(.accentColor)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Install Orbot")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        Text("Enable Tor VPN inside Orbot — that's it")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "arrow.up.right")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-
-                        DisclosureGroup("Advanced") {
-                            HStack {
-                                Text("SOCKS5 Proxy")
-                                Spacer()
-                                TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
-                                    .keyboardType(.asciiCapable)
-                                    .autocorrectionDisabled()
-                                    .textInputAutocapitalization(.never)
-                                    .multilineTextAlignment(.trailing)
-                                    .foregroundStyle(.secondary)
-                            }
-                            HStack {
-                                Text("Port")
-                                Spacer()
-                                TextField("25519", text: $appState.tcpPort)
-                                    .keyboardType(.numberPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 70)
-                                    .foregroundStyle(.secondary)
-                            }
-                            HStack {
-                                Text("Custom Address")
-                                Spacer()
-                                TextField("host:port", text: $appState.myTCPAddress)
-                                    .keyboardType(.asciiCapable)
-                                    .autocorrectionDisabled()
-                                    .textInputAutocapitalization(.never)
-                                    .multilineTextAlignment(.trailing)
-                                    .foregroundStyle(.secondary)
-                            }
-                            HStack {
-                                TextField("Connect to host:port", text: $tcpConnectAddress)
-                                    .keyboardType(.asciiCapable)
-                                    .autocorrectionDisabled()
-                                    .textInputAutocapitalization(.never)
-                                Button("Connect") {
-                                    if let err = appState.connectViaTCP(address: trimmedTCPAddress) {
-                                        tcpConnectError    = err
-                                        showTCPConnectAlert = true
-                                    } else {
-                                        tcpConnectAddress = ""
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(trimmedTCPAddress.isEmpty)
-                            }
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text("Global")
-                } footer: {
-                    Text(appState.tcpEnabled
-                         ? "Messages stay end-to-end encrypted. No server, no account — your identity is your address."
-                         : "Reach anyone in the world, not just nearby. Uses Tor for anonymity.")
-                }
-
-                #if SUPPORT_ENABLED
-                Section {
-                    Link(destination: URL(string: "https://github.com/sophaxtechnologies/SophaxChat#support")!) {
-                        Label("Support SophaxChat", systemImage: "heart.fill")
-                            .foregroundStyle(.pink)
-                    }
-                    Link(destination: URL(string: "https://github.com/sophaxtechnologies/SophaxChat")!) {
-                        Label("View Source on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
-                            .foregroundStyle(.primary)
-                    }
-                } footer: {
-                    Text("SophaxChat is free, open-source, and server-free. If it's useful to you, consider supporting it — via Bitcoin or Monero, no account needed.")
-                }
-                #endif
-
-                Section {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text(appVersion)
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Text("Protocol")
-                        Spacer()
-                        Text("X3DH + Double Ratchet")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                    HStack {
-                        Text("Transport")
-                        Spacer()
-                        Text(appState.tcpEnabled ? "BLE / WiFi + TCP" : "Bluetooth LE / WiFi Direct")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                } header: {
-                    Text("About")
-                }
+                blockedSection
+                securitySection
+                globalSection
+                aboutSection
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -246,6 +51,204 @@ struct SettingsView: View {
             .sheet(isPresented: $showingTorOnboarding) {
                 TorOnboardingView()
             }
+        }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var blockedSection: some View {
+        Section {
+            if blockedList.isEmpty {
+                Text("No blocked users").foregroundStyle(.secondary)
+            } else {
+                ForEach(blockedList, id: \.id) { entry in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.name)
+                                .font(.subheadline.weight(.medium))
+                            Text(String(entry.id.prefix(16)) + "…")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        Button("Unblock") { appState.unblockPeer(peerID: entry.id) }
+                            .font(.subheadline)
+                            .buttonStyle(.bordered)
+                            .tint(.accentColor)
+                    }
+                }
+            }
+        } header: {
+            Text("Blocked Users")
+        } footer: {
+            Text("Blocked users cannot send you messages. Unblocking allows future messages if they are nearby.")
+        }
+    }
+
+    @ViewBuilder
+    private var securitySection: some View {
+        Section {
+            Toggle("App Lock", isOn: Binding(
+                get: { appState.appLockEnabled },
+                set: { enabled in
+                    appState.appLockEnabled = enabled
+                    if !enabled { appState.isAppLocked = false }
+                }
+            ))
+        } header: {
+            Text("Security")
+        } footer: {
+            Text("Require Face ID, Touch ID, or passcode to open SophaxChat.")
+        }
+    }
+
+    @ViewBuilder
+    private var globalSection: some View {
+        Section {
+            Toggle("Connect Globally", isOn: Binding(
+                get: { appState.tcpEnabled },
+                set: { enabled in
+                    appState.tcpEnabled = enabled
+                    if enabled && !UserDefaults.standard.bool(forKey: "com.sophax.tor.onboardingShown") {
+                        showingTorOnboarding = true
+                        UserDefaults.standard.set(true, forKey: "com.sophax.tor.onboardingShown")
+                    }
+                }
+            ))
+            if appState.tcpEnabled {
+                orbotRow
+                advancedGroup
+            }
+        } header: {
+            Text("Global")
+        } footer: {
+            Text(appState.tcpEnabled
+                 ? "Messages stay end-to-end encrypted. No server, no account — your identity is your address."
+                 : "Reach anyone in the world, not just nearby. Uses Tor for anonymity.")
+        }
+    }
+
+    @ViewBuilder
+    private var orbotRow: some View {
+        if appState.isOrbotDetected {
+            Button { showingContactCard = true } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ready")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("Share your address to connect with anyone")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "qrcode").foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
+                HStack(spacing: 14) {
+                    Image(systemName: "globe.badge.chevron.backward")
+                        .font(.title2)
+                        .foregroundStyle(.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Install Orbot")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("Enable Tor VPN inside Orbot — that's it")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var advancedGroup: some View {
+        DisclosureGroup("Advanced") {
+            HStack {
+                Text("SOCKS5 Proxy")
+                Spacer()
+                TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Port")
+                Spacer()
+                TextField("25519", text: $appState.tcpPort)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 70)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Custom Address")
+                Spacer()
+                TextField("host:port", text: $appState.myTCPAddress)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField("Connect to host:port", text: $tcpConnectAddress)
+                    .keyboardType(.asciiCapable)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                Button("Connect") {
+                    if let err = appState.connectViaTCP(address: trimmedTCPAddress) {
+                        tcpConnectError     = err
+                        showTCPConnectAlert = true
+                    } else {
+                        tcpConnectAddress = ""
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(trimmedTCPAddress.isEmpty)
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var aboutSection: some View {
+        Section {
+            HStack {
+                Text("Version")
+                Spacer()
+                Text(appVersion).foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Protocol")
+                Spacer()
+                Text("X3DH + Double Ratchet")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+            HStack {
+                Text("Transport")
+                Spacer()
+                Text(appState.tcpEnabled ? "BLE / WiFi + TCP" : "Bluetooth LE / WiFi Direct")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        } header: {
+            Text("About")
         }
     }
 
