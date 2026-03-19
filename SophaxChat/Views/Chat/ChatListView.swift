@@ -18,6 +18,29 @@ struct ChatListView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Local AI assistant — always at the top
+                NavigationLink(destination: AIAssistantView()) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.purple.opacity(0.12))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.purple)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Assistant")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Local · Private · On-device")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 // Active conversations (peers with messages, not blocked)
                 let conversationPeers = appState.peers.filter {
                     appState.messages[$0.id] != nil && !appState.isBlocked($0.id)
