@@ -154,7 +154,7 @@ struct SettingsView: View {
                 HStack(spacing: 14) {
                     Image(systemName: "globe.badge.chevron.backward")
                         .font(.title2)
-                        .foregroundStyle(.accentColor)
+                        .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Install Orbot")
                             .font(.subheadline.weight(.semibold))
