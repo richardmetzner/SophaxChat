@@ -183,6 +183,10 @@ public final class ChatManager: @unchecked Sendable {
     /// Our TCP address advertised in Hello bundles ("host:port"), set by AppState.
     public var myTCPAddress: String?
 
+    // MARK: - LAN discovery (mDNS/Bonjour — enables iOS ↔ Android on same WiFi)
+
+    private var lanDiscovery: LanDiscovery?
+
     // MARK: - Init
 
     public init(
@@ -214,6 +218,11 @@ public final class ChatManager: @unchecked Sendable {
             tcp.delegate = self
             tcp.start()
         }
+        // mDNS discovery — auto-connects to iOS and Android peers on the same WiFi
+        let lan = LanDiscovery()
+        lan.delegate = self
+        lan.start(peerID: identity.publicIdentity.peerID)
+        lanDiscovery = lan
         try? preKeys.rotateIfNeeded()
         scheduleExpiryTimer()
         loadPersistedQueue()
@@ -223,6 +232,8 @@ public final class ChatManager: @unchecked Sendable {
     public func stop() {
         mesh.stop()
         tcpTransport?.stop()
+        lanDiscovery?.stop()
+        lanDiscovery = nil
         expiryTimer?.invalidate()
         expiryTimer = nil
         persistQueue()
@@ -2024,5 +2035,16 @@ extension ChatManager: TCPTransportDelegate {
         #if DEBUG
         print("[ChatManager] TCP listening on port \(port)")
         #endif
+    }
+}
+
+// MARK: - LanDiscoveryDelegate
+
+extension ChatManager: LanDiscoveryDelegate {
+
+    /// mDNS resolved a peer's address — initiate a TCP connection.
+    /// sendOrRoute() will automatically prefer TCP once the Hello handshake completes.
+    public func lanDiscovery(didFind address: String) {
+        try? connectViaTCP(address: address)
     }
 }

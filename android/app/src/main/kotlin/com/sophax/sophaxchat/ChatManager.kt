@@ -13,6 +13,8 @@ import com.sophax.sophaxchat.crypto.PreKeyManager
 import com.sophax.sophaxchat.crypto.SenderKeyState
 import com.sophax.sophaxchat.crypto.X3DH
 import com.sophax.sophaxchat.crypto.PreKeyBundleLocal
+import com.sophax.sophaxchat.network.LanDiscovery
+import com.sophax.sophaxchat.network.LanDiscoveryListener
 import com.sophax.sophaxchat.network.NearbyManager
 import com.sophax.sophaxchat.network.NearbyManagerListener
 import com.sophax.sophaxchat.network.TcpTransport
@@ -138,6 +140,15 @@ class ChatManager(
     val nearby = NearbyManager(context).also { it.listener = nearbyListener }
     val tcp    = TcpTransport(helloProvider = { buildHello() }).also { it.listener = tcpListener }
 
+    // mDNS discovery — auto-connects to Android and iOS peers on the same WiFi
+    private val lan = LanDiscovery(context).also {
+        it.listener = object : LanDiscoveryListener {
+            override fun onLanPeerFound(address: String) {
+                tcp.connect(address)
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Start / Stop
     // -----------------------------------------------------------------------
@@ -147,11 +158,13 @@ class ChatManager(
         val displayName = "sx-${identity.publicIdentity.peerID.take(12)}"
         nearby.start(displayName)
         tcp.start()
+        lan.start(identity.publicIdentity.peerID)
     }
 
     fun stop() {
         nearby.stop()
         tcp.stop()
+        lan.stop()
     }
 
     // -----------------------------------------------------------------------
