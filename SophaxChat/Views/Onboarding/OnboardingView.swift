@@ -31,6 +31,16 @@ private let pages: [OnboardingPage] = [
         title: "Chat globally",
         body: "Enable Tor in Settings to reach anyone in the world — no phone number, no VPN."
     ),
+    .init(
+        icon: "externaldrive.badge.exclamationmark", color: .orange,
+        title: "Your keys, your device",
+        body: "Your identity and messages are stored only on this device. No backup exists — if you lose your phone, your history cannot be recovered."
+    ),
+    .init(
+        icon: "checkmark.shield.fill", color: .green,
+        title: "Verify your contacts",
+        body: "Always compare Safety Numbers with people you trust. Tap \"Verify Identity\" in any conversation to confirm you're talking to the right person."
+    ),
 ]
 
 // MARK: - Onboarding View
