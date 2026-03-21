@@ -52,7 +52,7 @@ private fun InputStream.readWireMessage(): WireMessage? {
         read += n
     }
     val length = ByteBuffer.wrap(lenBuf).order(ByteOrder.BIG_ENDIAN).int
-    if (length <= 0 || length > 10 * 1024 * 1024) return null  // sanity: max 10 MB
+    if (length <= 0 || length > 4 * 1024 * 1024) return null  // sanity: max 4 MiB (matches iOS)
 
     val data = ByteArray(length)
     var totalRead = 0
