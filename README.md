@@ -9,6 +9,7 @@
     <img src="https://img.shields.io/badge/Swift-6.2-FA7343?logo=swift&logoColor=white" />
     <img src="https://img.shields.io/badge/iOS-17%2B-000000?logo=apple&logoColor=white" />
     <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white" />
+    <img src="https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white" />
     <img src="https://img.shields.io/badge/License-MIT-blue" />
     <img src="https://img.shields.io/badge/Status-Alpha-orange" />
     <img src="https://img.shields.io/badge/Cryptography-CryptoKit-34C759?logo=apple" />
@@ -20,6 +21,7 @@
     <a href="#features">Features</a> •
     <a href="#architecture">Architecture</a> •
     <a href="#getting-started">Getting Started</a> •
+    <a href="#android">Android</a> •
     <a href="#security">Security</a> •
     <a href="#roadmap">Roadmap</a>
   </p>
@@ -34,7 +36,7 @@
 
 ## What is SophaxChat?
 
-SophaxChat is an **open-source, infrastructure-free, end-to-end encrypted** messenger for iOS and macOS. It works over Bluetooth LE and WiFi Direct by default — no internet required, no servers, no phone number, no account.
+SophaxChat is an **open-source, infrastructure-free, end-to-end encrypted** messenger for iOS, macOS, and Android. It works over Bluetooth LE and WiFi Direct by default — no internet required, no servers, no phone number, no account.
 
 When you need to reach someone across the world, an optional TCP transport lets you connect peer-to-peer over the internet. The **recommended way** to use this is through **[Orbot](https://apps.apple.com/app/orbot/id1609461599)** (Tor VPN mode) — which routes your TCP traffic anonymously through Tor with zero configuration inside SophaxChat. The cryptographic layer is identical regardless of transport.
 
@@ -68,6 +70,7 @@ SophaxChat is built around three principles that cannot be traded away:
 | Scenario | Signal | bitchat | SophaxChat |
 |---|:---:|:---:|:---:|
 | No internet connection (BLE/WiFi mesh) | ❌ | ✅ | ✅ |
+| LAN auto-discovery (same WiFi, no pairing) | ❌ | ❌ | ✅ |
 | Internet reach (TCP, peer-to-peer) | ✅ | ❌ | ✅ |
 | Tor / anonymity network support | ⚠️ | ❌ | ✅ |
 | No phone number required | ❌ | ✅ | ✅ |
@@ -79,6 +82,7 @@ SophaxChat is built around three principles that cannot be traded away:
 | Group messaging (Sender Keys) | ✅ | ❌ | ✅ |
 | Open-source | ⚠️ | ✅ | ✅ |
 | Multihop relay (mesh routing) | ❌ | ✅ | ✅ |
+| iOS + Android cross-platform | ✅ | ❌ | ✅ |
 | macOS support | ✅ | ❌ | ✅ |
 
 SophaxChat occupies a specific niche: **Signal-grade cryptography, zero infrastructure**. Ideal for journalists, activists, protesters, disaster responders, or anyone in an environment where internet access is unavailable, monitored, or untrusted.
@@ -281,14 +285,17 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 
 | Feature | Status |
 |---|---|
-| Bluetooth LE transport | ✅ |
-| WiFi Direct transport | ✅ |
+| Bluetooth LE transport (iOS) | ✅ |
+| WiFi Direct transport (iOS / Android) | ✅ |
+| LAN auto-discovery via mDNS/Bonjour (same WiFi) | ✅ |
+| iOS ↔ Android cross-platform messaging (TCP wire protocol) | ✅ |
 | TCP internet transport (peer-to-peer, no server) | ✅ |
 | Tor / SOCKS5 anonymity (Orbot VPN mode or proxy) | ✅ |
+| GMS-free Android (Wi-Fi Direct fallback, no Google Play Services) | ✅ |
 | Multihop relay (TTL=6) | ✅ |
 | LRU relay deduplication | ✅ |
 | Offline message queue | ✅ |
-| Rate limiting (20 relays / 10s per peer) | ✅ |
+| Rate limiting (10 relays / 10s per peer) | ✅ |
 | Relay hop indicator in UI | ✅ |
 | Typing indicators | ✅ |
 | Store-and-forward via relay peers (48h TTL, 300 items) | ✅ |
@@ -373,6 +380,18 @@ ChatManager                  ← single coordinator, NSLock session mutex
             ├─ .groupMessage           → v2: ratchet peer chain; v1: shared key fallback
             └─ .senderKeyDistribution  → store peer sender chain state
 ```
+
+---
+
+## Android
+
+The Android port uses the same wire protocol as iOS. Messages between iOS and Android are fully interoperable — same X3DH + Double Ratchet encryption, same JSON framing over TCP port 25519.
+
+**Auto-discovery on the same WiFi:** iOS (Bonjour) and Android (NsdManager) both advertise `_sophaxchat._tcp`. They find each other automatically — no manual pairing, no IP addresses.
+
+**GMS-free:** Works on GrapheneOS, CalyxOS, and any AOSP device. Google Play Services are detected at runtime; if absent, Wi-Fi Direct (`android.net.wifi.p2p.*`) is used instead. No GMS imports in the codebase.
+
+See [`android/README.md`](android/README.md) for build instructions and architecture.
 
 ---
 
