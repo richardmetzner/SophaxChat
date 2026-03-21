@@ -29,6 +29,11 @@ class AttachmentStore(context: Context) {
     private val baseDir: File = File(context.filesDir, "sophax_attachments").also { it.mkdirs() }
     private val storageKey: ByteArray = loadOrCreateKey(context)
 
+    init {
+        // Clean up any .tmp files left behind by a previous crash (atomic rename never completed).
+        baseDir.listFiles { _, name -> name.endsWith(".tmp") }?.forEach { it.delete() }
+    }
+
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
