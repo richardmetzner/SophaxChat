@@ -32,7 +32,7 @@ public final class RelayRouter: @unchecked Sendable {
     private struct SenderWindow { var count: Int; var windowStart: Date }
     private var senderWindows: [String: SenderWindow] = [:]
 
-    public init(maxSeen: Int = 500, maxRelaysPerWindow: Int = 20, windowSeconds: TimeInterval = 10) {
+    public init(maxSeen: Int = 2000, maxRelaysPerWindow: Int = 10, windowSeconds: TimeInterval = 10) {
         self.maxSeen = maxSeen
         self.maxRelaysPerWindow = maxRelaysPerWindow
         self.windowSeconds = windowSeconds
