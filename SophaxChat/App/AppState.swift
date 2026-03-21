@@ -530,6 +530,8 @@ final class AppState: ObservableObject {
 
     func lockApp() {
         guard appLockEnabled else { return }
+        chatManager?.stop()
+        chatManager = nil          // release all session state and key material from RAM
         isAppLocked = true
     }
 
@@ -538,12 +540,16 @@ final class AppState: ObservableObject {
         var error: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
             isAppLocked = false   // No biometrics + no passcode configured — just unlock
+            setupChatManager(username: nil)
             return
         }
         ctx.evaluatePolicy(.deviceOwnerAuthentication,
                            localizedReason: "Unlock SophaxChat") { success, _ in
             DispatchQueue.main.async { [weak self] in
-                if success { self?.isAppLocked = false }
+                if success {
+                    self?.isAppLocked = false
+                    self?.setupChatManager(username: nil)
+                }
             }
         }
     }
