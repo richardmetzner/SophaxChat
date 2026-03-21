@@ -72,10 +72,16 @@ private fun InputStream.readWireMessage(): WireMessage? {
 
 class TcpTransport(
     private val port: Int = 25519,
-    private val socksProxyAddress: String? = null,    // "host:port" for Tor
+    socksProxyAddress: String? = null,                // "host:port" for Tor
     var helloProvider: (() -> WireMessage)? = null,   // called on connect to get Hello
     var listener: TcpTransportListener? = null
 ) {
+    private var socksProxyAddress: String? = socksProxyAddress
+
+    fun setSocksProxy(host: String, port: Int) {
+        socksProxyAddress = "$host:$port"
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val connections = ConcurrentHashMap<String, Socket>()  // peerID → socket
     private var serverSocket: ServerSocket? = null

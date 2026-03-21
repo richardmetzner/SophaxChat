@@ -10,7 +10,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.sophax.sophaxchat.ui.chat.ChatListScreen
 import com.sophax.sophaxchat.ui.chat.ChatScreen
+import com.sophax.sophaxchat.ui.chat.CreateGroupScreen
+import com.sophax.sophaxchat.ui.chat.GroupChatScreen
 import com.sophax.sophaxchat.ui.onboarding.OnboardingScreen
+import com.sophax.sophaxchat.ui.settings.SettingsScreen
 import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 
 class MainActivity : ComponentActivity() {
@@ -42,15 +45,21 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppNavigation(appState: AppState) {
     val navController = rememberNavController()
-    val peers by appState.peers.collectAsState()
+    val peers  by appState.peers.collectAsState()
+    val groups by appState.groups.collectAsState()
 
     NavHost(navController = navController, startDestination = "chat_list") {
+
         composable("chat_list") {
             ChatListScreen(
                 appState = appState,
-                onPeerTap = { peerID -> navController.navigate("chat/$peerID") }
+                onPeerTap     = { peerID   -> navController.navigate("chat/$peerID") },
+                onGroupTap    = { groupID  -> navController.navigate("group_chat/$groupID") },
+                onNewGroup    = { navController.navigate("create_group") },
+                onSettingsTap = { navController.navigate("settings") }
             )
         }
+
         composable("chat/{peerID}") { backStack ->
             val peerID = backStack.arguments?.getString("peerID") ?: return@composable
             val peer   = peers.firstOrNull { it.id == peerID }
@@ -62,6 +71,36 @@ private fun AppNavigation(appState: AppState) {
                 messages     = msgs,
                 onSend       = { body -> appState.sendMessage(peerID, body) },
                 onBack       = { navController.popBackStack() }
+            )
+        }
+
+        composable("group_chat/{groupID}") { backStack ->
+            val groupID = backStack.arguments?.getString("groupID") ?: return@composable
+            val group   = groups.firstOrNull { it.id == groupID } ?: return@composable
+
+            GroupChatScreen(
+                appState = appState,
+                group    = group,
+                onBack   = { navController.popBackStack() }
+            )
+        }
+
+        composable("create_group") {
+            CreateGroupScreen(
+                appState       = appState,
+                onBack         = { navController.popBackStack() },
+                onGroupCreated = { groupID ->
+                    navController.navigate("group_chat/$groupID") {
+                        popUpTo("chat_list")
+                    }
+                }
+            )
+        }
+
+        composable("settings") {
+            SettingsScreen(
+                appState = appState,
+                onBack   = { navController.popBackStack() }
             )
         }
     }

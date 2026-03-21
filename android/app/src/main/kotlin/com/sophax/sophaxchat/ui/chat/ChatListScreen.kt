@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -22,12 +23,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sophax.sophaxchat.AppState
+import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.protocol.KnownPeer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatListScreen(appState: AppState, onPeerTap: (String) -> Unit = {}) {
-    val peers by appState.peers.collectAsState()
+fun ChatListScreen(
+    appState: AppState,
+    onPeerTap: (String) -> Unit = {},
+    onGroupTap: (String) -> Unit = {},
+    onNewGroup: () -> Unit = {},
+    onSettingsTap: () -> Unit = {}
+) {
+    val peers  by appState.peers.collectAsState()
+    val groups by appState.groups.collectAsState()
 
     Scaffold(
         topBar = {
@@ -36,29 +45,50 @@ fun ChatListScreen(appState: AppState, onPeerTap: (String) -> Unit = {}) {
                     Text("SophaxChat", fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 },
                 actions = {
-                    IconButton(onClick = { /* TODO: settings */ }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    IconButton(onClick = onNewGroup) {
+                        Icon(Icons.Default.Add, contentDescription = "New Group")
                     }
-                    IconButton(onClick = { /* TODO: identity */ }) {
-                        Icon(Icons.Default.Person, contentDescription = "Identity")
+                    IconButton(onClick = onSettingsTap) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
         }
     ) { paddingValues ->
-        if (peers.isEmpty()) {
+        if (peers.isEmpty() && groups.isEmpty()) {
             EmptyState(modifier = Modifier.padding(paddingValues))
         } else {
             LazyColumn(
                 modifier = Modifier.padding(paddingValues),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
+                if (groups.isNotEmpty()) {
+                    item {
+                        SectionHeader("Groups")
+                    }
+                    items(groups, key = { "g_${it.id}" }) { group ->
+                        GroupRow(group, onClick = { onGroupTap(group.id) })
+                    }
+                    if (peers.isNotEmpty()) {
+                        item { SectionHeader("Direct Messages") }
+                    }
+                }
                 items(peers, key = { it.id }) { peer ->
                     PeerRow(peer, onClick = { onPeerTap(peer.id) })
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+    )
 }
 
 @Composable
@@ -90,6 +120,42 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+@Composable
+private fun GroupRow(group: GroupInfo, onClick: () -> Unit) {
+    val initial = group.name.firstOrNull()?.uppercaseChar()?.toString() ?: "G"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF34C759).copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(initial, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF34C759))
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(group.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(
+                "${group.memberIDs.size} members",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
+        }
+    }
+
+    HorizontalDivider(modifier = Modifier.padding(start = 76.dp), thickness = 0.5.dp)
 }
 
 @Composable

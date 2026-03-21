@@ -58,6 +58,7 @@ class IdentityManager(context: Context) {
 
     val dhIdentityKeyPair: DHKeyPair get() = dhKeyPair
     val signingKeyPairInternal: SigningKeyPair get() = signingKeyPair
+    val username: String get() = prefs.getString(KEY_USERNAME, "anonymous") ?: "anonymous"
 
     // -----------------------------------------------------------------------
     // Username

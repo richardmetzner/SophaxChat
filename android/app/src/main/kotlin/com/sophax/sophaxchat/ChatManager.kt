@@ -1,10 +1,16 @@
 package com.sophax.sophaxchat
 
 import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import com.google.crypto.tink.subtle.ChaCha20Poly1305
 import com.sophax.sophaxchat.crypto.DHKeyPair
 import com.sophax.sophaxchat.crypto.DoubleRatchet
+import com.sophax.sophaxchat.crypto.GroupInfo
+import com.sophax.sophaxchat.crypto.GroupInvitePayload
 import com.sophax.sophaxchat.crypto.IdentityManager
 import com.sophax.sophaxchat.crypto.PreKeyManager
+import com.sophax.sophaxchat.crypto.SenderKeyState
 import com.sophax.sophaxchat.crypto.X3DH
 import com.sophax.sophaxchat.crypto.PreKeyBundleLocal
 import com.sophax.sophaxchat.network.NearbyManager
@@ -12,6 +18,7 @@ import com.sophax.sophaxchat.network.NearbyManagerListener
 import com.sophax.sophaxchat.network.TcpTransport
 import com.sophax.sophaxchat.network.TcpTransportListener
 import com.sophax.sophaxchat.protocol.*
+import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.MessageDirection
 import com.sophax.sophaxchat.storage.MessageStatus
 import com.sophax.sophaxchat.storage.MessageStore
@@ -19,6 +26,7 @@ import com.sophax.sophaxchat.storage.StoredMessage
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
+import java.security.SecureRandom
 import java.util.Date
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -31,6 +39,7 @@ interface ChatManagerDelegate {
     fun didDiscoverPeer(peer: KnownPeer)
     fun peerDidDisconnect(peerID: String)
     fun didReceiveMessage(message: StoredMessage, fromPeerID: String)
+    fun didReceiveGroupMessage(message: StoredMessage, group: GroupInfo)
     fun messageDelivered(messageID: String, toPeerID: String)
     fun didEncounterError(error: Exception)
 }
@@ -70,6 +79,57 @@ class ChatManager(
 
     // TCP connection: peerID → address (already tracked by TcpTransport)
     private val tcpPeerIDs = ConcurrentHashMap<String, Boolean>()
+
+    // -----------------------------------------------------------------------
+    // Group state (EncryptedSharedPreferences)
+    // -----------------------------------------------------------------------
+
+    private val groupPrefs by lazy {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        EncryptedSharedPreferences.create(
+            context, "sophaxchat_groups", masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    private fun loadGroups(): List<GroupInfo> {
+        val raw = groupPrefs.getString("groups_json", null) ?: return emptyList()
+        return try { json.decodeFromString(raw) } catch (e: Exception) { emptyList() }
+    }
+
+    private fun saveGroups(groups: List<GroupInfo>) {
+        groupPrefs.edit().putString("groups_json", json.encodeToString(groups)).apply()
+    }
+
+    private fun loadSenderKey(groupID: String, peerID: String): SenderKeyState? {
+        val raw = groupPrefs.getString("skey_${groupID}_${peerID}", null) ?: return null
+        return try { json.decodeFromString(raw) } catch (e: Exception) { null }
+    }
+
+    private fun saveSenderKey(groupID: String, peerID: String, state: SenderKeyState) {
+        groupPrefs.edit()
+            .putString("skey_${groupID}_${peerID}", json.encodeToString(state))
+            .apply()
+    }
+
+    private fun deleteSenderKeys(groupID: String) {
+        val editor = groupPrefs.edit()
+        groupPrefs.all.keys
+            .filter { it.startsWith("skey_${groupID}_") }
+            .forEach { editor.remove(it) }
+        editor.apply()
+    }
+
+    /** In-memory group list, kept in sync with prefs. */
+    private val groups = ConcurrentHashMap<String, GroupInfo>().also { map ->
+        loadGroups().forEach { map[it.id] = it }
+    }
+
+    fun groupsList(): List<GroupInfo> = groups.values.toList()
+
+    val attachmentStore = AttachmentStore(context)
 
     // -----------------------------------------------------------------------
     // Transports
@@ -191,6 +251,156 @@ class ChatManager(
     }
 
     // -----------------------------------------------------------------------
+    // Group messaging
+    // -----------------------------------------------------------------------
+
+    fun createGroup(name: String, memberPeerIDs: List<String>): GroupInfo {
+        val myID = identity.publicIdentity.peerID
+        val allMembers = (memberPeerIDs + myID).distinct()
+        val group = GroupInfo(name = name, memberIDs = allMembers, creatorID = myID)
+
+        // Generate my sender chain key
+        val chainKey = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val myState = SenderKeyState(chainKey = chainKey)
+        saveSenderKey(group.id, myID, myState)
+
+        // Persist group
+        groups[group.id] = group
+        saveGroups(groups.values.toList())
+
+        // Send invite to each member via DR-encrypted .message
+        val invite = GroupInvitePayload(
+            groupID = group.id,
+            groupName = group.name,
+            memberIDs = allMembers,
+            creatorID = myID,
+            senderChainKey = chainKey,
+            senderIteration = 0L
+        )
+        val inviteBytes = json.encodeToString(invite).toByteArray()
+        memberPeerIDs.forEach { peerID ->
+            val wire = buildOutboundGroupInvite(peerID, inviteBytes) ?: return@forEach
+            sendOrRoute(wire, peerID)
+        }
+        return group
+    }
+
+    fun sendGroupMessage(body: String, group: GroupInfo) {
+        val myID = identity.publicIdentity.peerID
+        val state = loadSenderKey(group.id, myID) ?: run {
+            val fresh = SenderKeyState(ByteArray(32).also { SecureRandom().nextBytes(it) })
+            saveSenderKey(group.id, myID, fresh)
+            fresh
+        }
+
+        val (messageKey, nextState) = state.ratchet()
+        saveSenderKey(group.id, myID, nextState)
+
+        val ciphertext = chachaPoly(messageKey).encrypt(body.toByteArray(), group.id.toByteArray())
+        val messageID  = UUID.randomUUID().toString()
+
+        val gwm = GroupWireMessage(
+            groupID = group.id,
+            messageID = messageID,
+            senderPeerID = myID,
+            senderUsername = identity.username,
+            timestamp = Date(),
+            ciphertext = ciphertext,
+            senderKeyIteration = state.iteration
+        )
+
+        // Store locally
+        val stored = StoredMessage(
+            id = messageID, peerID = group.conversationID,
+            direction = MessageDirection.sent.name,
+            body = body, status = MessageStatus.delivered.name
+        )
+        messageStore.store(stored)
+
+        broadcastToGroup(group, gwm)
+    }
+
+    fun leaveGroup(group: GroupInfo) {
+        val myID = identity.publicIdentity.peerID
+        val remaining = group.memberIDs.filter { it != myID }
+        val left = GroupMemberLeftMessage(group.id, myID, remaining)
+        val wire = builder().build(WireMessageType.groupMemberLeft.name, left)
+        remaining.forEach { peerID -> sendOrRoute(wire, peerID) }
+        groups.remove(group.id)
+        deleteSenderKeys(group.id)
+        saveGroups(groups.values.toList())
+    }
+
+    private fun handleGroupMessage(message: WireMessage) {
+        val gwm = try { json.decodeFromString<GroupWireMessage>(String(message.payload)) }
+                  catch (e: Exception) { return }
+
+        val group = groups[gwm.groupID] ?: return
+        val senderID = gwm.senderPeerID
+
+        val targetIteration = gwm.senderKeyIteration ?: 0L
+        val state = loadSenderKey(gwm.groupID, senderID) ?: return
+
+        val (messageKey, nextState) = try { state.advanceTo(targetIteration) }
+                                       catch (e: Exception) { return }
+        saveSenderKey(gwm.groupID, senderID, nextState)
+
+        val plaintext = try {
+            chachaPoly(messageKey).decrypt(gwm.ciphertext, group.id.toByteArray())
+        } catch (e: Exception) { return }
+
+        val body = String(plaintext)
+        val stored = StoredMessage(
+            id = gwm.messageID, peerID = group.conversationID,
+            direction = MessageDirection.received.name,
+            body = body, status = MessageStatus.delivered.name
+        )
+        messageStore.store(stored)
+        delegate?.didReceiveGroupMessage(stored, group)
+    }
+
+    private fun handleGroupMemberLeft(message: WireMessage) {
+        val msg = try { json.decodeFromString<GroupMemberLeftMessage>(String(message.payload)) }
+                  catch (e: Exception) { return }
+
+        val group = groups[msg.groupID] ?: return
+        val updated = group.copy(memberIDs = msg.remainingMemberIDs)
+        groups[msg.groupID] = updated
+        saveGroups(groups.values.toList())
+        deleteSenderKeys("${msg.groupID}_${msg.leavingPeerID}")
+    }
+
+    private fun buildOutboundGroupInvite(peerID: String, inviteBytes: ByteArray): WireMessage? {
+        // Wrap the invite in a MessageContent with type="groupInvite" and send as DR-encrypted .message
+        val content = MessageContent(
+            body = "",
+            type = "groupInvite",
+            groupInviteData = inviteBytes,
+            timestamp = Date()
+        )
+        val contentBytes = json.encodeToString(content).toByteArray()
+        return synchronized(sessionLock) { sessions[peerID] }?.let { dr ->
+            try {
+                val payload = ChatMessagePayload(
+                    ratchetMessage = dr.encrypt(contentBytes).toWire(),
+                    messageID = UUID.randomUUID().toString()
+                )
+                builder().build(WireMessageType.message.name, payload)
+            } catch (e: Exception) { null }
+        }
+    }
+
+    private fun broadcastToGroup(group: GroupInfo, gwm: GroupWireMessage) {
+        val wire = builder().build(WireMessageType.groupMessage.name, gwm)
+        val myID = identity.publicIdentity.peerID
+        group.memberIDs.filter { it != myID }.forEach { peerID ->
+            sendOrRoute(wire, peerID)
+        }
+    }
+
+    private fun chachaPoly(key: ByteArray) = ChaCha20Poly1305(key)
+
+    // -----------------------------------------------------------------------
     // Handle incoming wire message
     // -----------------------------------------------------------------------
 
@@ -210,7 +420,8 @@ class ChatManager(
             WireMessageType.message.name           -> handleMessage(message)
             WireMessageType.ack.name               -> handleAck(message)
             WireMessageType.relay.name             -> handleRelay(message, fromTransportID, isTCP)
-            else -> { /* other types handled in Phase 3 */ }
+            WireMessageType.groupMessage.name      -> handleGroupMessage(message)
+            WireMessageType.groupMemberLeft.name   -> handleGroupMemberLeft(message)
         }
     }
 
@@ -319,6 +530,32 @@ class ChatManager(
         try {
             val plaintext = dr.decrypt(payload.ratchetMessage.fromWire())
             val content   = json.decodeFromString<MessageContent>(String(plaintext))
+
+            // Group invite — parse and register, do not display as chat message
+            if (content.type == "groupInvite") {
+                content.groupInviteData?.let { inviteBytes ->
+                    val invite = try { json.decodeFromString<GroupInvitePayload>(String(inviteBytes)) }
+                                 catch (e: Exception) { null }
+                    invite?.let {
+                        val group = GroupInfo(
+                            id = it.groupID, name = it.groupName,
+                            memberIDs = it.memberIDs, creatorID = it.creatorID
+                        )
+                        groups[group.id] = group
+                        saveGroups(groups.values.toList())
+                        it.senderChainKey?.let { ck ->
+                            saveSenderKey(it.groupID, it.creatorID,
+                                SenderKeyState(chainKey = ck, iteration = it.senderIteration ?: 0L))
+                        }
+                        val myID = identity.publicIdentity.peerID
+                        if (it.memberIDs.contains(myID) && loadSenderKey(group.id, myID) == null) {
+                            val ck = ByteArray(32).also { k -> SecureRandom().nextBytes(k) }
+                            saveSenderKey(group.id, myID, SenderKeyState(chainKey = ck))
+                        }
+                    }
+                }
+                return
+            }
 
             val stored = StoredMessage(
                 id = payload.messageID, peerID = peerID,
