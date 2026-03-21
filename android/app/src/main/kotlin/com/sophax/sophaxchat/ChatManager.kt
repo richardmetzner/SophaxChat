@@ -19,6 +19,7 @@ import com.sophax.sophaxchat.network.NearbyManager
 import com.sophax.sophaxchat.network.NearbyManagerListener
 import com.sophax.sophaxchat.network.TcpTransport
 import com.sophax.sophaxchat.network.TcpTransportListener
+import com.sophax.sophaxchat.network.WifiDirectManager
 import com.sophax.sophaxchat.protocol.*
 import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.MessageDirection
@@ -50,6 +51,13 @@ interface ChatManagerDelegate {
 // ChatManager — coordinates crypto, transport, and storage
 // Port of iOS ChatManager.swift (Phase 2 scope: 1-to-1 messaging + relay)
 // ---------------------------------------------------------------------------
+
+/** Returns true when Google Play Services with Nearby Connections is available at runtime. */
+private fun isNearbyAvailable(context: Context): Boolean = runCatching {
+    context.packageManager.getPackageInfo("com.google.android.gms", 0)
+    Class.forName("com.google.android.gms.nearby.Nearby")
+    true
+}.getOrDefault(false)
 
 class ChatManager(
     private val context: Context,
@@ -137,8 +145,15 @@ class ChatManager(
     // Transports
     // -----------------------------------------------------------------------
 
-    val nearby = NearbyManager(context).also { it.listener = nearbyListener }
-    val tcp    = TcpTransport(helloProvider = { buildHello() }).also { it.listener = tcpListener }
+    // Nearby Connections (GMS) — null on GrapheneOS / LineageOS without GMS
+    val nearby: NearbyManager? = if (isNearbyAvailable(context))
+        NearbyManager(context).also { it.listener = nearbyListener } else null
+
+    // Wi-Fi Direct — used when GMS is absent; pure Android SDK, no external dependency
+    private val wifiDirect: WifiDirectManager? = if (nearby == null)
+        WifiDirectManager(context).also { it.onPeerFound = { addr -> tcp.connect(addr) } } else null
+
+    val tcp = TcpTransport(helloProvider = { buildHello() }).also { it.listener = tcpListener }
 
     // mDNS discovery — auto-connects to Android and iOS peers on the same WiFi
     private val lan = LanDiscovery(context).also {
@@ -155,14 +170,15 @@ class ChatManager(
 
     fun start() {
         preKeys.rotateIfNeeded()
-        val displayName = "sx-${identity.publicIdentity.peerID.take(12)}"
-        nearby.start(displayName)
+        val myPeerID = identity.publicIdentity.peerID
+        val displayName = "sx-${myPeerID.take(12)}"
+        nearby?.start(displayName) ?: wifiDirect?.start(myPeerID)
         tcp.start()
-        lan.start(identity.publicIdentity.peerID)
+        lan.start(myPeerID)
     }
 
     fun stop() {
-        nearby.stop()
+        nearby?.stop() ?: wifiDirect?.stop()
         tcp.stop()
         lan.stop()
     }
@@ -240,27 +256,38 @@ class ChatManager(
     // -----------------------------------------------------------------------
 
     private fun sendOrRoute(wire: WireMessage, toPeerID: String) {
+        // Build relay envelope lazily (only if needed)
+        fun relayWire(): WireMessage {
+            val relay = RelayEnvelope(
+                id = UUID.randomUUID().toString(),
+                targetPeerID = toPeerID,
+                originPeerID = identity.publicIdentity.peerID,
+                ttl = RelayEnvelope.MAX_TTL,
+                hopCount = 0,
+                message = wire
+            )
+            return builder().build(WireMessageType.relay.name, relay)
+        }
+
         when {
+            // 1. TCP direct (highest priority — works on GMS and non-GMS alike)
             tcp.isConnected(toPeerID) ->
                 tcp.send(wire, toPeerID)
 
-            peerIDToEndpoint[toPeerID] != null ->
+            // 2. Nearby direct (GMS devices only)
+            nearby != null && peerIDToEndpoint[toPeerID] != null ->
                 nearby.send(wire, peerIDToEndpoint[toPeerID]!!)
 
-            nearby.connectedEndpointIDs().isNotEmpty() -> {
-                // Relay via connected peers (sealed sender would be ideal; plain relay for now)
-                val relay = RelayEnvelope(
-                    id = UUID.randomUUID().toString(),
-                    targetPeerID = toPeerID,
-                    originPeerID = identity.publicIdentity.peerID,
-                    ttl = RelayEnvelope.MAX_TTL,
-                    hopCount = 0,
-                    message = wire
-                )
-                val relayWire = builder().build(WireMessageType.relay.name, relay)
-                nearby.broadcast(relayWire)
-            }
+            // 3a. Relay via Nearby mesh (GMS devices)
+            nearby != null && nearby.connectedEndpointIDs().isNotEmpty() ->
+                nearby.broadcast(relayWire())
+
+            // 3b. Relay via TCP connections (non-GMS: WifiDirect / mDNS peers)
+            tcp.connectedPeerIDs().isNotEmpty() ->
+                tcp.broadcast(relayWire(), excluding = null)
         }
+        // If no path available, message is silently dropped until reconnection.
+        // (Persistent offline queue is a future enhancement.)
     }
 
     // -----------------------------------------------------------------------

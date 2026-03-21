@@ -158,6 +158,12 @@ class TcpTransport(
 
     fun isConnected(peerID: String) = connections[peerID]?.isConnected == true
 
+    fun connectedPeerIDs(): Set<String> = connections.keys.toSet()
+
+    fun broadcast(message: WireMessage, excluding: String? = null) {
+        connections.keys.filter { it != excluding }.forEach { send(message, it) }
+    }
+
     fun disconnect(peerID: String) {
         connections.remove(peerID)?.let { socket ->
             runCatching { socket.close() }
