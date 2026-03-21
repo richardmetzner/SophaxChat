@@ -206,6 +206,7 @@ class DoubleRatchet(private var state: RatchetSessionState) {
         // Step 1: DH(current_sending, new_remote) → receiving chain key + NHKr
         val dh1 = x25519(state.sendingRatchetPrivateKey, remoteRatchetPublicKey)
         val (rk1, receivingCK, newNHKr) = kdfRK(state.rootKey, dh1)
+        dh1.fill(0)   // zero DH output immediately — prevents memory-dump exposure
         state.rootKey                = rk1
         state.receivingChainKey      = receivingCK
         state.nextReceivingHeaderKey = newNHKr
@@ -218,6 +219,7 @@ class DoubleRatchet(private var state: RatchetSessionState) {
         // Step 3: DH(new_sending, new_remote) → sending chain key + NHKs
         val dh2 = x25519(newSendingPair.privateKeyBytes, remoteRatchetPublicKey)
         val (rk2, sendingCK, newNHKs) = kdfRK(rk1, dh2)
+        dh2.fill(0)   // zero DH output immediately
         state.rootKey              = rk2
         state.sendingChainKey      = sendingCK
         state.nextSendingHeaderKey = newNHKs
