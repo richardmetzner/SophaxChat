@@ -1384,7 +1384,12 @@ public final class ChatManager: @unchecked Sendable {
         storedForwardItems.removeAll { $0.targetPeerID == peerID }
     }
 
-    private func handleGroupMemberLeft(_ payload: GroupMemberLeftMessage) {
+    private func handleGroupMemberLeft(_ payload: GroupMemberLeftMessage, senderID: String) {
+        // Only the peer who is leaving may announce their own departure.
+        // Accepting announcements from arbitrary senders would allow any peer to
+        // silently eject another member from the group.
+        guard senderID == payload.leavingPeerID else { return }
+
         let myID    = identity.publicIdentity.peerID
         let groupID = payload.groupID
 
@@ -1815,18 +1820,27 @@ extension ChatManager: MeshManagerDelegate {
     /// Shared message dispatch — called from both MeshManagerDelegate and TCPTransportDelegate.
     /// Verifies signatures and routes to the appropriate handler.
     private func handleIncomingMessage(_ message: WireMessage) {
-        // Verify Ed25519 signature for known peers.
-        // For Hello messages the bundle contains the signing key — verified inside handleHello.
-        if message.type != .hello {
-            if let peer = knownPeers[message.senderID] {
-                guard (try? WireMessageBuilder.verify(
+        // Reject messages with timestamps too far from now.
+        // Relay envelopes get a wider window (10 min) to tolerate multi-hop latency;
+        // all other types use a strict 5-minute window.
+        let age: TimeInterval = abs(message.timestamp.timeIntervalSinceNow)
+        let maxAge: TimeInterval = message.type == .relay ? 600 : 300
+        guard age < maxAge else { return }
+
+        // Signature verification:
+        //   • .hello          — self-verifying (signing key inside bundle); handled below.
+        //   • .initiateSession — self-verifying (signing key inside sender bundle); handled below.
+        //   • everything else — MUST come from a known peer with a verified signature.
+        //     Unknown senders cannot send arbitrary message types; we drop silently.
+        if message.type != .hello && message.type != .initiateSession {
+            guard let peer = knownPeers[message.senderID],
+                  (try? WireMessageBuilder.verify(
                     message, signingKeyPublic: peer.signingKeyPublic
-                )) == true else {
-                    #if DEBUG
-                    print("[ChatManager] ⚠️ Sig fail: type=\(message.type.rawValue) sender=\(message.senderID.prefix(8))")
-                    #endif
-                    return
-                }
+                  )) == true else {
+                #if DEBUG
+                print("[ChatManager] ⚠️ Sig fail or unknown sender: type=\(message.type.rawValue) sender=\(message.senderID.prefix(8))")
+                #endif
+                return
             }
         }
 
@@ -1877,7 +1891,7 @@ extension ChatManager: MeshManagerDelegate {
 
             case .groupMemberLeft:
                 let payload = try wireBuilder.decodePayload(GroupMemberLeftMessage.self, from: message)
-                handleGroupMemberLeft(payload)
+                handleGroupMemberLeft(payload, senderID: message.senderID)
 
             case .groupReadReceipt:
                 let payload = try wireBuilder.decodePayload(GroupReadReceiptMessage.self, from: message)
