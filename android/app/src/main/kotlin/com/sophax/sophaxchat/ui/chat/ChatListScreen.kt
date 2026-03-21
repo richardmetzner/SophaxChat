@@ -1,6 +1,7 @@
 package com.sophax.sophaxchat.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,18 +26,14 @@ import com.sophax.sophaxchat.protocol.KnownPeer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatListScreen(appState: AppState) {
+fun ChatListScreen(appState: AppState, onPeerTap: (String) -> Unit = {}) {
     val peers by appState.peers.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "SophaxChat",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp
-                    )
+                    Text("SophaxChat", fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 },
                 actions = {
                     IconButton(onClick = { /* TODO: settings */ }) {
@@ -57,7 +54,7 @@ fun ChatListScreen(appState: AppState) {
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 items(peers, key = { it.id }) { peer ->
-                    PeerRow(peer)
+                    PeerRow(peer, onClick = { onPeerTap(peer.id) })
                 }
             }
         }
@@ -75,7 +72,10 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(horizontal = 40.dp)
         ) {
-            Text("((•))", fontSize = 48.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f))
+            Text(
+                "((•))", fontSize = 48.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f)
+            )
             Text(
                 "Looking for nearby devices…",
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
@@ -93,22 +93,21 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PeerRow(peer: KnownPeer) {
+private fun PeerRow(peer: KnownPeer, onClick: () -> Unit) {
     val initial = peer.username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-    val avatarColor = Color(0xFF007AFF).copy(alpha = 0.12f)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(avatarColor),
+                .background(Color(0xFF007AFF).copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             Text(initial, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF007AFF))
@@ -116,16 +115,15 @@ private fun PeerRow(peer: KnownPeer) {
 
         Spacer(Modifier.width(12.dp))
 
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(peer.username, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             Text(
                 if (peer.isOnline) "Online" else "Last seen recently",
                 fontSize = 13.sp,
-                color = if (peer.isOnline) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                color = if (peer.isOnline) Color(0xFF34C759)
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
             )
         }
-
-        Spacer(Modifier.weight(1f))
 
         if (peer.isOnline) {
             Box(

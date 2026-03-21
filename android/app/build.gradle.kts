@@ -70,5 +70,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Nearby Connections (local P2P mesh)
+    implementation(libs.play.services.nearby)
+
     debugImplementation(libs.androidx.ui.tooling)
 }
