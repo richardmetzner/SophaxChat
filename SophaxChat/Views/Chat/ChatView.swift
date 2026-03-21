@@ -70,6 +70,13 @@ struct ChatView: View {
     @State private var showingRenameAlert = false
     @State private var renameText: String = ""
 
+    // TOFU nudge dismiss state persisted per peer
+    @AppStorage private var verifyNudgeDismissed: Bool
+    init(peer: KnownPeer) {
+        self.peer = peer
+        _verifyNudgeDismissed = AppStorage(wrappedValue: false, "verifyNudgeDismissed.\(peer.id)")
+    }
+
     private var disappearingKey: String { "com.sophax.disappearingInterval.\(peer.id)" }
     private var draftKey: String { "com.sophax.draft.\(peer.id)" }
 
@@ -216,6 +223,32 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
+                .background(Color.yellow.opacity(0.08))
+            }
+
+            // TOFU verification nudge — shown once after first incoming message from unverified peer
+            let hasIncomingMessage = messages.contains(where: { !$0.isOutgoing })
+            if hasIncomingMessage,
+               !appState.isVerified(peer.id, currentSafetyNumber: peer.safetyNumber),
+               !verifyNudgeDismissed {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.badge.shield.checkmark")
+                        .foregroundStyle(.yellow)
+                    Text("Verify \(peer.username)'s identity to confirm you're talking to the right person.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Verify") { showingSafetyNumber = true }
+                        .font(.caption.bold())
+                        .foregroundStyle(.yellow)
+                    Button { verifyNudgeDismissed = true } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
                 .background(Color.yellow.opacity(0.08))
             }
 
