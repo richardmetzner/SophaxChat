@@ -187,8 +187,12 @@ class TcpTransport(
             // Send our Hello first
             helloProvider?.invoke()?.let { output.write(it.toFramedBytes()); output.flush() }
 
-            // Read peer's first message to extract peerID
+            // Enforce a 10-second deadline for the peer to send their Hello.
+            // Without this, an attacker holds the socket open indefinitely at zero cost.
+            socket.soTimeout = 10_000
             val firstMsg = input.readWireMessage() ?: return
+            socket.soTimeout = 0   // reset to blocking for the normal read loop
+
             peerID = firstMsg.senderID
             connections[peerID] = socket
 

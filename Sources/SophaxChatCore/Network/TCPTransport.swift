@@ -114,7 +114,7 @@ public final class TCPTransport: @unchecked Sendable {
 
     private var listener: NWListener?
 
-    private static let helloTimeout: TimeInterval = 30
+    private static let helloTimeout: TimeInterval = 10
     private static let maxFrameSize: Int = 4 * 1024 * 1024  // 4 MiB safety cap
 
     public weak var delegate: TCPTransportDelegate?
