@@ -535,6 +535,9 @@ final class AppState: ObservableObject {
         chatManager?.stop()
         chatManager = nil          // release all session state and key material from RAM
         isAppLocked = true
+        // Remove delivered notifications from Notification Center — they remain readable on the
+        // lock screen / notification shade even when the app is locked.
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 
     func tryUnlock() {
