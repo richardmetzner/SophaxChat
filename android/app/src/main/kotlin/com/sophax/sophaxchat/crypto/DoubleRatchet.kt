@@ -2,6 +2,9 @@ package com.sophax.sophaxchat.crypto
 
 import com.google.crypto.tink.subtle.ChaCha20Poly1305
 import com.google.crypto.tink.subtle.Hkdf
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -40,6 +43,17 @@ data class RatchetSessionState(
     var nextReceivingHeaderKey: ByteArray?,
     // skippedKeyBundles: base64(HKr) → msgNumStr → messageKey
     var skippedKeyBundles: MutableMap<String, MutableMap<String, ByteArray>> = mutableMapOf()
+)
+
+// ---------------------------------------------------------------------------
+// Serializable helper for ratchet header JSON (avoids fragile substringAfter)
+// ---------------------------------------------------------------------------
+
+@Serializable
+private data class RatchetHeaderJson(
+    val senderRatchetKey: String,   // Base64-encoded 32 bytes
+    val previousChainLength: Long,
+    val messageNumber: Long
 )
 
 // ---------------------------------------------------------------------------
@@ -276,23 +290,24 @@ class DoubleRatchet(private var state: RatchetSessionState) {
     // -----------------------------------------------------------------------
 
     private fun encryptHeader(header: RatchetHeader, key: ByteArray): ByteArray {
-        val headerJson = """{"senderRatchetKey":"${android.util.Base64.encodeToString(header.senderRatchetKey, android.util.Base64.NO_WRAP)}","previousChainLength":${header.previousChainLength},"messageNumber":${header.messageNumber}}""".toByteArray()
-        return ChaCha20Poly1305(key).encrypt(headerJson, ByteArray(0))
+        val h = RatchetHeaderJson(
+            senderRatchetKey    = android.util.Base64.encodeToString(header.senderRatchetKey, android.util.Base64.NO_WRAP),
+            previousChainLength = header.previousChainLength,
+            messageNumber       = header.messageNumber
+        )
+        return ChaCha20Poly1305(key).encrypt(Json.encodeToString(h).toByteArray(), ByteArray(0))
     }
 
     private fun decryptHeaderBytes(encryptedHeader: ByteArray, key: ByteArray): RatchetHeader? {
         return try {
             val headerJson = ChaCha20Poly1305(key).decrypt(encryptedHeader, ByteArray(0))
-            parseRatchetHeader(String(headerJson))
+            val h = Json.decodeFromString<RatchetHeaderJson>(String(headerJson))
+            RatchetHeader(
+                senderRatchetKey    = android.util.Base64.decode(h.senderRatchetKey, android.util.Base64.NO_WRAP),
+                previousChainLength = h.previousChainLength,
+                messageNumber       = h.messageNumber
+            )
         } catch (e: Exception) { null }
-    }
-
-    private fun parseRatchetHeader(json: String): RatchetHeader {
-        // Minimal JSON parse (no reflection needed for 3-field struct)
-        val keyB64 = json.substringAfter("\"senderRatchetKey\":\"").substringBefore("\"")
-        val pn     = json.substringAfter("\"previousChainLength\":").substringBefore(",").substringBefore("}").trim().toLong()
-        val n      = json.substringAfter("\"messageNumber\":").substringBefore(",").substringBefore("}").trim().toLong()
-        return RatchetHeader(android.util.Base64.decode(keyB64, android.util.Base64.NO_WRAP), pn, n)
     }
 
     // -----------------------------------------------------------------------

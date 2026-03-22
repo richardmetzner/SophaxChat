@@ -6,6 +6,7 @@ import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.sophax.sophaxchat.protocol.PreKeyBundle
+import java.security.SecureRandom
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
@@ -124,7 +125,7 @@ class PreKeyManager(private val identity: IdentityManager, context: Context) {
 
     private fun generateAndSaveSignedPreKey(): DHKeyPair {
         val pair = generateDHKeyPair()
-        val id   = (Math.random() * Long.MAX_VALUE).toLong().coerceAtLeast(1L)
+        val id   = SecureRandom().nextLong().and(Long.MAX_VALUE).coerceAtLeast(1L)
         prefs.edit()
             .putString("spk_private", Base64.encodeToString(pair.privateKeyBytes, Base64.NO_WRAP))
             .putString("spk_public",  Base64.encodeToString(pair.publicKeyBytes,  Base64.NO_WRAP))
@@ -144,7 +145,7 @@ class PreKeyManager(private val identity: IdentityManager, context: Context) {
         val existingIds = loadOtpkIds().toMutableList()
         repeat(count) {
             val pair = generateDHKeyPair()
-            val id   = (Math.random() * Long.MAX_VALUE).toLong().coerceAtLeast(1L)
+            val id   = SecureRandom().nextLong().and(Long.MAX_VALUE).coerceAtLeast(1L)
             prefs.edit()
                 .putString("otpk_${id}_private", Base64.encodeToString(pair.privateKeyBytes, Base64.NO_WRAP))
                 .putString("otpk_${id}_public",  Base64.encodeToString(pair.publicKeyBytes,  Base64.NO_WRAP))

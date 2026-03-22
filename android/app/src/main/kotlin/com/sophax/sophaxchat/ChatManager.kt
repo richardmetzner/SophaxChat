@@ -81,8 +81,8 @@ class ChatManager(
     // Received peer bundles (for initiating X3DH)
     private val peerBundles  = ConcurrentHashMap<String, PreKeyBundle>()
 
-    // Messages queued while waiting for a peer's bundle
-    private val pendingQueue = ConcurrentHashMap<String, ArrayDeque<Pair<WireMessage, String>>>()
+    // Messages queued while waiting for a peer's bundle: Pair(body, messageID)
+    private val pendingQueue = ConcurrentHashMap<String, ArrayDeque<Pair<String, String>>>()
 
     // Nearby endpoint ID → peerID (learned from Hello)
     private val endpointToPeerID = ConcurrentHashMap<String, String>()
@@ -229,9 +229,8 @@ class ChatManager(
 
         // Case 2: initiate X3DH (have bundle, no session)
         val bundle = peerBundles[peerID] ?: run {
-            // No bundle yet — queue message
-            pendingQueue.getOrPut(peerID) { ArrayDeque() }
-                .add(Pair(WireMessage("", ByteArray(0), "", Date(), ByteArray(0)), messageID))
+            // No bundle yet — queue message body until peer's bundle arrives
+            pendingQueue.getOrPut(peerID) { ArrayDeque() }.add(Pair(body, messageID))
             return null
         }
 
@@ -511,9 +510,10 @@ class ChatManager(
             knownPeers[peerID] = knownPeers[peerID]!!.copy(isOnline = true, lastSeen = Date())
         }
 
-        // Drain pending queue
-        pendingQueue.remove(peerID)?.forEach { (_, msgID) ->
-            sendMessage(peerID, "")  // re-send pending (simplified — body lost, just flush)
+        // Drain pending queue — now that we have the bundle, build and send each queued message
+        pendingQueue.remove(peerID)?.forEach { (pendingBody, msgID) ->
+            val wire = buildOutboundWire(peerID, pendingBody, msgID) ?: return@forEach
+            sendOrRoute(wire, peerID)
         }
     }
 
