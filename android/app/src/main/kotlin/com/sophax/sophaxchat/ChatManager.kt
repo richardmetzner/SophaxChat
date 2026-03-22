@@ -746,7 +746,7 @@ class WireMessageBuilder(private val identity: IdentityManager) {
 
     companion object {
         fun verify(message: WireMessage, signingKeyPublic: ByteArray, identity: IdentityManager): Boolean =
-            IdentityManager.verify(message.signingBytes(), message.signature, signingKeyPublic)
+            IdentityManager.verify(message.signature, message.signingBytes(), signingKeyPublic)
     }
 }
 
