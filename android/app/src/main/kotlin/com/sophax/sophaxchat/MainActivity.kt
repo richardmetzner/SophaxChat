@@ -16,6 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.sophax.sophaxchat.ui.AppLockScreen
+import com.sophax.sophaxchat.ui.SafetyNumberScreen
 import com.sophax.sophaxchat.ui.chat.ChatListScreen
 import com.sophax.sophaxchat.ui.chat.ChatScreen
 import com.sophax.sophaxchat.ui.chat.CreateGroupScreen
@@ -116,17 +117,18 @@ private fun AppNavigation(appState: AppState) {
             val typingPeers by appState.typingPeers.collectAsState()
 
             ChatScreen(
-                peerUsername    = peer?.username ?: peerID,
-                peerOnline      = peer?.isOnline ?: false,
-                messages        = msgs,
-                peerID          = peerID,
-                onSend          = { body -> appState.sendMessage(peerID, body) },
-                onBack          = { navController.popBackStack() },
-                onMarkRead      = { appState.markAsRead(peerID) },
-                isTyping        = peerID in typingPeers,
-                onTyping        = { appState.sendTyping(peerID) },
-                onDeleteMessage = { msgID -> appState.deleteMessage(msgID, peerID) },
-                onBlockPeer     = { appState.blockPeer(it) }
+                peerUsername      = peer?.username ?: peerID,
+                peerOnline        = peer?.isOnline ?: false,
+                messages          = msgs,
+                peerID            = peerID,
+                onSend            = { body -> appState.sendMessage(peerID, body) },
+                onBack            = { navController.popBackStack() },
+                onMarkRead        = { appState.markAsRead(peerID) },
+                isTyping          = peerID in typingPeers,
+                onTyping          = { appState.sendTyping(peerID) },
+                onDeleteMessage   = { msgID -> appState.deleteMessage(msgID, peerID) },
+                onBlockPeer       = { appState.blockPeer(it) },
+                onSafetyNumber    = { navController.navigate("safety_number/$peerID") }
             )
         }
 
@@ -157,6 +159,17 @@ private fun AppNavigation(appState: AppState) {
             SettingsScreen(
                 appState = appState,
                 onBack   = { navController.popBackStack() }
+            )
+        }
+
+        composable("safety_number/{peerID}") { backStack ->
+            val peerID       = backStack.arguments?.getString("peerID") ?: return@composable
+            val peer         = peers.firstOrNull { it.id == peerID }
+            val safetyNumber = appState.safetyNumber(peerID) ?: ""
+            SafetyNumberScreen(
+                peerUsername = peer?.username ?: peerID,
+                safetyNumber = safetyNumber,
+                onBack       = { navController.popBackStack() }
             )
         }
     }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,7 +46,8 @@ fun ChatScreen(
     isTyping: Boolean = false,
     onTyping: () -> Unit = {},
     onDeleteMessage: (messageID: String) -> Unit = {},
-    onBlockPeer: (peerID: String) -> Unit = {}
+    onBlockPeer: (peerID: String) -> Unit = {},
+    onSafetyNumber: () -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     var replyTo   by remember { mutableStateOf<StoredMessage?>(null) }
@@ -91,6 +93,11 @@ fun ChatScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onSafetyNumber) {
+                        Icon(Icons.Default.VerifiedUser, contentDescription = "Safety Number")
                     }
                 }
             )
