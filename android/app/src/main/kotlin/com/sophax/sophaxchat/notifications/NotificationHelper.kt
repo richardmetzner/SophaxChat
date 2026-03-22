@@ -35,7 +35,7 @@ object NotificationHelper {
             putExtra("conversationID", conversationID)
         }
         val pending = PendingIntent.getActivity(
-            context, messageID.hashCode(), intent,
+            context, messageID.hashCode().and(0x7FFFFFFF), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -49,16 +49,16 @@ object NotificationHelper {
             .build()
 
         context.getSystemService(NotificationManager::class.java)
-            .notify(messageID.hashCode(), notification)
+            .notify(messageID.hashCode().and(0x7FFFFFFF), notification)
     }
 
     fun cancelMessage(context: Context, messageID: String) {
         context.getSystemService(NotificationManager::class.java)
-            .cancel(messageID.hashCode())
+            .cancel(messageID.hashCode().and(0x7FFFFFFF))
     }
 
     fun cancelConversation(context: Context, messageIDs: List<String>) {
         val mgr = context.getSystemService(NotificationManager::class.java)
-        messageIDs.forEach { mgr.cancel(it.hashCode()) }
+        messageIDs.forEach { mgr.cancel(it.hashCode().and(0x7FFFFFFF)) }
     }
 }

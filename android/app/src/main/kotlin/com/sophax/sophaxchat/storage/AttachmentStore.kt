@@ -39,6 +39,7 @@ class AttachmentStore(context: Context) {
     // -----------------------------------------------------------------------
 
     fun save(data: ByteArray, id: String) {
+        require(data.size <= MAX_BYTES) { "attachment too large: ${data.size} bytes (max $MAX_BYTES)" }
         val file = fileFor(id)
         val tmp  = File(baseDir, "$id.tmp")
         tmp.writeBytes(encrypt(data))

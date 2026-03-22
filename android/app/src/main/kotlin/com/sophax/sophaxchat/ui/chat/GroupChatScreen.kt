@@ -126,7 +126,7 @@ fun GroupChatScreen(
                 onSend = {
                     if (inputText.isNotBlank()) {
                         val body = if (replyTo != null)
-                            "> ${replyTo!!.body.take(60)}\n${inputText.trim()}"
+                            "> ${replyTo!!.body.take(60).replace("\n", " ")}\n${inputText.trim()}"
                         else inputText.trim()
                         appState.sendGroupMessage(body, group)
                         inputText = ""
