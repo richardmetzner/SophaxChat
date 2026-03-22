@@ -1,8 +1,5 @@
 package com.sophax.sophaxchat.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -13,7 +10,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,13 +47,17 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var replyTo   by remember { mutableStateOf<StoredMessage?>(null) }
     val listState = rememberLazyListState()
+    var prevSize  by remember { mutableIntStateOf(0) }
 
     // Mark all messages read when this screen opens
     LaunchedEffect(Unit) { onMarkRead() }
 
-    // Scroll to bottom on new messages
+    // Scroll to bottom only on new messages (not on deletions)
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
+        if (messages.size > prevSize && messages.isNotEmpty()) {
+            listState.scrollToItem(messages.size - 1)
+        }
+        prevSize = messages.size
     }
 
     // Send typing event when user is typing (debounced 500ms)
@@ -85,7 +84,8 @@ fun ChatScreen(
                             Text(
                                 if (peerOnline) "Online" else "Offline",
                                 fontSize = 12.sp,
-                                color = if (peerOnline) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                color = if (peerOnline) Color(0xFF34C759)
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )
                         }
                     }
@@ -103,7 +103,7 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            InputBar(
+            SharedInputBar(
                 text    = inputText,
                 replyTo = replyTo,
                 onClearReply  = { replyTo = null },
@@ -151,7 +151,6 @@ private fun MessageBubble(
     onReply: () -> Unit = {}
 ) {
     val isSent = message.direction == MessageDirection.sent.name
-    val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
 
     Row(
@@ -189,30 +188,14 @@ private fun MessageBubble(
                         lineHeight = 22.sp
                     )
                 }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Reply") },
-                        onClick = { showMenu = false; onReply() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            showMenu = false
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("message", message.body))
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        onClick = { showMenu = false; onDelete() }
-                    )
-                    if (onBlock != null) {
-                        DropdownMenuItem(
-                            text = { Text("Block Sender") },
-                            onClick = { showMenu = false; onBlock() }
-                        )
-                    }
-                }
+                MessageContextMenu(
+                    expanded  = showMenu,
+                    onDismiss = { showMenu = false },
+                    body      = message.body,
+                    onReply   = onReply,
+                    onDelete  = onDelete,
+                    onBlock   = onBlock
+                )
             }
 
             Spacer(Modifier.height(2.dp))
@@ -239,81 +222,6 @@ private fun MessageBubble(
                             MessageStatus.read.name -> Color(0xFF007AFF)
                             else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InputBar(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onSend: () -> Unit,
-    replyTo: StoredMessage? = null,
-    onClearReply: () -> Unit = {}
-) {
-    Surface(
-        tonalElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            if (replyTo != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "↩ ${replyTo.body.take(60)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onClearReply, modifier = Modifier.size(24.dp)) {
-                        Icon(
-                            androidx.compose.material.icons.Icons.Default.Close,
-                            contentDescription = "Clear reply",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-            Row(verticalAlignment = Alignment.Bottom) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    placeholder = { Text("Message") },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 5
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = onSend,
-                    enabled = text.isNotBlank(),
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(
-                            if (text.isNotBlank()) Color(0xFF007AFF)
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = if (text.isNotBlank()) Color.White
-                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                     )
                 }
             }

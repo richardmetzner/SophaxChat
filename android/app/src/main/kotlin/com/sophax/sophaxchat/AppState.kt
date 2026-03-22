@@ -1,8 +1,9 @@
 package com.sophax.sophaxchat
 
+import android.app.Application
 import android.content.Context
 import android.net.Uri
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.crypto.IdentityManager
 import com.sophax.sophaxchat.crypto.PreKeyManager
@@ -14,13 +15,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class AppState(private val context: Context) : ViewModel() {
+class AppState(application: Application) : AndroidViewModel(application) {
 
     // -----------------------------------------------------------------------
     // Setup
     // -----------------------------------------------------------------------
 
-    private val prefs = context.getSharedPreferences("sophaxchat_prefs", Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences("sophaxchat_prefs", Context.MODE_PRIVATE)
 
     private val _isSetupComplete = MutableStateFlow(prefs.getBoolean("setup_complete", false))
     val isSetupComplete: StateFlow<Boolean> = _isSetupComplete.asStateFlow()
@@ -29,8 +30,8 @@ class AppState(private val context: Context) : ViewModel() {
     // Core objects
     // -----------------------------------------------------------------------
 
-    val identity     = IdentityManager(context)
-    val messageStore = MessageStore(context)
+    val identity     = IdentityManager(application)
+    val messageStore = MessageStore(application)
 
     private var _chatManager: ChatManager? = null
     val chatManager: ChatManager? get() = _chatManager
@@ -74,7 +75,7 @@ class AppState(private val context: Context) : ViewModel() {
 
     fun markAsRead(conversationID: String) {
         messageStore.markAllRead(conversationID)
-        _unreadCounts.value = _unreadCounts.value.toMutableMap().also { it.remove(conversationID) }
+        _unreadCounts.value = _unreadCounts.value - conversationID
     }
 
     // Deep link confirmation
@@ -137,11 +138,29 @@ class AppState(private val context: Context) : ViewModel() {
     }
 
     // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    private fun updateMessages(conversationID: String, msgs: List<StoredMessage>) {
+        _messages.value = _messages.value + (conversationID to msgs)
+    }
+
+    private fun incrementUnread(conversationID: String) {
+        _unreadCounts.value = _unreadCounts.value +
+            (conversationID to (_unreadCounts.value[conversationID] ?: 0) + 1)
+    }
+
+    private fun parseSocksProxy(proxy: String, block: (host: String, port: Int) -> Unit) {
+        val parts = proxy.split(":")
+        if (parts.size == 2) block(parts[0], parts[1].toIntOrNull() ?: 9050)
+    }
+
+    // -----------------------------------------------------------------------
     // Notifications
     // -----------------------------------------------------------------------
 
     init {
-        NotificationHelper.createChannel(context)
+        NotificationHelper.createChannel(getApplication())
     }
 
     // -----------------------------------------------------------------------
@@ -166,17 +185,15 @@ class AppState(private val context: Context) : ViewModel() {
     }
 
     private fun startChatManager() {
-        val preKeys = PreKeyManager(identity, context)
-        val mgr = ChatManager(context, identity, preKeys, messageStore)
+        val app = getApplication<Application>()
+        val preKeys = PreKeyManager(identity, app)
+        val mgr = ChatManager(app, identity, preKeys, messageStore)
 
         // Apply TCP settings
         if (_tcpEnabled.value) {
             val proxy = _socksProxy.value
             if (proxy.isNotEmpty()) {
-                val parts = proxy.split(":")
-                if (parts.size == 2) {
-                    mgr.tcp.setSocksProxy(parts[0], parts[1].toIntOrNull() ?: 9050)
-                }
+                parseSocksProxy(proxy) { host, port -> mgr.tcp.setSocksProxy(host, port) }
             }
         }
 
@@ -188,16 +205,12 @@ class AppState(private val context: Context) : ViewModel() {
                 _peers.value = mgr.knownPeersList()
             }
             override fun didReceiveMessage(message: StoredMessage, fromPeerID: String) {
-                _messages.value = _messages.value.toMutableMap().also {
-                    it[fromPeerID] = mgr.messages(fromPeerID)
-                }
-                _unreadCounts.value = _unreadCounts.value.toMutableMap().also {
-                    it[fromPeerID] = (it[fromPeerID] ?: 0) + 1
-                }
+                updateMessages(fromPeerID, (_messages.value[fromPeerID] ?: emptyList()) + message)
+                incrementUnread(fromPeerID)
                 val senderName = _peers.value.firstOrNull { it.id == fromPeerID }?.username
                     ?: fromPeerID.take(8)
                 NotificationHelper.showMessage(
-                    context,
+                    getApplication(),
                     title = senderName,
                     body = message.body,
                     conversationID = fromPeerID,
@@ -205,17 +218,16 @@ class AppState(private val context: Context) : ViewModel() {
                 )
             }
             override fun didReceiveGroupMessage(message: StoredMessage, group: GroupInfo) {
-                _messages.value = _messages.value.toMutableMap().also {
-                    it[group.conversationID] = messageStore.loadMessages(group.conversationID)
-                }
+                updateMessages(
+                    group.conversationID,
+                    (_messages.value[group.conversationID] ?: emptyList()) + message
+                )
                 _groups.value = mgr.groupsList()
-                _unreadCounts.value = _unreadCounts.value.toMutableMap().also {
-                    it[group.conversationID] = (it[group.conversationID] ?: 0) + 1
-                }
+                incrementUnread(group.conversationID)
                 val senderName = _peers.value.firstOrNull { it.id == message.peerID }?.username
                     ?: message.peerID.take(8)
                 NotificationHelper.showMessage(
-                    context,
+                    getApplication(),
                     title = group.name,
                     body = "$senderName: ${message.body}",
                     conversationID = group.conversationID,
@@ -223,9 +235,8 @@ class AppState(private val context: Context) : ViewModel() {
                 )
             }
             override fun messageDelivered(messageID: String, toPeerID: String) {
-                _messages.value = _messages.value.toMutableMap().also {
-                    it[toPeerID] = mgr.messages(toPeerID)
-                }
+                // Status written to disk by store — reload to pick up updated status
+                updateMessages(toPeerID, mgr.messages(toPeerID))
             }
             override fun didEncounterError(error: Exception) {
                 _errorMessage.value = error.message
@@ -256,21 +267,20 @@ class AppState(private val context: Context) : ViewModel() {
 
     fun deleteMessage(messageID: String, conversationID: String) {
         messageStore.deleteMessage(messageID, conversationID)
-        _messages.value = _messages.value.toMutableMap().also {
-            it[conversationID] = messageStore.loadMessages(conversationID)
-        }
+        updateMessages(
+            conversationID,
+            (_messages.value[conversationID] ?: emptyList()).filter { it.id != messageID }
+        )
     }
 
     fun sendMessage(toPeerID: String, body: String) {
         _chatManager?.sendMessage(toPeerID, body)
-        _messages.value = _messages.value.toMutableMap().also {
-            it[toPeerID] = messageStore.loadMessages(toPeerID)
-        }
+        updateMessages(toPeerID, messageStore.loadMessages(toPeerID))
     }
 
     fun messagesFor(conversationID: String): List<StoredMessage> =
         _messages.value[conversationID] ?: messageStore.loadMessages(conversationID).also { msgs ->
-            _messages.value = _messages.value.toMutableMap().also { it[conversationID] = msgs }
+            updateMessages(conversationID, msgs)
         }
 
     // -----------------------------------------------------------------------
@@ -285,9 +295,7 @@ class AppState(private val context: Context) : ViewModel() {
 
     fun sendGroupMessage(body: String, group: GroupInfo) {
         _chatManager?.sendGroupMessage(body, group)
-        _messages.value = _messages.value.toMutableMap().also {
-            it[group.conversationID] = messageStore.loadMessages(group.conversationID)
-        }
+        updateMessages(group.conversationID, messageStore.loadMessages(group.conversationID))
     }
 
     fun leaveGroup(group: GroupInfo) {
@@ -319,10 +327,7 @@ class AppState(private val context: Context) : ViewModel() {
     fun setSocksProxy(proxy: String) {
         prefs.edit().putString("socks_proxy", proxy).apply()
         _socksProxy.value = proxy
-        val parts = proxy.split(":")
-        if (parts.size == 2) {
-            _chatManager?.tcp?.setSocksProxy(parts[0], parts[1].toIntOrNull() ?: 9050)
-        }
+        parseSocksProxy(proxy) { host, port -> _chatManager?.tcp?.setSocksProxy(host, port) }
     }
 
     fun blockPeer(peerID: String) {
@@ -343,6 +348,7 @@ class AppState(private val context: Context) : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
+        mainHandler.removeCallbacksAndMessages(null)
         _chatManager?.stop()
     }
 }

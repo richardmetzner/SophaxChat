@@ -1,8 +1,5 @@
 package com.sophax.sophaxchat.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -14,14 +11,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,34 +32,53 @@ fun GroupChatScreen(
     group: GroupInfo,
     onBack: () -> Unit
 ) {
-    val messages    by remember(group.id) {
-        derivedStateOf { appState.messagesFor(group.conversationID) }
-    }
+    // Populate cache from disk on first open
+    LaunchedEffect(group.conversationID) { appState.messagesFor(group.conversationID) }
+
+    val allMessages by appState.messages.collectAsState()
+    val messages    = allMessages[group.conversationID] ?: emptyList()
+
     val peers       by appState.peers.collectAsState()
     val typingPeers by appState.typingPeers.collectAsState()
-    val typingNames = typingPeers
-        .filter { it in group.memberIDs }
-        .mapNotNull { id -> peers.firstOrNull { it.id == id }?.username }
 
-    var inputText     by remember { mutableStateOf("") }
-    var replyTo       by remember { mutableStateOf<StoredMessage?>(null) }
+    // Pre-index peers for O(1) lookup instead of O(n) scan per item
+    val peerIndex = remember(peers) { peers.associateBy { it.id } }
+
+    // O(1) membership check for typing filter
+    val memberIDSet = remember(group.id, group.memberIDs) { group.memberIDs.toHashSet() }
+
+    val typingNames = typingPeers
+        .filter { it in memberIDSet }
+        .mapNotNull { id -> peerIndex[id]?.username }
+
+    // Stable recipient list — only recomputed when group membership changes
+    val typingRecipients = remember(group.memberIDs, appState.myPeerID) {
+        group.memberIDs.filter { it != appState.myPeerID }
+    }
+
+    var inputText       by remember { mutableStateOf("") }
+    var replyTo         by remember { mutableStateOf<StoredMessage?>(null) }
     var showMemberSheet by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+    val listState  = rememberLazyListState()
+    var prevSize   by remember { mutableIntStateOf(0) }
 
     // Mark all messages read when this screen opens
     LaunchedEffect(Unit) { appState.markAsRead(group.conversationID) }
 
-    // Send typing to each group member
+    // Send typing to each group member (debounced 500ms)
     LaunchedEffect(inputText) {
         if (inputText.isNotEmpty()) {
             kotlinx.coroutines.delay(500)
-            group.memberIDs.filter { it != appState.myPeerID }
-                .forEach { appState.sendTyping(it) }
+            typingRecipients.forEach { appState.sendTyping(it) }
         }
     }
 
+    // Scroll to bottom only on new messages (not on deletions)
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
+        if (messages.size > prevSize && messages.isNotEmpty()) {
+            listState.scrollToItem(messages.size - 1)
+        }
+        prevSize = messages.size
     }
 
     Scaffold(
@@ -101,11 +115,14 @@ fun GroupChatScreen(
             )
         },
         bottomBar = {
-            GroupInputBar(
+            SharedInputBar(
                 text         = inputText,
                 replyTo      = replyTo,
                 onClearReply = { replyTo = null },
                 onTextChange = { inputText = it },
+                placeholder  = "Message group…",
+                maxLines     = 4,
+                tonalElevation = 2.dp,
                 onSend = {
                     if (inputText.isNotBlank()) {
                         val body = if (replyTo != null)
@@ -130,7 +147,7 @@ fun GroupChatScreen(
                 val senderName = if (msg.direction == MessageDirection.sent.name) {
                     "You"
                 } else {
-                    peers.firstOrNull { it.id == msg.peerID }?.username ?: msg.peerID.take(8)
+                    peerIndex[msg.peerID]?.username ?: msg.peerID.take(8)
                 }
                 GroupMessageBubble(
                     message    = msg,
@@ -147,8 +164,8 @@ fun GroupChatScreen(
 
     if (showMemberSheet) {
         GroupMemberSheet(
-            group = group,
-            peers = peers.filter { it.id in group.memberIDs },
+            group    = group,
+            peerIndex = peerIndex,
             myPeerID = appState.myPeerID,
             onLeave = {
                 appState.leaveGroup(group)
@@ -169,7 +186,6 @@ private fun GroupMessageBubble(
     onReply: () -> Unit = {}
 ) {
     val isMe = message.direction == MessageDirection.sent.name
-    val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
 
     Row(
@@ -217,93 +233,14 @@ private fun GroupMessageBubble(
                         fontSize = 15.sp
                     )
                 }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Reply") },
-                        onClick = { showMenu = false; onReply() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Copy") },
-                        onClick = {
-                            showMenu = false
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("message", message.body))
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        onClick = { showMenu = false; onDelete() }
-                    )
-                    if (onBlock != null) {
-                        DropdownMenuItem(
-                            text = { Text("Block Sender") },
-                            onClick = { showMenu = false; onBlock() }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GroupInputBar(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onSend: () -> Unit,
-    replyTo: StoredMessage? = null,
-    onClearReply: () -> Unit = {}
-) {
-    Surface(tonalElevation = 2.dp) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            if (replyTo != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "↩ ${replyTo.body.take(60)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = onClearReply, modifier = Modifier.size(24.dp)) {
-                        Icon(
-                            androidx.compose.material.icons.Icons.Default.Close,
-                            contentDescription = "Clear reply",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    placeholder = { Text("Message group…") },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 4
+                MessageContextMenu(
+                    expanded  = showMenu,
+                    onDismiss = { showMenu = false },
+                    body      = message.body,
+                    onReply   = onReply,
+                    onDelete  = onDelete,
+                    onBlock   = onBlock
                 )
-                Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onSend, enabled = text.isNotBlank()) {
-                    Icon(
-                        Icons.Default.Send,
-                        contentDescription = "Send",
-                        tint = if (text.isNotBlank()) Color(0xFF007AFF)
-                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                    )
-                }
             }
         }
     }
@@ -313,7 +250,7 @@ private fun GroupInputBar(
 @Composable
 private fun GroupMemberSheet(
     group: GroupInfo,
-    peers: List<com.sophax.sophaxchat.protocol.KnownPeer>,
+    peerIndex: Map<String, com.sophax.sophaxchat.protocol.KnownPeer>,
     myPeerID: String,
     onLeave: () -> Unit,
     onDismiss: () -> Unit
@@ -335,11 +272,9 @@ private fun GroupMemberSheet(
             Spacer(Modifier.height(16.dp))
 
             group.memberIDs.forEach { memberID ->
-                val peer = peers.firstOrNull { it.id == memberID }
                 val name = when {
                     memberID == myPeerID -> "You"
-                    peer != null -> peer.username
-                    else -> memberID.take(12)
+                    else -> peerIndex[memberID]?.username ?: memberID.take(12)
                 }
                 val isCreator = memberID == group.creatorID
                 Row(

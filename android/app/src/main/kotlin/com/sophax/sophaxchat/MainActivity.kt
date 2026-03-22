@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
@@ -27,12 +28,15 @@ import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 
 class MainActivity : FragmentActivity() {
 
-    private lateinit var appState: AppState
+    private val appState: AppState by viewModels()
+    private var wasBackgrounded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        appState = AppState(applicationContext)
         enableEdgeToEdge()
+
+        // Start chat manager if setup already done (returning user)
+        appState.startIfReady()
 
         // Handle launch-time deep link
         intent.data?.let { appState.handleIncomingLink(it) }
@@ -42,10 +46,6 @@ class MainActivity : FragmentActivity() {
                 val isSetupComplete by appState.isSetupComplete.collectAsState()
                 val isAppLocked     by appState.isAppLocked.collectAsState()
                 val pendingLink     by appState.pendingDeepLink.collectAsState()
-
-                LaunchedEffect(isSetupComplete) {
-                    appState.startIfReady()
-                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (!isSetupComplete) {
@@ -80,10 +80,19 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        wasBackgrounded = true
+    }
+
     override fun onResume() {
         super.onResume()
-        // Lock the app every time it comes to the foreground (if app lock is enabled)
-        appState.lockApp()
+        // Only lock when genuinely returning from background, not when coming back
+        // from the biometric prompt (which also triggers onResume).
+        if (wasBackgrounded) {
+            wasBackgrounded = false
+            appState.lockApp()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -113,8 +122,12 @@ private fun AppNavigation(appState: AppState) {
         composable("chat/{peerID}") { backStack ->
             val peerID      = backStack.arguments?.getString("peerID") ?: return@composable
             val peer        = peers.firstOrNull { it.id == peerID }
-            val msgs        by remember(peerID) { derivedStateOf { appState.messagesFor(peerID) } }
+            val allMessages by appState.messages.collectAsState()
+            val msgs        = allMessages[peerID] ?: emptyList()
             val typingPeers by appState.typingPeers.collectAsState()
+
+            // Populate cache from disk on first open
+            LaunchedEffect(peerID) { appState.messagesFor(peerID) }
 
             ChatScreen(
                 peerUsername      = peer?.username ?: peerID,
