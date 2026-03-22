@@ -334,8 +334,11 @@ final class AppState: ObservableObject {
         saveBlockedPeers()
         // Remove from active peers list — they'll reappear if unblocked and online
         peers.removeAll { $0.id == peerID }
+        let notifIDs = messages[peerID]?.map(\.id) ?? []
         messages.removeValue(forKey: peerID)
         unreadCounts.removeValue(forKey: peerID)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: notifIDs)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: notifIDs)
         savePeers()
     }
 
@@ -535,6 +538,7 @@ final class AppState: ObservableObject {
         chatManager?.stop()
         chatManager = nil          // release all session state and key material from RAM
         isAppLocked = true
+        pendingDeepLink = nil      // dismiss any pending deep-link alert before locking
         // Remove delivered notifications from Notification Center — they remain readable on the
         // lock screen / notification shade even when the app is locked.
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
