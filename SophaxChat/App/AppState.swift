@@ -79,6 +79,8 @@ final class AppState: ObservableObject {
     @Published var isOrbotDetected: Bool = false
     /// Momentarily non-nil after a contact card link is successfully parsed — shown as a toast.
     @Published var lastAddedContactAddress: String? = nil
+    /// Non-nil when a sophaxchat:// link is waiting for user confirmation before connecting.
+    @Published var pendingDeepLink: PendingDeepLink? = nil
 
     /// Username cache for blocked peers (persisted so they're still readable after restart).
     private(set) var blockedPeerNames: [String: String] = [:]
@@ -664,7 +666,16 @@ final class AppState: ObservableObject {
 
     // MARK: - Deep link handling
 
+    /// A parsed contact card link waiting for user confirmation before any TCP connection is made.
+    struct PendingDeepLink: Identifiable {
+        let id = UUID()
+        let peerID: String
+        let address: String   // "host.onion:port"
+        let onionHost: String // display-only
+    }
+
     /// Handles `sophaxchat://add?id=<peerID>&onion=<host>&port=<port>` contact card links.
+    /// Parsing is immediate; connecting requires explicit user confirmation via `confirmDeepLink()`.
     func handleIncomingLink(_ url: URL) {
         guard url.scheme?.lowercased() == "sophaxchat",
               url.host?.lowercased() == "add" else { return }
@@ -676,20 +687,28 @@ final class AppState: ObservableObject {
         let portStr = items.first(where: { $0.name == "port" })?.value ?? "25519"
         let address = "\(onionHost):\(portStr)"
         guard Self.isValidTCPAddress(address) else { return }
+        // Ask the user before making any TCP connection — prevents IP disclosure to attacker-
+        // controlled addresses embedded in crafted sophaxchat:// links.
+        pendingDeepLink = PendingDeepLink(peerID: peerID, address: address, onionHost: onionHost)
+    }
+
+    /// Called when the user taps "Add" in the deep-link confirmation alert.
+    func confirmDeepLink() {
+        guard let pending = pendingDeepLink else { return }
+        pendingDeepLink = nil
         // Store the address on the peer if we already know them, or remember it for later
-        if let idx = peers.firstIndex(where: { $0.id == peerID }) {
-            peers[idx].tcpAddress = address
+        if let idx = peers.firstIndex(where: { $0.id == pending.peerID }) {
+            peers[idx].tcpAddress = pending.address
             savePeers()
         } else {
-            // Store as a pending address keyed by peerID; will be applied when peer connects via mesh
-            UserDefaults.standard.set(address, forKey: "com.sophax.pendingOnion.\(peerID)")
+            UserDefaults.standard.set(pending.address, forKey: "com.sophax.pendingOnion.\(pending.peerID)")
         }
         // Attempt immediate TCP connect if TCP is enabled
         if tcpEnabled {
-            connectViaTCP(address: address)
+            connectViaTCP(address: pending.address)
         }
-        // Show a brief toast so the user knows the card was received
-        lastAddedContactAddress = onionHost
+        // Show a brief toast so the user knows the card was added
+        lastAddedContactAddress = pending.onionHost
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(4))
             lastAddedContactAddress = nil

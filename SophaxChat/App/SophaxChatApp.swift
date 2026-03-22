@@ -155,5 +155,18 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.3), value: appState.isScreenBeingRecorded)
         .animation(.spring(duration: 0.4), value: appState.didTakeScreenshot)
         .animation(.spring(duration: 0.4), value: appState.lastAddedContactAddress)
+        .alert(
+            "Add contact?",
+            isPresented: Binding(
+                get: { appState.pendingDeepLink != nil },
+                set: { if !$0 { appState.pendingDeepLink = nil } }
+            ),
+            presenting: appState.pendingDeepLink
+        ) { pending in
+            Button("Add & Connect") { appState.confirmDeepLink() }
+            Button("Cancel", role: .cancel) { appState.pendingDeepLink = nil }
+        } message: { pending in
+            Text("Connect to \(pending.onionHost)?")
+        }
     }
 }
