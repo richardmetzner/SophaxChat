@@ -48,6 +48,7 @@ fun ChatScreen(
     onBlockPeer: (peerID: String) -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
+    var replyTo   by remember { mutableStateOf<StoredMessage?>(null) }
     val listState = rememberLazyListState()
 
     // Mark all messages read when this screen opens
@@ -96,12 +97,18 @@ fun ChatScreen(
         },
         bottomBar = {
             InputBar(
-                text = inputText,
-                onTextChange = { inputText = it },
+                text    = inputText,
+                replyTo = replyTo,
+                onClearReply  = { replyTo = null },
+                onTextChange  = { inputText = it },
                 onSend = {
                     if (inputText.isNotBlank()) {
-                        onSend(inputText.trim())
+                        val body = if (replyTo != null)
+                            "> ${replyTo!!.body.take(60)}\n${inputText.trim()}"
+                        else inputText.trim()
+                        onSend(body)
                         inputText = ""
+                        replyTo = null
                     }
                 }
             )
@@ -118,9 +125,10 @@ fun ChatScreen(
         ) {
             items(messages, key = { it.id }) { message ->
                 MessageBubble(
-                    message = message,
+                    message  = message,
                     onDelete = { onDeleteMessage(message.id) },
-                    onBlock  = if (!message.isSent) ({ onBlockPeer(message.peerID) }) else null
+                    onBlock  = if (!message.isSent) ({ onBlockPeer(message.peerID) }) else null,
+                    onReply  = { replyTo = message }
                 )
             }
         }
@@ -132,7 +140,8 @@ fun ChatScreen(
 private fun MessageBubble(
     message: StoredMessage,
     onDelete: () -> Unit = {},
-    onBlock: (() -> Unit)? = null
+    onBlock: (() -> Unit)? = null,
+    onReply: () -> Unit = {}
 ) {
     val isSent = message.direction == MessageDirection.sent.name
     val context = LocalContext.current
@@ -174,6 +183,10 @@ private fun MessageBubble(
                     )
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Reply") },
+                        onClick = { showMenu = false; onReply() }
+                    )
                     DropdownMenuItem(
                         text = { Text("Copy") },
                         onClick = {
@@ -227,43 +240,75 @@ private fun MessageBubble(
 }
 
 @Composable
-private fun InputBar(text: String, onTextChange: (String) -> Unit, onSend: () -> Unit) {
+private fun InputBar(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    replyTo: StoredMessage? = null,
+    onClearReply: () -> Unit = {}
+) {
     Surface(
         tonalElevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
+                .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
-                .navigationBarsPadding(),
-            verticalAlignment = Alignment.Bottom
         ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text("Message") },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 5
-            )
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = onSend,
-                enabled = text.isNotBlank(),
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(
-                        if (text.isNotBlank()) Color(0xFF007AFF)
-                        else MaterialTheme.colorScheme.surfaceVariant
+            if (replyTo != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "↩ ${replyTo.body.take(60)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.weight(1f)
                     )
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send",
-                    tint = if (text.isNotBlank()) Color.White
-                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    IconButton(onClick = onClearReply, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Default.Close,
+                            contentDescription = "Clear reply",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    placeholder = { Text("Message") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 5
                 )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = onSend,
+                    enabled = text.isNotBlank(),
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (text.isNotBlank()) Color(0xFF007AFF)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send",
+                        tint = if (text.isNotBlank()) Color.White
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                }
             }
         }
     }

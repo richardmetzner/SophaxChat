@@ -46,7 +46,8 @@ fun GroupChatScreen(
         .filter { it in group.memberIDs }
         .mapNotNull { id -> peers.firstOrNull { it.id == id }?.username }
 
-    var inputText by remember { mutableStateOf("") }
+    var inputText     by remember { mutableStateOf("") }
+    var replyTo       by remember { mutableStateOf<StoredMessage?>(null) }
     var showMemberSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -101,12 +102,18 @@ fun GroupChatScreen(
         },
         bottomBar = {
             GroupInputBar(
-                text = inputText,
+                text         = inputText,
+                replyTo      = replyTo,
+                onClearReply = { replyTo = null },
                 onTextChange = { inputText = it },
                 onSend = {
                     if (inputText.isNotBlank()) {
-                        appState.sendGroupMessage(inputText.trim(), group)
+                        val body = if (replyTo != null)
+                            "> ${replyTo!!.body.take(60)}\n${inputText.trim()}"
+                        else inputText.trim()
+                        appState.sendGroupMessage(body, group)
                         inputText = ""
+                        replyTo = null
                     }
                 }
             )
@@ -131,7 +138,8 @@ fun GroupChatScreen(
                     onDelete   = { appState.deleteMessage(msg.id, group.conversationID) },
                     onBlock    = if (msg.direction != MessageDirection.sent.name) {
                         { appState.blockPeer(msg.peerID) }
-                    } else null
+                    } else null,
+                    onReply    = { replyTo = msg }
                 )
             }
         }
@@ -157,7 +165,8 @@ private fun GroupMessageBubble(
     message: StoredMessage,
     senderName: String,
     onDelete: () -> Unit = {},
-    onBlock: (() -> Unit)? = null
+    onBlock: (() -> Unit)? = null,
+    onReply: () -> Unit = {}
 ) {
     val isMe = message.direction == MessageDirection.sent.name
     val context = LocalContext.current
@@ -210,6 +219,10 @@ private fun GroupMessageBubble(
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(
+                        text = { Text("Reply") },
+                        onClick = { showMenu = false; onReply() }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Copy") },
                         onClick = {
                             showMenu = false
@@ -234,31 +247,63 @@ private fun GroupMessageBubble(
 }
 
 @Composable
-private fun GroupInputBar(text: String, onTextChange: (String) -> Unit, onSend: () -> Unit) {
+private fun GroupInputBar(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onSend: () -> Unit,
+    replyTo: StoredMessage? = null,
+    onClearReply: () -> Unit = {}
+) {
     Surface(tonalElevation = 2.dp) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text("Message group…") },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 4
-            )
-            Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onSend, enabled = text.isNotBlank()) {
-                Icon(
-                    Icons.Default.Send,
-                    contentDescription = "Send",
-                    tint = if (text.isNotBlank()) Color(0xFF007AFF)
-                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            if (replyTo != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "↩ ${replyTo.body.take(60)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onClearReply, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Default.Close,
+                            contentDescription = "Clear reply",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    placeholder = { Text("Message group…") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4
                 )
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onSend, enabled = text.isNotBlank()) {
+                    Icon(
+                        Icons.Default.Send,
+                        contentDescription = "Send",
+                        tint = if (text.isNotBlank()) Color(0xFF007AFF)
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                }
             }
         }
     }
