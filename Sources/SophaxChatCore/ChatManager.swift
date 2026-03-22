@@ -1697,7 +1697,7 @@ public final class ChatManager: @unchecked Sendable {
 
         case .groupMemberLeft:
             let payload = try wireBuilder.decodePayload(GroupMemberLeftMessage.self, from: message)
-            handleGroupMemberLeft(payload)
+            handleGroupMemberLeft(payload, senderID: message.senderID)
 
         case .groupReadReceipt:
             let payload = try wireBuilder.decodePayload(GroupReadReceiptMessage.self, from: message)
@@ -1982,8 +1982,12 @@ extension ChatManager: MeshManagerDelegate {
               let skd     = try? JSONDecoder().decode(SenderKeyDistributionMessage.self, from: skdData)
         else { return }
 
-        var states        = keychain.loadPeerSenderKeyStates(groupID: skd.groupID)
-        states[peerID]    = SenderKeyState(chainKey: skd.chainKey, iteration: skd.iteration)
+        var states = keychain.loadPeerSenderKeyStates(groupID: skd.groupID)
+        // Reject non-monotonic distributions — a peer must never lower their iteration.
+        // An attacker who replays an old SKD or sends iteration=0 would reset the chain
+        // and break decryption for all subsequent group messages (DoS).
+        if let existing = states[peerID], skd.iteration < existing.iteration { return }
+        states[peerID] = SenderKeyState(chainKey: skd.chainKey, iteration: skd.iteration)
         keychainSave("peerSenderKeys:\(skd.groupID)") { try keychain.savePeerSenderKeyStates(states, groupID: skd.groupID) }
     }
 
