@@ -295,7 +295,7 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 | Multihop relay (TTL=6) | ✅ |
 | LRU relay deduplication | ✅ |
 | Offline message queue | ✅ |
-| Rate limiting (10 relays / 10s per peer) | ✅ |
+| Rate limiting (20 relays / 10s per peer + 50 / 10s global cap) | ✅ |
 | Relay hop indicator in UI | ✅ |
 | Typing indicators | ✅ |
 | Store-and-forward via relay peers (48h TTL, 300 items) | ✅ |
@@ -390,6 +390,8 @@ The Android port uses the same wire protocol as iOS. Messages between iOS and An
 **Auto-discovery on the same WiFi:** iOS (Bonjour) and Android (NsdManager) both advertise `_sophaxchat._tcp`. They find each other automatically — no manual pairing, no IP addresses.
 
 **GMS-free:** Works on GrapheneOS, CalyxOS, and any AOSP device. Google Play Services are detected at runtime; if absent, Wi-Fi Direct (`android.net.wifi.p2p.*`) is used instead. No GMS imports in the codebase.
+
+**Feature parity with iOS:** The Android UI matches the iOS app on all key features — App Lock (BiometricPrompt), unread badges, typing indicators, message long-press menu (copy / delete / block / reply), reply-to-message with quoted preview, Safety Number screen, deep link confirmation dialog, and onboarding slides.
 
 See [`android/README.md`](android/README.md) for build instructions and architecture.
 
@@ -513,6 +515,12 @@ See [SECURITY.md § Security Review Findings](SECURITY.md) for full details. Key
 | M-2 | MEDIUM | Sender Key Distribution may arrive after first messages in high-load scenarios |
 | M-3 | MEDIUM | One-time prekey exhaustion window reduces X3DH entropy temporarily |
 | ~~M-4~~ | ~~MEDIUM~~ | ~~Notification previews may expose content on lock screen~~ — **fixed**: `hiddenPreviewsBodyPlaceholder` registered |
+| ~~A-1~~ | ~~MEDIUM~~ | ~~Sender Key Distribution accepts iteration resets (DoS)~~ — **fixed**: monotonicity check rejects backward iteration |
+| ~~A-2~~ | ~~MEDIUM~~ | ~~Inner relay message signature not verified~~ — **fixed**: Ed25519 verification at relay dispatch entry |
+| ~~A-3~~ | ~~LOW~~ | ~~Global relay rate limit missing~~ — **fixed**: 50-relay / 10s global cap across all senders |
+| ~~A-4~~ | ~~LOW~~ | ~~TCP connections held indefinitely on slow peers~~ — **fixed**: 120s idle timeout per connection, reset on each frame |
+| ~~A-5~~ | ~~LOW~~ | ~~Deep link triggers immediate TCP connect~~ — **fixed**: confirmation dialog required on both iOS and Android |
+| ~~A-6~~ | ~~LOW~~ | ~~App Lock leaves notifications visible~~ — **fixed**: `removeAllDeliveredNotifications()` on lock |
 
 ### Responsible Disclosure
 
@@ -582,6 +590,11 @@ Do not open public issues for security bugs.
 - [x] Local AI assistant — `AIAssistantView` powered by Apple Foundation Models (`LanguageModelSession`, iOS 26+). Runs entirely on-device; no server, no API key, no data leaves the phone. Graceful fallback on unsupported devices.
 - [x] Message draft persistence — `messageText` saved to `UserDefaults` per peer/group on view disappear, restored on appear.
 - [x] Haptic feedback — `UIImpactFeedbackGenerator(.light)` on message send.
+
+### Completed (continued)
+
+- [x] Security Audit II — six findings resolved: SKD monotonicity, relay inner-message signature, global relay rate limit (50/10s), TCP 120s idle timeout, deep link confirmation gate, app lock notification clear
+- [x] Android feature parity — App Lock (BiometricPrompt), unread badges, typing indicators, long-press menu (copy / delete / block / reply), reply-to-message, Safety Number screen, deep link confirmation, onboarding backup + verification slides
 
 ### Seeking external support
 
