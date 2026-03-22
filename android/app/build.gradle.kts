@@ -73,5 +73,8 @@ dependencies {
     // Nearby Connections (local P2P mesh)
     implementation(libs.play.services.nearby)
 
+    // Biometric authentication (App Lock)
+    implementation(libs.androidx.biometric)
+
     debugImplementation(libs.androidx.ui.tooling)
 }

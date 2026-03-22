@@ -1,13 +1,17 @@
 package com.sophax.sophaxchat
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.sophax.sophaxchat.ui.AppLockScreen
 import com.sophax.sophaxchat.ui.chat.ChatListScreen
 import com.sophax.sophaxchat.ui.chat.ChatScreen
 import com.sophax.sophaxchat.ui.chat.CreateGroupScreen
@@ -16,29 +20,45 @@ import com.sophax.sophaxchat.ui.onboarding.OnboardingScreen
 import com.sophax.sophaxchat.ui.settings.SettingsScreen
 import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    private lateinit var appState: AppState
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appState = AppState(applicationContext)
         enableEdgeToEdge()
         setContent {
             SophaxChatTheme {
-                val appState = remember { AppState(applicationContext) }
                 val isSetupComplete by appState.isSetupComplete.collectAsState()
+                val isAppLocked     by appState.isAppLocked.collectAsState()
 
                 LaunchedEffect(isSetupComplete) {
                     appState.startIfReady()
                 }
 
-                if (!isSetupComplete) {
-                    OnboardingScreen(onComplete = { username ->
-                        appState.createIdentity(username)
-                    })
-                } else {
-                    AppNavigation(appState)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!isSetupComplete) {
+                        OnboardingScreen(onComplete = { username ->
+                            appState.createIdentity(username)
+                        })
+                    } else {
+                        AppNavigation(appState)
+                    }
+
+                    // App Lock overlay — rendered on top of everything when locked
+                    if (isAppLocked) {
+                        AppLockScreen(onUnlocked = { appState.unlockApp() })
+                    }
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Lock the app every time it comes to the foreground (if app lock is enabled)
+        appState.lockApp()
     }
 }
 

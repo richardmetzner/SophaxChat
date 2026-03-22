@@ -94,6 +94,36 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit) {
             HorizontalDivider()
 
             // ----------------------------------------------------------------
+            // Security
+            // ----------------------------------------------------------------
+            SectionLabel("Security")
+
+            var appLockEnabled by remember { mutableStateOf(appState.appLockEnabled) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("App Lock", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Require biometrics or PIN on open",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = appLockEnabled,
+                    onCheckedChange = {
+                        appLockEnabled = it
+                        appState.setAppLockEnabled(it)
+                    }
+                )
+            }
+
+            HorizontalDivider()
+
+            // ----------------------------------------------------------------
             // Blocked users
             // ----------------------------------------------------------------
             SectionLabel("Blocked Users")

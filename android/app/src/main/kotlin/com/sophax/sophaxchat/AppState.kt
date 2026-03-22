@@ -67,6 +67,29 @@ class AppState(private val context: Context) : ViewModel() {
     )
     val blockedPeers: StateFlow<List<String>> = _blockedPeers.asStateFlow()
 
+    // App Lock
+    private val _isAppLocked = MutableStateFlow(false)
+    val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
+
+    val appLockEnabled: Boolean
+        get() = prefs.getBoolean("app_lock_enabled", false)
+
+    fun lockApp() {
+        if (!appLockEnabled) return
+        _chatManager?.stop()
+        _chatManager = null
+        _isAppLocked.value = true
+    }
+
+    fun unlockApp() {
+        _isAppLocked.value = false
+        startIfReady()
+    }
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("app_lock_enabled", enabled).apply()
+    }
+
     // -----------------------------------------------------------------------
     // Notifications
     // -----------------------------------------------------------------------
