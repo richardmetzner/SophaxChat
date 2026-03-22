@@ -225,6 +225,13 @@ class AppState(private val context: Context) : ViewModel() {
     // 1:1 message helpers
     // -----------------------------------------------------------------------
 
+    fun deleteMessage(messageID: String, conversationID: String) {
+        messageStore.deleteMessage(messageID, conversationID)
+        _messages.value = _messages.value.toMutableMap().also {
+            it[conversationID] = messageStore.loadMessages(conversationID)
+        }
+    }
+
     fun sendMessage(toPeerID: String, body: String) {
         _chatManager?.sendMessage(toPeerID, body)
         _messages.value = _messages.value.toMutableMap().also {

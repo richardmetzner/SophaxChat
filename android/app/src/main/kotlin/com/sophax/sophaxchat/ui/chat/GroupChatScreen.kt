@@ -1,6 +1,11 @@
 package com.sophax.sophaxchat.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,7 +125,14 @@ fun GroupChatScreen(
                 } else {
                     peers.firstOrNull { it.id == msg.peerID }?.username ?: msg.peerID.take(8)
                 }
-                GroupMessageBubble(message = msg, senderName = senderName)
+                GroupMessageBubble(
+                    message    = msg,
+                    senderName = senderName,
+                    onDelete   = { appState.deleteMessage(msg.id, group.conversationID) },
+                    onBlock    = if (msg.direction != MessageDirection.sent.name) {
+                        { appState.blockPeer(msg.peerID) }
+                    } else null
+                )
             }
         }
     }
@@ -138,9 +151,18 @@ fun GroupChatScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GroupMessageBubble(message: StoredMessage, senderName: String) {
+private fun GroupMessageBubble(
+    message: StoredMessage,
+    senderName: String,
+    onDelete: () -> Unit = {},
+    onBlock: (() -> Unit)? = null
+) {
     val isMe = message.direction == MessageDirection.sent.name
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -160,26 +182,52 @@ private fun GroupMessageBubble(message: StoredMessage, senderName: String) {
                     modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
                 )
             }
-            Box(
-                modifier = Modifier
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 16.dp, topEnd = 16.dp,
-                            bottomStart = if (isMe) 16.dp else 4.dp,
-                            bottomEnd = if (isMe) 4.dp else 16.dp
+            Box {
+                Box(
+                    modifier = Modifier
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 16.dp, topEnd = 16.dp,
+                                bottomStart = if (isMe) 16.dp else 4.dp,
+                                bottomEnd = if (isMe) 4.dp else 16.dp
+                            )
                         )
+                        .background(
+                            if (isMe) Color(0xFF007AFF)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true }
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        message.body,
+                        color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 15.sp
                     )
-                    .background(
-                        if (isMe) Color(0xFF007AFF)
-                        else MaterialTheme.colorScheme.surfaceVariant
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Copy") },
+                        onClick = {
+                            showMenu = false
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("message", message.body))
+                        }
                     )
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    message.body,
-                    color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 15.sp
-                )
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = { showMenu = false; onDelete() }
+                    )
+                    if (onBlock != null) {
+                        DropdownMenuItem(
+                            text = { Text("Block Sender") },
+                            onClick = { showMenu = false; onBlock() }
+                        )
+                    }
+                }
             }
         }
     }

@@ -1,6 +1,11 @@
 package com.sophax.sophaxchat.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,11 +38,14 @@ fun ChatScreen(
     peerUsername: String,
     peerOnline: Boolean,
     messages: List<StoredMessage>,
+    peerID: String = "",
     onSend: (String) -> Unit,
     onBack: () -> Unit,
     onMarkRead: () -> Unit = {},
     isTyping: Boolean = false,
-    onTyping: () -> Unit = {}
+    onTyping: () -> Unit = {},
+    onDeleteMessage: (messageID: String) -> Unit = {},
+    onBlockPeer: (peerID: String) -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -108,15 +117,27 @@ fun ChatScreen(
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             items(messages, key = { it.id }) { message ->
-                MessageBubble(message)
+                MessageBubble(
+                    message = message,
+                    onDelete = { onDeleteMessage(message.id) },
+                    onBlock  = if (!message.isSent) ({ onBlockPeer(message.peerID) }) else null
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: StoredMessage) {
+private fun MessageBubble(
+    message: StoredMessage,
+    onDelete: () -> Unit = {},
+    onBlock: (() -> Unit)? = null
+) {
     val isSent = message.direction == MessageDirection.sent.name
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start
@@ -125,27 +146,53 @@ private fun MessageBubble(message: StoredMessage) {
             horizontalAlignment = if (isSent) Alignment.End else Alignment.Start,
             modifier = Modifier.widthIn(max = 280.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 18.dp, topEnd = 18.dp,
-                            bottomStart = if (isSent) 18.dp else 4.dp,
-                            bottomEnd   = if (isSent) 4.dp else 18.dp
+            Box {
+                Box(
+                    modifier = Modifier
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 18.dp, topEnd = 18.dp,
+                                bottomStart = if (isSent) 18.dp else 4.dp,
+                                bottomEnd   = if (isSent) 4.dp else 18.dp
+                            )
                         )
+                        .background(
+                            if (isSent) Color(0xFF007AFF)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true }
+                        )
+                        .padding(horizontal = 14.dp, vertical = 9.dp)
+                ) {
+                    Text(
+                        text  = message.body,
+                        color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 16.sp,
+                        lineHeight = 22.sp
                     )
-                    .background(
-                        if (isSent) Color(0xFF007AFF)
-                        else MaterialTheme.colorScheme.surfaceVariant
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Copy") },
+                        onClick = {
+                            showMenu = false
+                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("message", message.body))
+                        }
                     )
-                    .padding(horizontal = 14.dp, vertical = 9.dp)
-            ) {
-                Text(
-                    text  = message.body,
-                    color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    lineHeight = 22.sp
-                )
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = { showMenu = false; onDelete() }
+                    )
+                    if (onBlock != null) {
+                        DropdownMenuItem(
+                            text = { Text("Block Sender") },
+                            onClick = { showMenu = false; onBlock() }
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(2.dp))

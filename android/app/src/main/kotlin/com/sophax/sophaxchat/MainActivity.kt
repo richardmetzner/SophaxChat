@@ -87,14 +87,17 @@ private fun AppNavigation(appState: AppState) {
             val typingPeers by appState.typingPeers.collectAsState()
 
             ChatScreen(
-                peerUsername = peer?.username ?: peerID,
-                peerOnline   = peer?.isOnline ?: false,
-                messages     = msgs,
-                onSend       = { body -> appState.sendMessage(peerID, body) },
-                onBack       = { navController.popBackStack() },
-                onMarkRead   = { appState.markAsRead(peerID) },
-                isTyping     = peerID in typingPeers,
-                onTyping     = { appState.sendTyping(peerID) }
+                peerUsername    = peer?.username ?: peerID,
+                peerOnline      = peer?.isOnline ?: false,
+                messages        = msgs,
+                peerID          = peerID,
+                onSend          = { body -> appState.sendMessage(peerID, body) },
+                onBack          = { navController.popBackStack() },
+                onMarkRead      = { appState.markAsRead(peerID) },
+                isTyping        = peerID in typingPeers,
+                onTyping        = { appState.sendTyping(peerID) },
+                onDeleteMessage = { msgID -> appState.deleteMessage(msgID, peerID) },
+                onBlockPeer     = { appState.blockPeer(it) }
             )
         }
 
