@@ -36,6 +36,10 @@ private val pages = listOf(
         "Open the app on the same WiFi or Bluetooth range. Nearby devices appear instantly."),
     OnboardingPage("🌐", Color(0xFFFF9500), "Chat globally",
         "Enable Tor in Settings to reach anyone in the world — no phone number, no VPN."),
+    OnboardingPage("⚠️", Color(0xFFFF9500), "Your keys, your device",
+        "Your identity and messages are stored only on this device. No backup exists — if you lose your phone, your history cannot be recovered."),
+    OnboardingPage("🛡️", Color(0xFF34C759), "Verify your contacts",
+        "Always compare Safety Numbers with people you trust. Tap the shield icon in any conversation to confirm you're talking to the right person."),
     OnboardingPage("👤", Color(0xFF007AFF), "Choose your name",
         "")
 )
