@@ -1640,6 +1640,20 @@ public final class ChatManager: @unchecked Sendable {
 
     /// Dispatch a WireMessage that arrived via the relay system.
     private func processRelayedInnerMessage(_ message: WireMessage, hopCount: UInt8) throws {
+        // .hello and .initiateSession are self-authenticating — the signing key is embedded
+        // in the payload itself (PreKeyBundle / senderBundle). All other message types must
+        // come from a known peer whose key we have already verified.
+        //
+        // Without this check, a known relay peer could forward messages on behalf of an
+        // unknown third party: the outer relay message passes the knownPeers guard in
+        // handleIncomingMessage(), but the inner senderID could be anyone — allowing
+        // unauthenticated reactions, read receipts, and group messages to reach the UI.
+        if message.type != .hello && message.type != .initiateSession {
+            guard let peer = knownPeers[message.senderID],
+                  (try? WireMessageBuilder.verify(message, signingKeyPublic: peer.signingKeyPublic)) == true
+            else { return }
+        }
+
         switch message.type {
 
         case .hello:
