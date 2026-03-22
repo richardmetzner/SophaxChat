@@ -76,6 +76,17 @@ class AppState(private val context: Context) : ViewModel() {
         _unreadCounts.value = _unreadCounts.value.toMutableMap().also { it.remove(conversationID) }
     }
 
+    // Typing indicators
+    private val _typingPeers = MutableStateFlow<Set<String>>(emptySet())
+    val typingPeers: StateFlow<Set<String>> = _typingPeers.asStateFlow()
+
+    private val typingClearRunners = mutableMapOf<String, Runnable>()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun sendTyping(toPeerID: String) {
+        _chatManager?.sendTyping(toPeerID)
+    }
+
     // App Lock
     private val _isAppLocked = MutableStateFlow(false)
     val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
@@ -192,6 +203,17 @@ class AppState(private val context: Context) : ViewModel() {
             }
             override fun didEncounterError(error: Exception) {
                 _errorMessage.value = error.message
+            }
+            override fun didUpdateTypingState(peerID: String, isTyping: Boolean) {
+                typingClearRunners.remove(peerID)?.let { mainHandler.removeCallbacks(it) }
+                if (isTyping) {
+                    _typingPeers.value = _typingPeers.value + peerID
+                    val runner = Runnable { _typingPeers.value = _typingPeers.value - peerID }
+                    typingClearRunners[peerID] = runner
+                    mainHandler.postDelayed(runner, 3000)
+                } else {
+                    _typingPeers.value = _typingPeers.value - peerID
+                }
             }
         }
         _chatManager = mgr

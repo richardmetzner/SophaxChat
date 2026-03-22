@@ -45,6 +45,7 @@ interface ChatManagerDelegate {
     fun didReceiveGroupMessage(message: StoredMessage, group: GroupInfo)
     fun messageDelivered(messageID: String, toPeerID: String)
     fun didEncounterError(error: Exception)
+    fun didUpdateTypingState(peerID: String, isTyping: Boolean)
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +187,11 @@ class ChatManager(
     // -----------------------------------------------------------------------
     // Send message
     // -----------------------------------------------------------------------
+
+    fun sendTyping(toPeerID: String) {
+        val wire = builder().build(WireMessageType.typing.name, TypingMessage(isTyping = true))
+        sendOrRoute(wire, toPeerID)
+    }
 
     fun sendMessage(toPeerID: String, body: String) {
         val messageID = UUID.randomUUID().toString()
@@ -462,6 +468,7 @@ class ChatManager(
             WireMessageType.relay.name             -> handleRelay(message, fromTransportID, isTCP)
             WireMessageType.groupMessage.name      -> handleGroupMessage(message)
             WireMessageType.groupMemberLeft.name   -> handleGroupMemberLeft(message)
+            WireMessageType.typing.name            -> handleTyping(message)
         }
     }
 
@@ -623,6 +630,16 @@ class ChatManager(
                   catch (e: Exception) { return }
         messageStore.updateStatus(ack.messageID, message.senderID, MessageStatus.delivered)
         delegate?.messageDelivered(ack.messageID, message.senderID)
+    }
+
+    // -----------------------------------------------------------------------
+    // Typing
+    // -----------------------------------------------------------------------
+
+    private fun handleTyping(message: WireMessage) {
+        val typing = try { json.decodeFromString<TypingMessage>(String(message.payload)) }
+                     catch (e: Exception) { return }
+        delegate?.didUpdateTypingState(message.senderID, typing.isTyping)
     }
 
     // -----------------------------------------------------------------------

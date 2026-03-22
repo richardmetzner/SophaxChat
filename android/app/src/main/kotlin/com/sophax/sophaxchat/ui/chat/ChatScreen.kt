@@ -34,7 +34,9 @@ fun ChatScreen(
     messages: List<StoredMessage>,
     onSend: (String) -> Unit,
     onBack: () -> Unit,
-    onMarkRead: () -> Unit = {}
+    onMarkRead: () -> Unit = {},
+    isTyping: Boolean = false,
+    onTyping: () -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -47,17 +49,33 @@ fun ChatScreen(
         if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
     }
 
+    // Send typing event when user is typing (debounced 500ms)
+    LaunchedEffect(inputText) {
+        if (inputText.isNotEmpty()) {
+            kotlinx.coroutines.delay(500)
+            onTyping()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(peerUsername, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                        Text(
-                            if (peerOnline) "Online" else "Offline",
-                            fontSize = 12.sp,
-                            color = if (peerOnline) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
+                        if (isTyping) {
+                            Text(
+                                "typing…",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                if (peerOnline) "Online" else "Offline",
+                                fontSize = 12.sp,
+                                color = if (peerOnline) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
                     }
                 },
                 navigationIcon = {

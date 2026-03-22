@@ -31,10 +31,14 @@ fun GroupChatScreen(
     group: GroupInfo,
     onBack: () -> Unit
 ) {
-    val messages by remember(group.id) {
+    val messages    by remember(group.id) {
         derivedStateOf { appState.messagesFor(group.conversationID) }
     }
-    val peers by appState.peers.collectAsState()
+    val peers       by appState.peers.collectAsState()
+    val typingPeers by appState.typingPeers.collectAsState()
+    val typingNames = typingPeers
+        .filter { it in group.memberIDs }
+        .mapNotNull { id -> peers.firstOrNull { it.id == id }?.username }
 
     var inputText by remember { mutableStateOf("") }
     var showMemberSheet by remember { mutableStateOf(false) }
@@ -42,6 +46,15 @@ fun GroupChatScreen(
 
     // Mark all messages read when this screen opens
     LaunchedEffect(Unit) { appState.markAsRead(group.conversationID) }
+
+    // Send typing to each group member
+    LaunchedEffect(inputText) {
+        if (inputText.isNotEmpty()) {
+            kotlinx.coroutines.delay(500)
+            group.memberIDs.filter { it != appState.myPeerID }
+                .forEach { appState.sendTyping(it) }
+        }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
@@ -53,11 +66,19 @@ fun GroupChatScreen(
                 title = {
                     Column {
                         Text(group.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Text(
-                            "${group.memberIDs.size} members",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
+                        if (typingNames.isNotEmpty()) {
+                            Text(
+                                "${typingNames.joinToString(", ")} typing…",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                "${group.memberIDs.size} members",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 },
                 navigationIcon = {

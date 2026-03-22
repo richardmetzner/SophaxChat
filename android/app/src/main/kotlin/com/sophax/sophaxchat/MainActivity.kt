@@ -81,9 +81,10 @@ private fun AppNavigation(appState: AppState) {
         }
 
         composable("chat/{peerID}") { backStack ->
-            val peerID = backStack.arguments?.getString("peerID") ?: return@composable
-            val peer   = peers.firstOrNull { it.id == peerID }
-            val msgs   by remember(peerID) { derivedStateOf { appState.messagesFor(peerID) } }
+            val peerID      = backStack.arguments?.getString("peerID") ?: return@composable
+            val peer        = peers.firstOrNull { it.id == peerID }
+            val msgs        by remember(peerID) { derivedStateOf { appState.messagesFor(peerID) } }
+            val typingPeers by appState.typingPeers.collectAsState()
 
             ChatScreen(
                 peerUsername = peer?.username ?: peerID,
@@ -91,7 +92,9 @@ private fun AppNavigation(appState: AppState) {
                 messages     = msgs,
                 onSend       = { body -> appState.sendMessage(peerID, body) },
                 onBack       = { navController.popBackStack() },
-                onMarkRead   = { appState.markAsRead(peerID) }
+                onMarkRead   = { appState.markAsRead(peerID) },
+                isTyping     = peerID in typingPeers,
+                onTyping     = { appState.sendTyping(peerID) }
             )
         }
 
