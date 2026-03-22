@@ -1,10 +1,14 @@
 package com.sophax.sophaxchat
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
@@ -28,10 +32,15 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         appState = AppState(applicationContext)
         enableEdgeToEdge()
+
+        // Handle launch-time deep link
+        intent.data?.let { appState.handleIncomingLink(it) }
+
         setContent {
             SophaxChatTheme {
                 val isSetupComplete by appState.isSetupComplete.collectAsState()
                 val isAppLocked     by appState.isAppLocked.collectAsState()
+                val pendingLink     by appState.pendingDeepLink.collectAsState()
 
                 LaunchedEffect(isSetupComplete) {
                     appState.startIfReady()
@@ -51,6 +60,21 @@ class MainActivity : FragmentActivity() {
                         AppLockScreen(onUnlocked = { appState.unlockApp() })
                     }
                 }
+
+                // Deep link confirmation dialog
+                pendingLink?.let { link ->
+                    AlertDialog(
+                        onDismissRequest = { appState.dismissDeepLink() },
+                        title = { Text("Add Contact?") },
+                        text  = { Text("Connect to ${link.host}?\n\nOnly confirm if you trust this address.") },
+                        confirmButton = {
+                            TextButton(onClick = { appState.confirmDeepLink() }) { Text("Add & Connect") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { appState.dismissDeepLink() }) { Text("Cancel") }
+                        }
+                    )
+                }
             }
         }
     }
@@ -59,6 +83,11 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         // Lock the app every time it comes to the foreground (if app lock is enabled)
         appState.lockApp()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.data?.let { appState.handleIncomingLink(it) }
     }
 }
 

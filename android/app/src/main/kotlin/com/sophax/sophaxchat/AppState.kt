@@ -1,6 +1,7 @@
 package com.sophax.sophaxchat
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.crypto.IdentityManager
@@ -74,6 +75,31 @@ class AppState(private val context: Context) : ViewModel() {
     fun markAsRead(conversationID: String) {
         messageStore.markAllRead(conversationID)
         _unreadCounts.value = _unreadCounts.value.toMutableMap().also { it.remove(conversationID) }
+    }
+
+    // Deep link confirmation
+    data class PendingDeepLink(val peerID: String, val address: String, val host: String)
+
+    private val _pendingDeepLink = MutableStateFlow<PendingDeepLink?>(null)
+    val pendingDeepLink: StateFlow<PendingDeepLink?> = _pendingDeepLink.asStateFlow()
+
+    fun handleIncomingLink(uri: Uri) {
+        if (uri.scheme != "sophaxchat" || uri.host != "add") return
+        val peerID = uri.getQueryParameter("id") ?: return
+        val onion  = uri.getQueryParameter("onion") ?: return
+        if (!onion.endsWith(".onion")) return
+        val port   = uri.getQueryParameter("port") ?: "25519"
+        _pendingDeepLink.value = PendingDeepLink(peerID, "$onion:$port", onion)
+    }
+
+    fun confirmDeepLink() {
+        val pending = _pendingDeepLink.value ?: return
+        _pendingDeepLink.value = null
+        try { _chatManager?.tcp?.connect(pending.address) } catch (_: Exception) {}
+    }
+
+    fun dismissDeepLink() {
+        _pendingDeepLink.value = null
     }
 
     // Typing indicators
