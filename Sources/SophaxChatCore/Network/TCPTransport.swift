@@ -116,6 +116,12 @@ public final class TCPTransport: @unchecked Sendable {
 
     private static let helloTimeout: TimeInterval = 10
     private static let maxFrameSize: Int = 4 * 1024 * 1024  // 4 MiB safety cap
+    /// Idle timeout for established connections: if no complete frame arrives within this window
+    /// the connection is dropped. Prevents a slow peer from holding a slot indefinitely by
+    /// trickling bytes without completing a frame (memory exhaustion DoS).
+    private static let idleTimeout: TimeInterval = 120
+    /// ObjectIdentifier → idle timer (fires if no complete frame received within idleTimeout)
+    private var idleTimers: [ObjectIdentifier: DispatchSourceTimer] = [:]
 
     public weak var delegate: TCPTransportDelegate?
 
@@ -153,7 +159,10 @@ public final class TCPTransport: @unchecked Sendable {
         connections.removeAll()
         receiveBuffers.removeAll()
         pendingAddresses.removeAll()
+        let timers = Array(idleTimers.values)
+        idleTimers.removeAll()
         lock.unlock()
+        timers.forEach { $0.cancel() }
         allConns.forEach { $0.cancel() }
     }
 
@@ -230,6 +239,7 @@ public final class TCPTransport: @unchecked Sendable {
                     self.sendFramed(data, over: connection, failurePeerID: nil)
                 }
                 self.scheduleHelloTimeout(for: connection)
+                self.scheduleIdleTimeout(for: connection)
                 self.startReceiving(from: connection)
 
             case .failed, .cancelled:
@@ -254,6 +264,28 @@ public final class TCPTransport: @unchecked Sendable {
             self.lock.unlock()
             if isPending { connection.cancel() }
         }
+    }
+
+    // MARK: - Private: idle timeout
+
+    private func scheduleIdleTimeout(for connection: NWConnection) {
+        let oid = ObjectIdentifier(connection)
+        let timer = DispatchSource.makeTimerSource(queue: .global())
+        timer.schedule(deadline: .now() + TCPTransport.idleTimeout, repeating: .never)
+        timer.setEventHandler { [weak self, weak connection] in
+            guard let connection else { return }
+            self?.teardown(connection: connection)
+        }
+        lock.lock()
+        idleTimers[oid]?.cancel()
+        idleTimers[oid] = timer
+        lock.unlock()
+        timer.resume()
+    }
+
+    private func resetIdleTimeout(for connection: NWConnection) {
+        // Reschedule the idle timer after each successfully parsed frame
+        scheduleIdleTimeout(for: connection)
     }
 
     // MARK: - Private: receive loop
@@ -292,6 +324,7 @@ public final class TCPTransport: @unchecked Sendable {
         receiveBuffers[oid] = buf
         lock.unlock()
         if oversized { connection.cancel(); return }
+        if !frames.isEmpty { resetIdleTimeout(for: connection) }
         frames.forEach { dispatch(frame: $0, from: connection) }
     }
 
@@ -355,7 +388,9 @@ public final class TCPTransport: @unchecked Sendable {
         if let p = peerID { connections.removeValue(forKey: p) }
         receiveBuffers.removeValue(forKey: oid)
         pendingAddresses.removeValue(forKey: oid)
+        let timer = idleTimers.removeValue(forKey: oid)
         lock.unlock()
+        timer?.cancel()
         connection.cancel()
         if let peerID {
             DispatchQueue.main.async { [weak self] in
