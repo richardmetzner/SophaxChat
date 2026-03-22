@@ -67,6 +67,15 @@ class AppState(private val context: Context) : ViewModel() {
     )
     val blockedPeers: StateFlow<List<String>> = _blockedPeers.asStateFlow()
 
+    // Unread counts (in-memory; reset on markAsRead)
+    private val _unreadCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val unreadCounts: StateFlow<Map<String, Int>> = _unreadCounts.asStateFlow()
+
+    fun markAsRead(conversationID: String) {
+        messageStore.markAllRead(conversationID)
+        _unreadCounts.value = _unreadCounts.value.toMutableMap().also { it.remove(conversationID) }
+    }
+
     // App Lock
     private val _isAppLocked = MutableStateFlow(false)
     val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
@@ -145,6 +154,9 @@ class AppState(private val context: Context) : ViewModel() {
                 _messages.value = _messages.value.toMutableMap().also {
                     it[fromPeerID] = mgr.messages(fromPeerID)
                 }
+                _unreadCounts.value = _unreadCounts.value.toMutableMap().also {
+                    it[fromPeerID] = (it[fromPeerID] ?: 0) + 1
+                }
                 val senderName = _peers.value.firstOrNull { it.id == fromPeerID }?.username
                     ?: fromPeerID.take(8)
                 NotificationHelper.showMessage(
@@ -160,6 +172,9 @@ class AppState(private val context: Context) : ViewModel() {
                     it[group.conversationID] = messageStore.loadMessages(group.conversationID)
                 }
                 _groups.value = mgr.groupsList()
+                _unreadCounts.value = _unreadCounts.value.toMutableMap().also {
+                    it[group.conversationID] = (it[group.conversationID] ?: 0) + 1
+                }
                 val senderName = _peers.value.firstOrNull { it.id == message.peerID }?.username
                     ?: message.peerID.take(8)
                 NotificationHelper.showMessage(

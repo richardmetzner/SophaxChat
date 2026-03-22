@@ -33,10 +33,14 @@ fun ChatScreen(
     peerOnline: Boolean,
     messages: List<StoredMessage>,
     onSend: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onMarkRead: () -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    // Mark all messages read when this screen opens
+    LaunchedEffect(Unit) { onMarkRead() }
 
     // Scroll to bottom on new messages
     LaunchedEffect(messages.size) {

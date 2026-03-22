@@ -35,8 +35,9 @@ fun ChatListScreen(
     onNewGroup: () -> Unit = {},
     onSettingsTap: () -> Unit = {}
 ) {
-    val peers  by appState.peers.collectAsState()
-    val groups by appState.groups.collectAsState()
+    val peers        by appState.peers.collectAsState()
+    val groups       by appState.groups.collectAsState()
+    val unreadCounts by appState.unreadCounts.collectAsState()
 
     Scaffold(
         topBar = {
@@ -67,14 +68,14 @@ fun ChatListScreen(
                         SectionHeader("Groups")
                     }
                     items(groups, key = { "g_${it.id}" }) { group ->
-                        GroupRow(group, onClick = { onGroupTap(group.id) })
+                        GroupRow(group, unread = unreadCounts[group.conversationID] ?: 0, onClick = { onGroupTap(group.id) })
                     }
                     if (peers.isNotEmpty()) {
                         item { SectionHeader("Direct Messages") }
                     }
                 }
                 items(peers, key = { it.id }) { peer ->
-                    PeerRow(peer, onClick = { onPeerTap(peer.id) })
+                    PeerRow(peer, unread = unreadCounts[peer.id] ?: 0, onClick = { onPeerTap(peer.id) })
                 }
             }
         }
@@ -123,7 +124,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun GroupRow(group: GroupInfo, onClick: () -> Unit) {
+private fun GroupRow(group: GroupInfo, unread: Int, onClick: () -> Unit) {
     val initial = group.name.firstOrNull()?.uppercaseChar()?.toString() ?: "G"
 
     Row(
@@ -153,13 +154,17 @@ private fun GroupRow(group: GroupInfo, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
             )
         }
+
+        if (unread > 0) {
+            Badge { Text("$unread") }
+        }
     }
 
     HorizontalDivider(modifier = Modifier.padding(start = 76.dp), thickness = 0.5.dp)
 }
 
 @Composable
-private fun PeerRow(peer: KnownPeer, onClick: () -> Unit) {
+private fun PeerRow(peer: KnownPeer, unread: Int, onClick: () -> Unit) {
     val initial = peer.username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 
     Row(
@@ -191,7 +196,9 @@ private fun PeerRow(peer: KnownPeer, onClick: () -> Unit) {
             )
         }
 
-        if (peer.isOnline) {
+        if (unread > 0) {
+            Badge { Text("$unread") }
+        } else if (peer.isOnline) {
             Box(
                 modifier = Modifier
                     .size(10.dp)

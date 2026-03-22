@@ -40,6 +40,9 @@ fun GroupChatScreen(
     var showMemberSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
+    // Mark all messages read when this screen opens
+    LaunchedEffect(Unit) { appState.markAsRead(group.conversationID) }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
     }

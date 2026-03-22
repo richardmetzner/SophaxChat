@@ -89,6 +89,15 @@ class MessageStore(context: Context) {
     // Delete
     // -----------------------------------------------------------------------
 
+    fun markAllRead(conversationID: String) {
+        val messages = loadMessages(conversationID).map { msg ->
+            if (msg.direction == MessageDirection.received.name && msg.status != MessageStatus.read.name)
+                msg.copy(status = MessageStatus.read.name)
+            else msg
+        }
+        prefs.edit().putString(key(conversationID), json.encodeToString(messages)).apply()
+    }
+
     fun deleteMessage(id: String, peerID: String) {
         val messages = loadMessages(peerID).filter { it.id != id }
         prefs.edit().putString(key(peerID), json.encodeToString(messages)).apply()

@@ -90,7 +90,8 @@ private fun AppNavigation(appState: AppState) {
                 peerOnline   = peer?.isOnline ?: false,
                 messages     = msgs,
                 onSend       = { body -> appState.sendMessage(peerID, body) },
-                onBack       = { navController.popBackStack() }
+                onBack       = { navController.popBackStack() },
+                onMarkRead   = { appState.markAsRead(peerID) }
             )
         }
 
