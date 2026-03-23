@@ -120,10 +120,13 @@ class TcpTransport(
         scope.launch {
             try {
                 val (host, portStr) = address.split(":")
-                val remotePort = portStr.toInt()
+                val remotePort = portStr.toIntOrNull()?.takeIf { it in 1..65535 }
+                    ?: throw IllegalArgumentException("Invalid port: $portStr")
                 val socket = if (socksProxyAddress != null) {
-                    val (proxyHost, proxyPortStr) = socksProxyAddress.split(":")
-                    val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(proxyHost, proxyPortStr.toInt()))
+                    val (proxyHost, proxyPortStr) = socksProxyAddress!!.split(":")
+                    val proxyPort = proxyPortStr.toIntOrNull()?.takeIf { it in 1..65535 }
+                        ?: throw IllegalArgumentException("Invalid proxy port: $proxyPortStr")
+                    val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(proxyHost, proxyPort))
                     Socket(proxy).also { it.connect(InetSocketAddress(host, remotePort), 30_000) }
                 } else {
                     Socket().also { it.connect(InetSocketAddress(host, remotePort), 10_000) }

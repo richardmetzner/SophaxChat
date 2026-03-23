@@ -88,9 +88,11 @@ class AppState(application: Application) : AndroidViewModel(application) {
         if (uri.scheme != "sophaxchat" || uri.host != "add") return
         val peerID = uri.getQueryParameter("id") ?: return
         val onion  = uri.getQueryParameter("onion") ?: return
-        if (!onion.endsWith(".onion")) return
-        val port   = uri.getQueryParameter("port") ?: "25519"
-        _pendingDeepLink.value = PendingDeepLink(peerID, "$onion:$port", onion)
+        val onionRegex = Regex("^[a-z2-7]{56}\\.onion$")
+        if (!onionRegex.matches(onion)) return
+        val port    = uri.getQueryParameter("port") ?: "25519"
+        val portInt = port.toIntOrNull()?.takeIf { it in 1..65535 } ?: 25519
+        _pendingDeepLink.value = PendingDeepLink(peerID, "$onion:$portInt", onion)
     }
 
     fun confirmDeepLink() {
