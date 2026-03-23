@@ -23,6 +23,12 @@ import com.sophax.sophaxchat.storage.StoredMessage
 internal fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("message", text))
+    // Auto-clear after 60 s — matches iOS implementation.
+    // Only clears if the clipboard still contains the exact text we set.
+    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        val current = cm.primaryClip?.getItemAt(0)?.text?.toString()
+        if (current == text) cm.setPrimaryClip(ClipData.newPlainText("", ""))
+    }, 60_000L)
 }
 
 @Composable

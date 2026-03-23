@@ -164,6 +164,7 @@ class DoubleRatchet(private var state: RatchetSessionState) {
 
         val encryptedHeader = encryptHeader(header, hks)
         val ciphertext = encryptBody(mk, plaintext, encryptedHeader, associatedData)
+        mk.fill(0)  // zero message key — prevents heap dump exposure
         return RatchetMessage(encryptedHeader, ciphertext)
     }
 
@@ -183,7 +184,9 @@ class DoubleRatchet(private var state: RatchetSessionState) {
                 val (newCK, mk) = kdfCK(ck)
                 state.receivingChainKey = newCK
                 state.receiveMessageCount++
-                return decryptBody(mk, message, associatedData)
+                val result = decryptBody(mk, message, associatedData)
+                mk.fill(0)  // zero message key — prevents heap dump exposure
+                return result
             }
         }
 
@@ -200,7 +203,9 @@ class DoubleRatchet(private var state: RatchetSessionState) {
         val (newCK, mk) = kdfCK(ck)
         state.receivingChainKey = newCK
         state.receiveMessageCount++
-        return decryptBody(mk, message, associatedData)
+        val decrypted = decryptBody(mk, message, associatedData)
+        mk.fill(0)  // zero message key — prevents heap dump exposure
+        return decrypted
     }
 
     // -----------------------------------------------------------------------
