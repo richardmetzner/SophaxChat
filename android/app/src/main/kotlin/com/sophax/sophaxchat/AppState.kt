@@ -2,8 +2,12 @@ package com.sophax.sophaxchat
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.crypto.IdentityManager
 import com.sophax.sophaxchat.crypto.PreKeyManager
@@ -21,7 +25,15 @@ class AppState(application: Application) : AndroidViewModel(application) {
     // Setup
     // -----------------------------------------------------------------------
 
-    private val prefs = application.getSharedPreferences("sophaxchat_prefs", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences by lazy {
+        val masterKey = MasterKey.Builder(getApplication())
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        EncryptedSharedPreferences.create(
+            getApplication(), "sophaxchat_prefs", masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 
     private val _isSetupComplete = MutableStateFlow(prefs.getBoolean("setup_complete", false))
     val isSetupComplete: StateFlow<Boolean> = _isSetupComplete.asStateFlow()
@@ -241,7 +253,8 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 updateMessages(toPeerID, mgr.messages(toPeerID))
             }
             override fun didEncounterError(error: Exception) {
-                _errorMessage.value = error.message
+                _errorMessage.value = "Connection error. Please try again."
+                if (BuildConfig.DEBUG) Log.e("AppState", "didEncounterError", error)
             }
             override fun didUpdateTypingState(peerID: String, isTyping: Boolean) {
                 typingClearRunners.remove(peerID)?.let { mainHandler.removeCallbacks(it) }
