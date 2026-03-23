@@ -158,7 +158,7 @@ public final class IdentityManager: @unchecked Sendable {
         let hash     = SHA512.hash(data: combined)
         let hashData = Data(hash)
         // SHA512 produces 64 bytes; we consume the first 30.
-        assert(hashData.count >= 30, "SHA512 must produce at least 30 bytes")
+        precondition(hashData.count >= 30, "SHA512 produced invalid output length")
 
         var groups: [String] = []
         for i in stride(from: 0, to: 30, by: 5) {
