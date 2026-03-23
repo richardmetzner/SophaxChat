@@ -93,284 +93,18 @@ struct ChatView: View {
         appState.onlinePeers.contains(peer.id)
     }
 
+    private var hasIncomingMessage: Bool {
+        messages.contains { !$0.isOutgoing }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Message list
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(displayedMessages) { message in
-                            MessageBubbleView(
-                                message:   message,
-                                onDelete:  { appState.deleteMessage(message) },
-                                onReply:   { withAnimation { replyingTo = message } },
-                                onForward: { forwardingMessage = message }
-                            )
-                            .id(message.id)
-                        }
-                        // Typing indicator bubble
-                        if appState.typingPeers.contains(peer.id) {
-                            TypingBubbleView()
-                                .id("typing-indicator")
-                        }
-                        // Invisible anchor at the bottom
-                        Color.clear.frame(height: 1).id("bottom")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
-                }
-                .onChange(of: messages.count) { _, _ in
-                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                    appState.markAsRead(peerID: peer.id)
-                }
-                .onChange(of: appState.typingPeers.contains(peer.id)) { _, isTyping in
-                    if isTyping {
-                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                    }
-                }
-                .onAppear {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                    appState.markAsRead(peerID: peer.id)
-                    if let saved = UserDefaults.standard.string(forKey: disappearingKey),
-                       let interval = DisappearingInterval(rawValue: saved) {
-                        disappearingInterval = interval
-                    }
-                    messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
-                }
-                .onDisappear {
-                    UserDefaults.standard.set(messageText, forKey: draftKey)
-                }
-            }
-
+            messageList
             Divider()
-
-            // Search bar
-            if isSearching {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.tertiary)
-                    TextField("Search messages…", text: $searchQuery)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                    if !searchQuery.isEmpty {
-                        Button { searchQuery = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.bar)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            // Reply preview bar
-            if let replying = replyingTo {
-                HStack(spacing: 10) {
-                    Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(width: 3)
-                        .clipShape(Capsule())
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(replying.direction == .sent ? "Reply to yourself" : "Reply to \(appState.displayName(for: peer))")
-                            .font(.caption.bold())
-                            .foregroundStyle(Color.accentColor)
-                        Text(replying.body)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    Button { withAnimation { replyingTo = nil } } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.bar)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
-            // Key-change warning banner
-            if appState.hasKeyChanged(for: peer.id, currentSafetyNumber: peer.safetyNumber) {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.shield.fill")
-                        .foregroundStyle(.red)
-                    Text("\(peer.username)'s security key changed — verify identity before continuing.")
-                        .font(.caption)
-                    Spacer()
-                    Button("Verify") { showingSafetyNumber = true }
-                        .font(.caption.bold())
-                        .foregroundStyle(.red)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.red.opacity(0.08))
-            }
-
-            // OPK exhaustion warning banner
-            if appState.noOPKSessions.contains(peer.id) {
-                HStack(spacing: 6) {
-                    Image(systemName: "key.slash")
-                        .foregroundStyle(.yellow)
-                    Text("Session established without one-time prekey — slightly reduced initial security.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(Color.yellow.opacity(0.08))
-            }
-
-            // TOFU verification nudge — shown once after first incoming message from unverified peer
-            let hasIncomingMessage = messages.contains(where: { !$0.isOutgoing })
-            if hasIncomingMessage,
-               !appState.isVerified(peer.id, currentSafetyNumber: peer.safetyNumber),
-               !verifyNudgeDismissed {
-                HStack(spacing: 6) {
-                    Image(systemName: "person.badge.shield.checkmark")
-                        .foregroundStyle(.yellow)
-                    Text("Verify \(peer.username)'s identity to confirm you're talking to the right person.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Verify") { showingSafetyNumber = true }
-                        .font(.caption.bold())
-                        .foregroundStyle(.yellow)
-                    Button { verifyNudgeDismissed = true } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.yellow.opacity(0.08))
-            }
-
-            // Disappearing messages indicator
-            if disappearingInterval != .off {
-                HStack(spacing: 4) {
-                    Image(systemName: "timer")
-                        .font(.caption2)
-                    Text("Messages disappear after \(disappearingInterval.rawValue.lowercased())")
-                        .font(.caption2)
-                }
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-            }
-
-            // Input bar
-            HStack(spacing: 10) {
-                PhotosPicker(
-                    selection: $photoPickerItem,
-                    matching: .images
-                ) {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                }
-                .onChange(of: photoPickerItem) { _, item in
-                    guard let item else { return }
-                    Task {
-                        if let data = try? await item.loadTransferable(type: Data.self),
-                           let image = UIImage(data: data) {
-                            appState.sendImage(image, toPeerID: peer.id,
-                                               expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
-                        }
-                        photoPickerItem = nil
-                    }
-                }
-
-                Button {
-                    showingCamera = true
-                } label: {
-                    Image(systemName: "camera")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                }
-
-                TextField("Message", text: $messageText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .lineLimit(1...6)
-                    .focused($isInputFocused)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.sentences)
-                    .textContentType(.none)
-                    .onChange(of: messageText) { _, newValue in
-                        let nonEmpty = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        if nonEmpty {
-                            appState.sendTypingIndicator(toPeerID: peer.id, isTyping: true)
-                            typingTask?.cancel()
-                            typingTask = Task { @MainActor in
-                                try? await Task.sleep(for: .seconds(5))
-                                appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
-                                typingTask = nil
-                            }
-                        } else {
-                            typingTask?.cancel()
-                            typingTask = nil
-                            appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
-                        }
-                    }
-
-                if canSend {
-                    Button(action: sendMessage) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 30))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .transition(.scale.combined(with: .opacity))
-                } else {
-                    // Hold-to-record PTT button
-                    ZStack {
-                        Circle()
-                            .fill(voiceRecorder.isRecording
-                                  ? Color.red.opacity(0.15)
-                                  : Color.clear)
-                            .frame(width: 36, height: 36)
-                            .animation(.easeInOut(duration: 0.2), value: voiceRecorder.isRecording)
-
-                        Image(systemName: voiceRecorder.isRecording ? "waveform" : "mic")
-                            .font(.system(size: 20))
-                            .foregroundStyle(voiceRecorder.isRecording ? .red : .secondary)
-                            .symbolEffect(.pulse, isActive: voiceRecorder.isRecording)
-                    }
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { _ in
-                                guard !voiceRecorder.isRecording else { return }
-                                voiceRecorder.start()
-                            }
-                            .onEnded { _ in
-                                voiceRecorder.stop { data, duration in
-                                    guard let data else { return }
-                                    let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
-                                    appState.sendAudio(data, duration: duration, toPeerID: peer.id, expiresAt: expiresAt)
-                                }
-                            }
-                    )
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: canSend)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.bar)
-            .sheet(isPresented: $showingCamera) {
-                CameraPickerView { image in
-                    guard let image else { return }
-                    let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
-                    appState.sendImage(image, toPeerID: peer.id, expiresAt: expiresAt)
-                }
-            }
+            searchBar
+            replyBar
+            warningBanners
+            inputBar
         }
         .navigationTitle(appState.displayName(for: peer))
         .navigationBarTitleDisplayMode(.inline)
@@ -471,6 +205,248 @@ struct ChatView: View {
         .sheet(item: $forwardingMessage) { message in
             ForwardPickerView(message: message)
                 .environmentObject(appState)
+        }
+    }
+
+    @ViewBuilder private var messageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(displayedMessages) { message in
+                        MessageBubbleView(
+                            message:   message,
+                            onDelete:  { appState.deleteMessage(message) },
+                            onReply:   { withAnimation { replyingTo = message } },
+                            onForward: { forwardingMessage = message }
+                        )
+                        .id(message.id)
+                    }
+                    if appState.typingPeers.contains(peer.id) {
+                        TypingBubbleView().id("typing-indicator")
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+            }
+            .onChange(of: messages.count) { _, _ in
+                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                appState.markAsRead(peerID: peer.id)
+            }
+            .onChange(of: appState.typingPeers.contains(peer.id)) { _, isTyping in
+                if isTyping { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            }
+            .onAppear {
+                proxy.scrollTo("bottom", anchor: .bottom)
+                appState.markAsRead(peerID: peer.id)
+                if let saved = UserDefaults.standard.string(forKey: disappearingKey),
+                   let interval = DisappearingInterval(rawValue: saved) {
+                    disappearingInterval = interval
+                }
+                messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
+            }
+            .onDisappear {
+                UserDefaults.standard.set(messageText, forKey: draftKey)
+            }
+        }
+    }
+
+    @ViewBuilder private var searchBar: some View {
+        if isSearching {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                TextField("Search messages…", text: $searchQuery)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                if !searchQuery.isEmpty {
+                    Button { searchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.bar)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder private var replyBar: some View {
+        if let replying = replyingTo {
+            HStack(spacing: 10) {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: 3)
+                    .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(replying.direction == .sent ? "Reply to yourself" : "Reply to \(appState.displayName(for: peer))")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.accentColor)
+                    Text(replying.body)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button { withAnimation { replyingTo = nil } } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.bar)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder private var warningBanners: some View {
+        if appState.hasKeyChanged(for: peer.id, currentSafetyNumber: peer.safetyNumber) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.red)
+                Text("\(peer.username)'s security key changed — verify identity before continuing.")
+                    .font(.caption)
+                Spacer()
+                Button("Verify") { showingSafetyNumber = true }
+                    .font(.caption.bold()).foregroundStyle(.red)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(Color.red.opacity(0.08))
+        }
+        if appState.noOPKSessions.contains(peer.id) {
+            HStack(spacing: 6) {
+                Image(systemName: "key.slash").foregroundStyle(.yellow)
+                Text("Session established without one-time prekey — slightly reduced initial security.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(Color.yellow.opacity(0.08))
+        }
+        if hasIncomingMessage,
+           !appState.isVerified(peer.id, currentSafetyNumber: peer.safetyNumber),
+           !verifyNudgeDismissed {
+            HStack(spacing: 6) {
+                Image(systemName: "person.badge.shield.checkmark").foregroundStyle(.yellow)
+                Text("Verify \(peer.username)'s identity to confirm you're talking to the right person.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Verify") { showingSafetyNumber = true }
+                    .font(.caption.bold()).foregroundStyle(.yellow)
+                Button { verifyNudgeDismissed = true } label: {
+                    Image(systemName: "xmark").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(Color.yellow.opacity(0.08))
+        }
+        if disappearingInterval != .off {
+            HStack(spacing: 4) {
+                Image(systemName: "timer").font(.caption2)
+                Text("Messages disappear after \(disappearingInterval.rawValue.lowercased())").font(.caption2)
+            }
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 16).padding(.top, 6)
+        }
+    }
+
+    @ViewBuilder private var inputBar: some View {
+        HStack(spacing: 10) {
+            PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: photoPickerItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        appState.sendImage(image, toPeerID: peer.id,
+                                           expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+                    }
+                    photoPickerItem = nil
+                }
+            }
+            Button { showingCamera = true } label: {
+                Image(systemName: "camera")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.secondary)
+            }
+            TextField("Message", text: $messageText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .lineLimit(1...6)
+                .focused($isInputFocused)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.sentences)
+                .textContentType(.none)
+                .onChange(of: messageText) { _, newValue in
+                    let nonEmpty = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    if nonEmpty {
+                        appState.sendTypingIndicator(toPeerID: peer.id, isTyping: true)
+                        typingTask?.cancel()
+                        typingTask = Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(5))
+                            appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
+                            typingTask = nil
+                        }
+                    } else {
+                        typingTask?.cancel()
+                        typingTask = nil
+                        appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
+                    }
+                }
+            sendOrMicButton
+        }
+        .animation(.easeInOut(duration: 0.15), value: canSend)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .sheet(isPresented: $showingCamera) {
+            CameraPickerView { image in
+                guard let image else { return }
+                appState.sendImage(image, toPeerID: peer.id,
+                                   expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+            }
+        }
+    }
+
+    @ViewBuilder private var sendOrMicButton: some View {
+        if canSend {
+            Button(action: sendMessage) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            ZStack {
+                Circle()
+                    .fill(voiceRecorder.isRecording ? Color.red.opacity(0.15) : Color.clear)
+                    .frame(width: 36, height: 36)
+                    .animation(.easeInOut(duration: 0.2), value: voiceRecorder.isRecording)
+                Image(systemName: voiceRecorder.isRecording ? "waveform" : "mic")
+                    .font(.system(size: 20))
+                    .foregroundStyle(voiceRecorder.isRecording ? .red : .secondary)
+                    .symbolEffect(.pulse, isActive: voiceRecorder.isRecording)
+            }
+            .frame(width: 36, height: 36)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !voiceRecorder.isRecording else { return }
+                        voiceRecorder.start()
+                    }
+                    .onEnded { _ in
+                        voiceRecorder.stop { data, duration in
+                            guard let data else { return }
+                            appState.sendAudio(data, duration: duration, toPeerID: peer.id,
+                                               expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+                        }
+                    }
+            )
         }
     }
 
