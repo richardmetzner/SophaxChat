@@ -94,7 +94,7 @@ struct ChatView: View {
     }
 
     private var hasIncomingMessage: Bool {
-        messages.contains { !$0.isOutgoing }
+        messages.contains { $0.direction == .received }
     }
 
     var body: some View {
