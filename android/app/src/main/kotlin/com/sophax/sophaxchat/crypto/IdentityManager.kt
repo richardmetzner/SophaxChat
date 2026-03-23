@@ -214,6 +214,8 @@ fun generateDHKeyPair(): DHKeyPair {
 
 /** Raw X25519 ECDH: returns 32-byte shared secret. */
 fun x25519(privateKeyBytes: ByteArray, publicKeyBytes: ByteArray): ByteArray {
+    require(privateKeyBytes.size == 32) { "x25519: private key must be 32 bytes, got ${privateKeyBytes.size}" }
+    require(publicKeyBytes.size  == 32) { "x25519: public key must be 32 bytes, got ${publicKeyBytes.size}" }
     val priv = X25519PrivateKeyParameters(privateKeyBytes)
     val pub  = X25519PublicKeyParameters(publicKeyBytes)
     val agreement = org.bouncycastle.crypto.agreement.X25519Agreement()

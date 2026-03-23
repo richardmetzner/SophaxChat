@@ -122,6 +122,7 @@ class DoubleRatchet(private var state: RatchetSessionState) {
 
         fun kdfRK(rootKey: ByteArray, dhOutput: ByteArray): Triple<ByteArray, ByteArray, ByteArray> {
             val derived = Hkdf.computeHkdf("HMACSHA256", dhOutput, rootKey, CryptoConstants.ROOT_KEY_INFO, 96)
+            check(derived.size == 96) { "kdfRK: HKDF returned ${derived.size} bytes, expected 96" }
             return Triple(derived.sliceArray(0..31), derived.sliceArray(32..63), derived.sliceArray(64..95))
         }
 

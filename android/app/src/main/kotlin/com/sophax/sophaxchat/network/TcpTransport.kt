@@ -119,11 +119,19 @@ class TcpTransport(
     fun connect(address: String) {
         scope.launch {
             try {
-                val (host, portStr) = address.split(":")
+                // Use lastIndexOf to support IPv6 addresses (e.g. [::1]:8080)
+                val colonIdx = address.lastIndexOf(':')
+                if (colonIdx <= 0) throw IllegalArgumentException("Invalid address: $address")
+                val host    = address.substring(0, colonIdx)
+                val portStr = address.substring(colonIdx + 1)
                 val remotePort = portStr.toIntOrNull()?.takeIf { it in 1..65535 }
                     ?: throw IllegalArgumentException("Invalid port: $portStr")
                 val socket = if (socksProxyAddress != null) {
-                    val (proxyHost, proxyPortStr) = socksProxyAddress!!.split(":")
+                    val proxy0 = socksProxyAddress!!
+                    val pIdx = proxy0.lastIndexOf(':')
+                    if (pIdx <= 0) throw IllegalArgumentException("Invalid proxy address: $proxy0")
+                    val proxyHost    = proxy0.substring(0, pIdx)
+                    val proxyPortStr = proxy0.substring(pIdx + 1)
                     val proxyPort = proxyPortStr.toIntOrNull()?.takeIf { it in 1..65535 }
                         ?: throw IllegalArgumentException("Invalid proxy port: $proxyPortStr")
                     val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(proxyHost, proxyPort))

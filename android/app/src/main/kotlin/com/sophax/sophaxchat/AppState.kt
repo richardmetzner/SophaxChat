@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import java.util.concurrent.ConcurrentHashMap
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.sophax.sophaxchat.crypto.GroupInfo
@@ -121,7 +122,7 @@ class AppState(application: Application) : AndroidViewModel(application) {
     private val _typingPeers = MutableStateFlow<Set<String>>(emptySet())
     val typingPeers: StateFlow<Set<String>> = _typingPeers.asStateFlow()
 
-    private val typingClearRunners = mutableMapOf<String, Runnable>()
+    private val typingClearRunners = ConcurrentHashMap<String, Runnable>()
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     fun sendTyping(toPeerID: String) {
