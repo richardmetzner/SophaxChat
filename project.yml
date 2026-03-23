@@ -31,7 +31,7 @@ targets:
         INFOPLIST_FILE: SophaxChat/Info.plist
         CODE_SIGN_ENTITLEMENTS: SophaxChat/SophaxChat.entitlements
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "Z93Z3857SJ"
         UIApplicationSceneManifest: ""
         SUPPORTS_MAC_CATALYST: YES
         TARGETED_DEVICE_FAMILY: "1,2"

@@ -45,6 +45,7 @@
 		BB494547A00FF73DF48BB126 /* X3DH.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56028505B9B7E422FA2A0224 /* X3DH.swift */; };
 		BC44E64776A4055AE325BF0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4050235742B30650035D3ADF /* Assets.xcassets */; };
 		C68FC08725156B75431C54E4 /* CryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91AA1BC487BE80E0FFC5335D /* CryptoTests.swift */; };
+		C8E470B6126321F435C1A55D /* LanDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508E2836B1D722E988A77EA /* LanDiscovery.swift */; };
 		C9C0037C23DF81ABBA2CE2BA /* AttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0122A8E19F72D3E3BBF39DA /* AttachmentStore.swift */; };
 		CDE85E6620CF588CEFB2CB77 /* SophaxChatCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F026517E60C9F0DF6C94788E /* SophaxChatCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CFF6E4009BF166FA703B66EB /* FullScreenImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6873FFCDF0C0F0BF98125F26 /* FullScreenImageView.swift */; };
@@ -116,6 +117,7 @@
 		4050235742B30650035D3ADF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4278EA983AFC5F075CAA977C /* NetworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkTests.swift; sourceTree = "<group>"; };
 		4395FDF72527F4A0B0CF616C /* TorOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorOnboardingView.swift; sourceTree = "<group>"; };
+		4508E2836B1D722E988A77EA /* LanDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanDiscovery.swift; sourceTree = "<group>"; };
 		55D252C1F40504DBD9496663 /* AIAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAssistantView.swift; sourceTree = "<group>"; };
 		56028505B9B7E422FA2A0224 /* X3DH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = X3DH.swift; sourceTree = "<group>"; };
 		58A63E812A5B4C3520C5DB66 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
@@ -132,7 +134,7 @@
 		91AA1BC487BE80E0FFC5335D /* CryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoTests.swift; sourceTree = "<group>"; };
 		A09C7E02CF9D89FE6C13A950 /* PreKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreKeyManager.swift; sourceTree = "<group>"; };
 		ABD39FB7881F54A1D3378751 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
-		B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BBA70D055C12057597E9CB7A /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = cs.lproj/Localizable.strings; sourceTree = "<group>"; };
 		BFE9B13C28C028ED49E4EE61 /* SophaxChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SophaxChatApp.swift; sourceTree = "<group>"; };
 		C1ECC64BA74FB7E6A5B7B4D4 /* GroupChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChatView.swift; sourceTree = "<group>"; };
@@ -140,7 +142,7 @@
 		CA16B12AEADB7788947F8CF7 /* AdvancedCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedCryptoTests.swift; sourceTree = "<group>"; };
 		CA9CCE7BA81156A8562115CF /* DoubleRatchet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoubleRatchet.swift; sourceTree = "<group>"; };
 		D6459A3E71AACFC99D43A361 /* MessageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTransport.swift; sourceTree = "<group>"; };
-		D6AA224B2DAE6F1832309166 /* SophaxChat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SophaxChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6AA224B2DAE6F1832309166 /* SophaxChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SophaxChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D9BFDABE7886E3AED296B2D7 /* IdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityView.swift; sourceTree = "<group>"; };
 		E4A97FADF78894EFE4196AE9 /* ContactScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactScannerView.swift; sourceTree = "<group>"; };
 		E5647D3B76AD67EBE0DE3FE8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -285,6 +287,7 @@
 		A94CF379E57121F1A178F611 /* Network */ = {
 			isa = PBXGroup;
 			children = (
+				4508E2836B1D722E988A77EA /* LanDiscovery.swift */,
 				5C9498CFAE4DAEC9C6FF086C /* MeshManager.swift */,
 				D6459A3E71AACFC99D43A361 /* MessageTransport.swift */,
 				5B5D82448CAE0D1840C78A0F /* NetworkProtocol.swift */,
@@ -417,7 +420,6 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					7F19A4E18FFE93EF266B0DB3 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -507,6 +509,7 @@
 				31BDAAE10E0E4AB0A74C1242 /* IdentityManager.swift in Sources */,
 				47D77D3F30CE73E7AB6EB61B /* Keccak.swift in Sources */,
 				994D2492C3F26FF43C4FE69B /* KeychainManager.swift in Sources */,
+				C8E470B6126321F435C1A55D /* LanDiscovery.swift in Sources */,
 				B6D3727A5878192A7ED89BAD /* MeshManager.swift in Sources */,
 				77535E232F8EF1DF4001A4EA /* MessageStore.swift in Sources */,
 				400C000D6FC25C288AB73DBF /* MessageTransport.swift in Sources */,
@@ -663,7 +666,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 7968S3NQPH;
 				INFOPLIST_FILE = SophaxChat/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -687,7 +690,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 7968S3NQPH;
 				INFOPLIST_FILE = SophaxChat/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
