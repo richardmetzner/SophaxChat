@@ -106,7 +106,8 @@ struct SettingsView: View {
     @ViewBuilder
     private var globalSection: some View {
         Section {
-            Toggle("Connect Globally", isOn: Binding(
+            // Main toggle
+            Toggle(isOn: Binding(
                 get: { appState.tcpEnabled },
                 set: { enabled in
                     appState.tcpEnabled = enabled
@@ -115,114 +116,201 @@ struct SettingsView: View {
                         UserDefaults.standard.set(true, forKey: "com.sophax.tor.onboardingShown")
                     }
                 }
-            ))
-            if appState.tcpEnabled {
-                orbotRow
-                advancedGroup
-            }
-        } header: {
-            Text("Global")
-        } footer: {
-            Text(appState.tcpEnabled
-                 ? "Messages stay end-to-end encrypted. No server, no account — your identity is your address."
-                 : "Reach anyone in the world, not just nearby. Uses Tor for anonymity.")
-        }
-    }
-
-    @ViewBuilder
-    private var orbotRow: some View {
-        if appState.isOrbotDetected {
-            Button { showingContactCard = true } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Ready")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text("Share your address to connect with anyone")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "qrcode").foregroundStyle(.secondary)
-                }
-            }
-        } else {
-            Link(destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!) {
-                HStack(spacing: 14) {
-                    Image(systemName: "globe.badge.chevron.backward")
-                        .font(.title2)
-                        .foregroundStyle(Color.accentColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Install Orbot")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text("Enable Tor VPN inside Orbot — that's it")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.up.right")
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Chat with anyone in the world")
+                        .font(.body)
+                    Text("Not just people nearby — reach anyone, anywhere")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+
+            if appState.tcpEnabled {
+                torStatusCard
+                connectCard
+            }
+        } header: {
+            Text("Global Reach")
+        } footer: {
+            Text(appState.tcpEnabled
+                 ? "Messages are always end-to-end encrypted. No server, no account — only you and the person you're chatting with."
+                 : "Turn this on to chat with people anywhere in the world.")
         }
     }
 
     @ViewBuilder
-    private var advancedGroup: some View {
-        DisclosureGroup("Advanced") {
-            HStack {
-                Text("SOCKS5 Proxy")
-                Spacer()
-                TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
+    private var torStatusCard: some View {
+        if appState.isOrbotDetected {
+            // Tor is running — show share card
+            Button { showingContactCard = true } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle().fill(Color.green.opacity(0.12)).frame(width: 44, height: 44)
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.green)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Anonymous & ready")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("Share your address so others can reach you")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "qrcode")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+        } else {
+            // Tor not running — guide user
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle().fill(Color.orange.opacity(0.12)).frame(width: 44, height: 44)
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.orange)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Add anonymity with Tor")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Hides your IP address from the other person")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                #if targetEnvironment(macCatalyst)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("How to set up on Mac:")
+                        .font(.caption.weight(.medium))
+                    Label("Download Tor Browser at torproject.org", systemImage: "1.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Label("Open Tor Browser and keep it running", systemImage: "2.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Label("That's it — SophaxChat will use it automatically", systemImage: "3.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.leading, 58)
+                Link("Download Tor Browser →", destination: URL(string: "https://www.torproject.org/download/")!)
+                    .font(.caption.weight(.medium))
+                    .padding(.leading, 58)
+                #else
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("How to set up on iPhone:")
+                        .font(.caption.weight(.medium))
+                    Label("Install Orbot from the App Store", systemImage: "1.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Label("Open Orbot and turn on the VPN", systemImage: "2.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Label("Come back here — it will say \"ready\"", systemImage: "3.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.leading, 58)
+                Link("Get Orbot on App Store →", destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!)
+                    .font(.caption.weight(.medium))
+                    .padding(.leading, 58)
+                #endif
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    @ViewBuilder
+    private var connectCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(Color.accentColor.opacity(0.10)).frame(width: 44, height: 44)
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.accentColor)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Connect to someone")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Enter the address they shared with you")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 10) {
+                TextField("e.g. abc123.onion:25519", text: $tcpConnectAddress)
                     .keyboardType(.asciiCapable)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-            }
-            HStack {
-                Text("Port")
-                Spacer()
-                TextField("25519", text: $appState.tcpPort)
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 70)
-                    .foregroundStyle(.secondary)
-            }
-            HStack {
-                Text("Custom Address")
-                Spacer()
-                TextField("host:port", text: $appState.myTCPAddress)
-                    .keyboardType(.asciiCapable)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-            }
-            HStack {
-                TextField("Connect to host:port", text: $tcpConnectAddress)
-                    .keyboardType(.asciiCapable)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                Button("Connect") {
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                Button {
                     if let err = appState.connectViaTCP(address: trimmedTCPAddress) {
-                        tcpConnectError     = err
+                        tcpConnectError = err
                         showTCPConnectAlert = true
                     } else {
                         tcpConnectAddress = ""
                     }
+                } label: {
+                    Text("Connect")
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(trimmedTCPAddress.isEmpty ? Color(.systemGray4) : Color.accentColor)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
-                .buttonStyle(.bordered)
                 .disabled(trimmedTCPAddress.isEmpty)
             }
+            .padding(.leading, 58)
+
+            // Expert options — collapsed by default
+            DisclosureGroup("Expert settings") {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("Proxy")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        TextField("127.0.0.1:9050", text: $appState.tcpSocksProxy)
+                            .keyboardType(.asciiCapable)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                    Divider()
+                    HStack {
+                        Text("Port")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        TextField("25519", text: $appState.tcpPort)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 70)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                    Divider()
+                    HStack {
+                        Text("My address")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        TextField("host:port", text: $appState.myTCPAddress)
+                            .keyboardType(.asciiCapable)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .padding(.leading, 58)
         }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+        .padding(.vertical, 6)
     }
 
     @ViewBuilder
