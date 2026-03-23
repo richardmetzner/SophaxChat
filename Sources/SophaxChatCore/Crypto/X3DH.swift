@@ -84,8 +84,9 @@ public enum X3DH {
             usedOTPKId = otpkId
         }
 
-        // 6. Derive shared secret via HKDF
+        // 6. Derive shared secret via HKDF, then zero the DH material immediately.
         let sharedSecret = deriveSharedSecret(from: dhConcat)
+        dhConcat.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
 
         return SenderResult(
             sharedSecret: sharedSecret,
@@ -134,7 +135,9 @@ public enum X3DH {
             dh4.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
         }
 
-        return deriveSharedSecret(from: dhConcat)
+        let sharedSecret = deriveSharedSecret(from: dhConcat)
+        dhConcat.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
+        return sharedSecret
     }
 
     // MARK: - KDF
@@ -143,6 +146,8 @@ public enum X3DH {
     /// Follows the Signal X3DH spec: F || DH_concat is the IKM,
     /// where F = 32 bytes of 0xFF (domain separator for non-empty use).
     private static func deriveSharedSecret(from dhConcat: Data) -> SymmetricKey {
+        precondition(dhConcat.count == 96 || dhConcat.count == 128,
+                     "X3DH dhConcat must be 96 or 128 bytes, got \(dhConcat.count)")
         // Per Signal X3DH spec: prepend 32 0xFF bytes as domain separator
         let f   = Data(repeating: 0xFF, count: 32)
         let ikm = f + dhConcat
