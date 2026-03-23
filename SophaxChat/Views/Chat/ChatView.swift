@@ -98,6 +98,40 @@ struct ChatView: View {
     }
 
     var body: some View {
+        chatContent
+            .sheet(isPresented: $showingSafetyNumber) {
+                SafetyNumberView(peer: peer)
+            }
+            .confirmationDialog(
+                "Block \(peer.username)?",
+                isPresented: $showingBlockConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Block", role: .destructive) {
+                    appState.blockPeer(peerID: peer.id)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You won't receive messages from this person.")
+            }
+            .alert("Rename Contact", isPresented: $showingRenameAlert) {
+                TextField("Name", text: $renameText)
+                    .autocorrectionDisabled()
+                Button("Save") { appState.setAlias(renameText.isEmpty ? nil : renameText, for: peer.id) }
+                Button("Reset") { appState.setAlias(nil, for: peer.id) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Set a custom name for \(peer.username).")
+            }
+            .sheet(item: $forwardingMessage) { message in
+                ForwardPickerView(message: message)
+                    .environmentObject(appState)
+            }
+    }
+
+    // Extracted so the Swift type checker doesn't time out on one giant body expression.
+    private var chatContent: some View {
         VStack(spacing: 0) {
             messageList
             Divider()
@@ -110,101 +144,76 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 12) {
-                    // Search toggle
+                chatToolbar
+            }
+        }
+    }
+
+    @ViewBuilder private var chatToolbar: some View {
+        HStack(spacing: 12) {
+            // Search toggle
+            Button {
+                withAnimation { isSearching.toggle() }
+                if !isSearching { searchQuery = "" }
+            } label: {
+                Image(systemName: isSearching ? "xmark.circle" : "magnifyingglass")
+            }
+
+            // Online indicator
+            HStack(spacing: 4) {
+                Circle().fill(isOnline ? .green : .gray).frame(width: 8, height: 8)
+                Text(isOnline ? "Online" : "Offline")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Disappearing messages
+            Menu {
+                ForEach(DisappearingInterval.allCases) { interval in
                     Button {
-                        withAnimation { isSearching.toggle() }
-                        if !isSearching { searchQuery = "" }
+                        disappearingInterval = interval
+                        UserDefaults.standard.set(interval.rawValue, forKey: disappearingKey)
                     } label: {
-                        Image(systemName: isSearching ? "xmark.circle" : "magnifyingglass")
-                    }
-
-                    // Online indicator
-                    HStack(spacing: 4) {
-                        Circle().fill(isOnline ? .green : .gray).frame(width: 8, height: 8)
-                        Text(isOnline ? "Online" : "Offline")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    // Disappearing messages
-                    Menu {
-                        ForEach(DisappearingInterval.allCases) { interval in
-                            Button {
-                                disappearingInterval = interval
-                                UserDefaults.standard.set(interval.rawValue, forKey: disappearingKey)
-                            } label: {
-                                if disappearingInterval == interval {
-                                    Label(interval.rawValue, systemImage: "checkmark")
-                                } else {
-                                    Text(interval.rawValue)
-                                }
-                            }
+                        if disappearingInterval == interval {
+                            Label(interval.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(interval.rawValue)
                         }
-                    } label: {
-                        Image(systemName: disappearingInterval.icon)
-                            .foregroundStyle(disappearingInterval == .off ? Color.primary : Color.orange)
-                    }
-
-                    // Safety number + more actions
-                    Menu {
-                        Button {
-                            showingSafetyNumber = true
-                        } label: {
-                            if appState.isVerified(peer.id, currentSafetyNumber: peer.safetyNumber) {
-                                Label("Identity Verified", systemImage: "checkmark.shield.fill")
-                            } else if appState.hasKeyChanged(for: peer.id, currentSafetyNumber: peer.safetyNumber) {
-                                Label("Key Changed — Verify Now!", systemImage: "exclamationmark.shield.fill")
-                            } else {
-                                Label("Verify Identity", systemImage: "checkmark.shield")
-                            }
-                        }
-                        Button {
-                            renameText = appState.peerAliases[peer.id] ?? ""
-                            showingRenameAlert = true
-                        } label: {
-                            Label("Rename Contact", systemImage: "pencil")
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            showingBlockConfirm = true
-                        } label: {
-                            Label("Block \(peer.username)", systemImage: "nosign")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
                     }
                 }
+            } label: {
+                Image(systemName: disappearingInterval.icon)
+                    .foregroundStyle(disappearingInterval == .off ? Color.primary : Color.orange)
             }
-        }
-        .sheet(isPresented: $showingSafetyNumber) {
-            SafetyNumberView(peer: peer)
-        }
-        .confirmationDialog(
-            "Block \(peer.username)?",
-            isPresented: $showingBlockConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Block", role: .destructive) {
-                appState.blockPeer(peerID: peer.id)
-                dismiss()
+
+            // Safety number + more actions
+            Menu {
+                Button {
+                    showingSafetyNumber = true
+                } label: {
+                    if appState.isVerified(peer.id, currentSafetyNumber: peer.safetyNumber) {
+                        Label("Identity Verified", systemImage: "checkmark.shield.fill")
+                    } else if appState.hasKeyChanged(for: peer.id, currentSafetyNumber: peer.safetyNumber) {
+                        Label("Key Changed — Verify Now!", systemImage: "exclamationmark.shield.fill")
+                    } else {
+                        Label("Verify Identity", systemImage: "checkmark.shield")
+                    }
+                }
+                Button {
+                    renameText = appState.peerAliases[peer.id] ?? ""
+                    showingRenameAlert = true
+                } label: {
+                    Label("Rename Contact", systemImage: "pencil")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    showingBlockConfirm = true
+                } label: {
+                    Label("Block \(peer.username)", systemImage: "nosign")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won't receive messages from this person.")
-        }
-        .alert("Rename Contact", isPresented: $showingRenameAlert) {
-            TextField("Name", text: $renameText)
-                .autocorrectionDisabled()
-            Button("Save") { appState.setAlias(renameText.isEmpty ? nil : renameText, for: peer.id) }
-            Button("Reset") { appState.setAlias(nil, for: peer.id) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Set a custom name for \(peer.username).")
-        }
-        .sheet(item: $forwardingMessage) { message in
-            ForwardPickerView(message: message)
-                .environmentObject(appState)
         }
     }
 

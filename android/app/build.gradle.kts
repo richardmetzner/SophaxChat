@@ -17,8 +17,25 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            // Hodnoty načti z prostředí (CI) nebo lokálního local.properties — nikdy ne z kódu
+            val keystorePath  = System.getenv("KEYSTORE_PATH")  ?: rootProject.file("keystore.jks").absolutePath
+            val keystorePass  = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            val keyAlias      = System.getenv("KEY_ALIAS")         ?: "sophaxchat"
+            val keyPass       = System.getenv("KEY_PASSWORD")       ?: ""
+            if (File(keystorePath).exists() && keystorePass.isNotEmpty()) {
+                storeFile     = File(keystorePath)
+                storePassword = keystorePass
+                this.keyAlias      = keyAlias
+                keyPassword   = keyPass
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig   = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

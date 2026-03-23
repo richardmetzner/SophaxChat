@@ -30,11 +30,15 @@ struct SophaxChatApp: App {
                     appState.handleIncomingLink(url)
                 }
                 .onAppear {
-                    // Allow free window resizing on macOS (Designed for iPad)
-                    if let windowScene = UIApplication.shared.connectedScenes
-                        .first as? UIWindowScene {
-                        windowScene.sizeRestrictions?.minimumSize = CGSize(width: 380, height: 600)
-                        windowScene.sizeRestrictions?.maximumSize = CGSize(width: 9999, height: 9999)
+                    // Allow free window resizing on macOS (Designed for iPad).
+                    // Deferred one run-loop tick so the UIWindowScene is fully
+                    // initialised before we touch sizeRestrictions.
+                    DispatchQueue.main.async {
+                        if let windowScene = UIApplication.shared.connectedScenes
+                            .first as? UIWindowScene {
+                            windowScene.sizeRestrictions?.minimumSize = CGSize(width: 380, height: 600)
+                            windowScene.sizeRestrictions?.maximumSize = CGSize(width: 9999, height: 9999)
+                        }
                     }
                 }
                 // Prevent the app from appearing in the app switcher screenshot

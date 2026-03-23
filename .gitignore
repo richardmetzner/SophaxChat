@@ -37,7 +37,11 @@ fastlane/test_output
 *.p12
 *.pem
 *.key
+*.jks
+*.keystore
 Secrets.xcconfig
+local.properties
+store_assets/
 
 # Build artifacts
 *.ipa
