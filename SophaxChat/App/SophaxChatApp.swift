@@ -7,6 +7,10 @@ import SwiftUI
 import BackgroundTasks
 import SophaxChatCore
 
+extension Notification.Name {
+    static let sophaxShowSettings = Notification.Name("com.sophax.showSettings")
+}
+
 @main
 struct SophaxChatApp: App {
 
@@ -16,12 +20,22 @@ struct SophaxChatApp: App {
 
     private static let meshRefreshID = "com.sophax.mesh-refresh"
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
                 .onOpenURL { url in
                     appState.handleIncomingLink(url)
+                }
+                .onAppear {
+                    // Allow free window resizing on macOS (Designed for iPad)
+                    if let windowScene = UIApplication.shared.connectedScenes
+                        .first as? UIWindowScene {
+                        windowScene.sizeRestrictions?.minimumSize = CGSize(width: 380, height: 600)
+                        windowScene.sizeRestrictions?.maximumSize = CGSize(width: 9999, height: 9999)
+                    }
                 }
                 // Prevent the app from appearing in the app switcher screenshot
                 // (reduces the risk of sensitive content being captured by iOS)
@@ -39,6 +53,15 @@ struct SophaxChatApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
                     appState.handleScreenshot()
                 }
+        }
+        .commands {
+            // ⌘, opens Settings — standard Mac convention
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NotificationCenter.default.post(name: .sophaxShowSettings, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
         // Background processing task — re-wakes the mesh briefly after iOS suspends the app.
         // The bluetooth-central/peripheral background modes in Info.plist allow MPC to stay

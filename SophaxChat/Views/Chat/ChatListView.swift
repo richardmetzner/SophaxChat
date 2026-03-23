@@ -204,6 +204,9 @@ struct ChatListView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sophaxShowSettings)) { _ in
+            showingSettings = true
+        }
         .sheet(isPresented: $showingCreateGroup) {
             CreateGroupView()
         }
