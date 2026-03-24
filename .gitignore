@@ -50,3 +50,4 @@ store_assets/
 
 # Logs
 *.log
+.claude/
