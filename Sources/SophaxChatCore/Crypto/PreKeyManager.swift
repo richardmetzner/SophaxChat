@@ -97,6 +97,9 @@ public final class PreKeyManager: @unchecked Sendable {
 
     // MARK: - Public API
 
+    /// Number of one-time prekeys currently available in the local pool.
+    public var opkCount: Int { oneTimePreKeys.count }
+
     /// Generates a PreKeyBundle ready to share with a peer.
     /// - Parameter tcpAddress: Optional "host:port" to include so peers learn our TCP address.
     public func generateBundle(tcpAddress: String? = nil) throws -> PreKeyBundle {

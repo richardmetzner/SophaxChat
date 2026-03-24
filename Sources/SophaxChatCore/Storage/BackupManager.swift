@@ -31,11 +31,19 @@ import Foundation
 import CryptoKit
 
 public struct SophaxBackup: Codable {
-    public let version:    Int            // = 1
+    public let version:    Int
     public let createdAt:  Date
     public let username:   String
     public let peers:      [KnownPeer]
-    public let messages:   [String: [StoredMessage]]  // peerID → [StoredMessage]
+    public let messages:   [String: [StoredMessage]]
+
+    public init(version: Int, createdAt: Date, username: String, peers: [KnownPeer], messages: [String: [StoredMessage]]) {
+        self.version   = version
+        self.createdAt = createdAt
+        self.username  = username
+        self.peers     = peers
+        self.messages  = messages
+    }
 }
 
 public enum BackupError: Error, LocalizedError {

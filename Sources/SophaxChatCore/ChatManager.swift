@@ -840,6 +840,11 @@ public final class ChatManager: @unchecked Sendable {
         Array(knownPeers.values)
     }
 
+    /// Manually replenish the one-time prekey pool to the default target (20 keys).
+    public func replenishPreKeys() {
+        try? preKeys.replenishIfNeeded(target: 20)
+    }
+
     // MARK: - Private: Build outbound wire message
 
     /// Encrypt `content` and return the wire message for `peerID`.
@@ -1409,7 +1414,7 @@ public final class ChatManager: @unchecked Sendable {
         let drop    = DeadDropEnvelope(targetPeerID: peerID, sealed: sealed)
         let wire    = try wireBuilder.build(.deadDrop, payload: drop)
         // Flood over mesh — TCP intentionally excluded (dead drops are mesh-only by design)
-        mesh.broadcast(wire, excluding: nil)
+        try mesh.broadcast(wire, excluding: nil)
         // Store locally so we can deliver if target connects to us later
         storeDeadDrop(drop)
     }
@@ -1435,11 +1440,11 @@ public final class ChatManager: @unchecked Sendable {
         // Not for us — store and re-broadcast
         storeDeadDrop(drop)
         if let wire = try? wireBuilder.build(.deadDrop, payload: drop) {
-            mesh.broadcast(wire, excluding: nil)
+            try? mesh.broadcast(wire, excluding: nil)
         }
 
         // If target is directly connected, deliver immediately
-        if mesh.connectedPeerIDs().contains(drop.targetPeerID) {
+        if mesh.connectedPeerIDs.contains(drop.targetPeerID) {
             if let wire = try? wireBuilder.build(.deadDrop, payload: drop) {
                 try? mesh.send(wire, toPeerID: drop.targetPeerID)
             }
@@ -2034,6 +2039,10 @@ extension ChatManager: MeshManagerDelegate {
                     guard let self else { return }
                     self.delegate?.chatManager(self, peerDidUpdateTyping: senderID, isTyping: isTyping)
                 }
+
+            case .deadDrop:
+                let payload = try wireBuilder.decodePayload(DeadDropEnvelope.self, from: message)
+                handleDeadDrop(payload)
             }
         } catch SophaxError.sessionStateCorrupted {
             // The persisted DR session blob was malformed (e.g. crashed mid-write).

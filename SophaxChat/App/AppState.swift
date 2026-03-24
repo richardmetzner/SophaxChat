@@ -509,6 +509,9 @@ final class AppState: ObservableObject {
     /// Nil only before identity is created (first launch before onboarding completes).
     var derivedOnionHostname: String? { chatManager?.identity.onionHostname }
 
+    /// Number of one-time prekeys remaining. Below 5 means reduced X3DH entropy.
+    var opkCount: Int { chatManager?.preKeys.opkCount ?? 0 }
+
     /// The full advertised Tor address (hostname:port) for display and sharing.
     var derivedOnionAddress: String? {
         guard let host = derivedOnionHostname else { return nil }

@@ -93,6 +93,20 @@ struct IdentityView: View {
                         .foregroundStyle(.purple)
                     Label("Keys stored in iOS Keychain", systemImage: "key.shield")
                         .foregroundStyle(.orange)
+
+                    if appState.opkCount < 5 {
+                        HStack {
+                            Label("One-time prekeys low (\(appState.opkCount) left)", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Spacer()
+                            Button("Regenerate") {
+                                appState.chatManager?.replenishPreKeys()
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.orange)
+                            .font(.caption)
+                        }
+                    }
                 } header: {
                     Text("Security")
                 }
