@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # generate_android_icons.sh
 # Generuje ic_launcher PNG pro všechny Android hustoty + Play Store ikonu.
 # Použití: ./scripts/generate_android_icons.sh /cesta/k/logo.png
@@ -25,17 +25,12 @@ STORE="$REPO_ROOT/store_assets"
 
 echo "→ Generuji Android ikony z: $SRC"
 
-# mipmap hustoty: název → velikost
-declare -A DENSITIES=(
-    [mdpi]=48
-    [hdpi]=72
-    [xhdpi]=96
-    [xxhdpi]=144
-    [xxxhdpi]=192
-)
+# mipmap hustoty: "density:size"
+DENSITIES=(mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192)
 
-for DENSITY in "${!DENSITIES[@]}"; do
-    SIZE="${DENSITIES[$DENSITY]}"
+for ENTRY in "${DENSITIES[@]}"; do
+    DENSITY="${ENTRY%%:*}"
+    SIZE="${ENTRY##*:}"
     DIR="$BASE/mipmap-$DENSITY"
     mkdir -p "$DIR"
     sips -z "$SIZE" "$SIZE" "$SRC" --out "$DIR/ic_launcher.png" > /dev/null
@@ -48,10 +43,9 @@ mkdir -p "$STORE"
 sips -z 512 512 "$SRC" --out "$STORE/play_store_icon.png" > /dev/null
 echo "  ✓ store_assets/play_store_icon.png (512×512px)"
 
-# Adaptivní ikona — foreground (přidá padding ~18% pro systém)
-# Vrstva foreground je vycentrovaná na průhledném pozadí
-for DENSITY in "${!DENSITIES[@]}"; do
-    SIZE="${DENSITIES[$DENSITY]}"
+# Adaptivní ikona — foreground
+for ENTRY in "${DENSITIES[@]}"; do
+    DENSITY="${ENTRY%%:*}"
     DIR="$BASE/mipmap-$DENSITY"
     cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_foreground.png"
 done
