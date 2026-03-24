@@ -281,7 +281,7 @@ class ChatManager(
 
             // 2. Nearby direct (GMS devices only)
             nearby != null && peerIDToEndpoint[toPeerID] != null ->
-                nearby.send(wire, peerIDToEndpoint[toPeerID]!!)
+                nearby.send(wire, peerIDToEndpoint[toPeerID] ?: return)
 
             // 3a. Relay via Nearby mesh (GMS devices)
             nearby != null && nearby.connectedEndpointIDs().isNotEmpty() ->
@@ -507,7 +507,7 @@ class ChatManager(
             knownPeers[peerID] = peer
             delegate?.didDiscoverPeer(peer)
         } else {
-            knownPeers[peerID] = knownPeers[peerID]!!.copy(isOnline = true, lastSeen = Date())
+            knownPeers[peerID] = knownPeers[peerID]?.copy(isOnline = true, lastSeen = Date()) ?: return
         }
 
         // Drain pending queue — now that we have the bundle, build and send each queued message
