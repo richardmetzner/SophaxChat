@@ -93,5 +93,8 @@ dependencies {
     // Biometric authentication (App Lock)
     implementation(libs.androidx.biometric)
 
+    // QR code generation
+    implementation(libs.zxing.core)
+
     debugImplementation(libs.androidx.ui.tooling)
 }

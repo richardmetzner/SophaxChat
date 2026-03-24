@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +23,7 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit) {
 
     var usernameEdit by remember(username) { mutableStateOf(username) }
     var proxyEdit    by remember(socksProxy) { mutableStateOf(socksProxy) }
+    var showQR       by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -89,6 +91,15 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit) {
                     onClick = { appState.setSocksProxy(proxyEdit) },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Apply Proxy") }
+            }
+
+            OutlinedButton(
+                onClick = { showQR = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.QrCode, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("My QR Code")
             }
 
             HorizontalDivider()
@@ -165,6 +176,13 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit) {
                 "Open source · github.com/sophaxtechnologies/SophaxChat",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        if (showQR) {
+            ContactQRSheet(
+                contactUrl = appState.myContactUrl,
+                onDismiss = { showQR = false }
             )
         }
     }
