@@ -181,8 +181,10 @@ private fun AppNavigation(appState: AppState) {
             val peer         = peers.firstOrNull { it.id == peerID }
             val safetyNumber = appState.safetyNumber(peerID) ?: ""
             SafetyNumberScreen(
+                peerID       = peerID,
                 peerUsername = peer?.username ?: peerID,
                 safetyNumber = safetyNumber,
+                appState     = appState,
                 onBack       = { navController.popBackStack() }
             )
         }

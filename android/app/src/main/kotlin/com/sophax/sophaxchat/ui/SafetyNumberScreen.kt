@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -16,12 +17,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sophax.sophaxchat.AppState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SafetyNumberScreen(
+    peerID: String,
     peerUsername: String,
     safetyNumber: String,
+    appState: AppState,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -102,6 +106,23 @@ fun SafetyNumberScreen(
                         }
                     }
                 }
+            }
+
+            val isVerified = appState.isVerified(peerID, safetyNumber)
+            Button(
+                onClick = { if (!isVerified) appState.markPeerVerified(peerID, safetyNumber) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isVerified) Color(0xFF34C759) else MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(
+                    if (isVerified) Icons.Default.VerifiedUser else Icons.Default.Shield,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (isVerified) "Verified ✓" else "Mark as Verified")
             }
 
             Spacer(Modifier.weight(1f))

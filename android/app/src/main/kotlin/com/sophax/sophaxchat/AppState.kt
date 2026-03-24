@@ -21,6 +21,8 @@ import com.sophax.sophaxchat.storage.StoredMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class AppState(application: Application) : AndroidViewModel(application) {
 
@@ -83,6 +85,30 @@ class AppState(application: Application) : AndroidViewModel(application) {
         prefs.getStringSet("blocked_peers", emptySet())?.toList() ?: emptyList()
     )
     val blockedPeers: StateFlow<List<String>> = _blockedPeers.asStateFlow()
+
+    private val _verifiedPeers = MutableStateFlow<Map<String, String>>(
+        run {
+            val json = prefs.getString("verified_peers", null) ?: return@run emptyMap()
+            try {
+                Json.decodeFromString<Map<String, String>>(json)
+            } catch (_: Exception) { emptyMap() }
+        }
+    )
+    val verifiedPeers: StateFlow<Map<String, String>> = _verifiedPeers.asStateFlow()
+
+    fun markPeerVerified(peerID: String, safetyNumber: String) {
+        _verifiedPeers.value = _verifiedPeers.value + (peerID to safetyNumber)
+        prefs.edit().putString("verified_peers",
+            Json.encodeToString(_verifiedPeers.value)).apply()
+    }
+
+    fun isVerified(peerID: String, safetyNumber: String): Boolean =
+        _verifiedPeers.value[peerID] == safetyNumber
+
+    fun hasKeyChanged(peerID: String, safetyNumber: String): Boolean {
+        val pinned = _verifiedPeers.value[peerID] ?: return false
+        return pinned != safetyNumber
+    }
 
     // Unread counts (in-memory; reset on markAsRead)
     private val _unreadCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
