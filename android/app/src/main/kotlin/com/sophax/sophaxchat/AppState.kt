@@ -413,6 +413,75 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     // -----------------------------------------------------------------------
+    // Backup / Restore
+    // -----------------------------------------------------------------------
+
+    fun exportBackup(passphrase: String, destUri: Uri): String? = try {
+        val conversationIDs = messageStore.allConversationIDs()
+        val allMessages = conversationIDs.associateWith { messageStore.loadMessages(it) }
+        val peers = _chatManager?.knownPeersList()?.map { mapOf("id" to it.id, "username" to it.username) } ?: emptyList()
+        val backupMap = mapOf(
+            "version" to "1",
+            "username" to (_username.value),
+            "peers" to Json.encodeToString(peers),
+            "conversationIDs" to Json.encodeToString(conversationIDs),
+            "messages" to Json.encodeToString(allMessages)
+        )
+        val jsonPayload = Json.encodeToString(backupMap).toByteArray()
+        val encrypted = pbkdf2Encrypt(passphrase, jsonPayload)
+        getApplication<Application>().contentResolver.openOutputStream(destUri)?.use { it.write(encrypted) }
+        null
+    } catch (e: Exception) { "Export failed: ${e.message}" }
+
+    fun importBackup(passphrase: String, srcUri: Uri): String? = try {
+        val bytes = getApplication<Application>().contentResolver.openInputStream(srcUri)
+            ?.use { it.readBytes() } ?: return "Could not read file."
+        val jsonPayload = try { pbkdf2Decrypt(passphrase, bytes) }
+            catch (_: javax.crypto.BadPaddingException) { return "Wrong passphrase." }
+        val backupMap = Json.decodeFromString<Map<String, String>>(String(jsonPayload))
+        val conversationIDs = Json.decodeFromString<List<String>>(backupMap["conversationIDs"] ?: "[]")
+        val allMessages = Json.decodeFromString<Map<String, List<StoredMessage>>>(backupMap["messages"] ?: "{}")
+        conversationIDs.forEach { convID ->
+            allMessages[convID]?.forEach { messageStore.store(it) }
+        }
+        loadAllMessages()
+        null
+    } catch (_: javax.crypto.BadPaddingException) { "Wrong passphrase." }
+      catch (e: Exception) { "Restore failed: ${e.message}" }
+
+    private fun loadAllMessages() {
+        val convIDs = messageStore.allConversationIDs()
+        _messages.value = convIDs.associateWith { messageStore.loadMessages(it) }
+    }
+
+    private fun pbkdf2Encrypt(passphrase: String, data: ByteArray): ByteArray {
+        val salt = java.security.SecureRandom().generateSeed(16)
+        val key = deriveKey(passphrase, salt)
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, key)
+        val iv = cipher.iv
+        val ct = cipher.doFinal(data)
+        return salt + iv + ct
+    }
+
+    private fun pbkdf2Decrypt(passphrase: String, data: ByteArray): ByteArray {
+        val salt = data.copyOfRange(0, 16)
+        val iv   = data.copyOfRange(16, 28)
+        val ct   = data.copyOfRange(28, data.size)
+        val key  = deriveKey(passphrase, salt)
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key, javax.crypto.spec.GCMParameterSpec(128, iv))
+        return cipher.doFinal(ct)
+    }
+
+    private fun deriveKey(passphrase: String, salt: ByteArray): javax.crypto.SecretKey {
+        val factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val spec = javax.crypto.spec.PBEKeySpec(passphrase.toCharArray(), salt, 100_000, 256)
+        val tmp = factory.generateSecret(spec)
+        return javax.crypto.spec.SecretKeySpec(tmp.encoded, "AES")
+    }
+
+    // -----------------------------------------------------------------------
     // Lifecycle
     // -----------------------------------------------------------------------
 

@@ -15,7 +15,7 @@ import com.sophax.sophaxchat.AppState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(appState: AppState, onBack: () -> Unit) {
+fun SettingsScreen(appState: AppState, onBack: () -> Unit, onBackup: () -> Unit = {}) {
     val username    by appState.username.collectAsState()
     val tcpEnabled  by appState.tcpEnabled.collectAsState()
     val socksProxy  by appState.socksProxy.collectAsState()
@@ -130,6 +130,13 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit) {
                         appState.setAppLockEnabled(it)
                     }
                 )
+            }
+
+            OutlinedButton(
+                onClick = onBackup,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Backup & Restore")
             }
 
             HorizontalDivider()

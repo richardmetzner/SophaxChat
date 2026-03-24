@@ -23,6 +23,7 @@ import com.sophax.sophaxchat.ui.chat.ChatScreen
 import com.sophax.sophaxchat.ui.chat.CreateGroupScreen
 import com.sophax.sophaxchat.ui.chat.GroupChatScreen
 import com.sophax.sophaxchat.ui.onboarding.OnboardingScreen
+import com.sophax.sophaxchat.ui.settings.BackupScreen
 import com.sophax.sophaxchat.ui.settings.SettingsScreen
 import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 
@@ -171,6 +172,14 @@ private fun AppNavigation(appState: AppState) {
 
         composable("settings") {
             SettingsScreen(
+                appState = appState,
+                onBack   = { navController.popBackStack() },
+                onBackup = { navController.navigate("backup") }
+            )
+        }
+
+        composable("backup") {
+            BackupScreen(
                 appState = appState,
                 onBack   = { navController.popBackStack() }
             )
