@@ -1,6 +1,8 @@
 package com.sophax.sophaxchat.ui.chat
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -17,9 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.MessageDirection
 import com.sophax.sophaxchat.storage.MessageStatus
 import com.sophax.sophaxchat.storage.StoredMessage
@@ -36,6 +41,7 @@ fun ChatScreen(
     messages: List<StoredMessage>,
     peerID: String = "",
     onSend: (String) -> Unit,
+    onSendImage: ((ByteArray) -> Unit)? = null,
     onBack: () -> Unit,
     onMarkRead: () -> Unit = {},
     isTyping: Boolean = false,
@@ -108,6 +114,7 @@ fun ChatScreen(
                 replyTo = replyTo,
                 onClearReply  = { replyTo = null },
                 onTextChange  = { inputText = it },
+                onSendImage   = onSendImage,
                 onSend = {
                     if (inputText.isNotBlank()) {
                         val body = if (replyTo != null)
@@ -152,6 +159,7 @@ private fun MessageBubble(
 ) {
     val isSent = message.direction == MessageDirection.sent.name
     var showMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -181,12 +189,33 @@ private fun MessageBubble(
                         )
                         .padding(horizontal = 14.dp, vertical = 9.dp)
                 ) {
-                    Text(
-                        text  = message.body,
-                        color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
-                        fontSize = 16.sp,
-                        lineHeight = 22.sp
-                    )
+                    if (message.attachmentMimeType?.startsWith("image/") == true) {
+                        val attachmentStore = remember { AttachmentStore(context) }
+                        val bitmap = remember(message.id) {
+                            try {
+                                val bytes = attachmentStore.load(message.id)
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            } catch (_: Exception) { null }
+                        }
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Image",
+                                modifier = Modifier
+                                    .sizeIn(maxWidth = 200.dp, maxHeight = 200.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            Text(text = "[image]", color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface)
+                        }
+                    } else {
+                        Text(
+                            text  = message.body,
+                            color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
+                            fontSize = 16.sp,
+                            lineHeight = 22.sp
+                        )
+                    }
                 }
                 MessageContextMenu(
                     expanded  = showMenu,

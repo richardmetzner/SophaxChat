@@ -135,6 +135,7 @@ private fun AppNavigation(appState: AppState) {
                 messages          = msgs,
                 peerID            = peerID,
                 onSend            = { body -> appState.sendMessage(peerID, body) },
+                onSendImage       = { bytes -> appState.sendImage(peerID, bytes) },
                 onBack            = { navController.popBackStack() },
                 onMarkRead        = { appState.markAsRead(peerID) },
                 isTyping          = peerID in typingPeers,

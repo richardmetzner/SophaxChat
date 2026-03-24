@@ -14,6 +14,8 @@ import com.sophax.sophaxchat.crypto.IdentityManager
 import com.sophax.sophaxchat.crypto.PreKeyManager
 import com.sophax.sophaxchat.notifications.NotificationHelper
 import com.sophax.sophaxchat.protocol.KnownPeer
+import com.sophax.sophaxchat.storage.AttachmentStore
+import com.sophax.sophaxchat.storage.MessageDirection
 import com.sophax.sophaxchat.storage.MessageStore
 import com.sophax.sophaxchat.storage.StoredMessage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -292,6 +294,32 @@ class AppState(application: Application) : AndroidViewModel(application) {
     fun sendMessage(toPeerID: String, body: String) {
         _chatManager?.sendMessage(toPeerID, body)
         updateMessages(toPeerID, messageStore.loadMessages(toPeerID))
+    }
+
+    fun sendImage(toPeerID: String, imageBytes: ByteArray) {
+        val cm = _chatManager ?: return
+        val id = java.util.UUID.randomUUID().toString()
+        try {
+            cm.attachmentStore.save(imageBytes, id)
+        } catch (_: Exception) { return }
+        val stored = StoredMessage(
+            id = id, peerID = toPeerID,
+            direction = MessageDirection.sent.name,
+            body = "[image]",
+            attachmentMimeType = "image/jpeg"
+        )
+        messageStore.store(stored)
+        updateMessages(toPeerID, messageStore.loadMessages(toPeerID))
+        cm.sendMessage(toPeerID, "[image:$id]")
+    }
+
+    val myTCPAddress: String get() = _chatManager?.myTCPAddress ?: ""
+
+    val myContactUrl: String get() {
+        val peerID = identity.publicIdentity.peerID
+        val onion = _chatManager?.myTCPAddress ?: return ""
+        val port = prefs.getString("tcp_port", "25519") ?: "25519"
+        return "sophaxchat://add?id=$peerID&onion=$onion&port=$port"
     }
 
     fun messagesFor(conversationID: String): List<StoredMessage> =

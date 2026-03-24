@@ -3,11 +3,14 @@ package com.sophax.sophaxchat.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -18,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.StoredMessage
 
 internal fun copyToClipboard(context: Context, text: String) {
@@ -68,6 +72,7 @@ fun SharedInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onSendImage: ((ByteArray) -> Unit)? = null,
     placeholder: String = "Message",
     maxLines: Int = 5,
     tonalElevation: Dp = 3.dp,
@@ -109,6 +114,25 @@ fun SharedInputBar(
                 Spacer(Modifier.height(4.dp))
             }
             Row(verticalAlignment = Alignment.Bottom) {
+                if (onSendImage != null) {
+                    val context = LocalContext.current
+                    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                        uri ?: return@rememberLauncherForActivityResult
+                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult
+                        if (bytes.size <= AttachmentStore.MAX_BYTES) onSendImage(bytes)
+                    }
+                    IconButton(
+                        onClick = { imagePicker.launch("image/*") },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.AttachFile,
+                            contentDescription = "Attach image",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChange,
