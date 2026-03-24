@@ -112,6 +112,9 @@ public enum WireMessageType: String, Codable, Sendable {
     /// Channel discovery — broadcast by a group creator to announce a group to nearby peers.
     /// Unsigned broadcast; recipients may request a group invite from the creator.
     case channelAnnouncement
+    /// Dead drop — sealed message flooded over the mesh for a specific recipient.
+    /// Relay nodes cannot read the content (sealed). Stored for 12h at each node.
+    case deadDrop
 }
 
 // MARK: - Hello (Handshake)
@@ -430,6 +433,36 @@ public struct ChannelAnnouncement: Codable, Sendable {
         self.creatorID   = creatorID
         self.memberCount = memberCount
         self.timestamp   = Date()
+    }
+}
+
+// MARK: - Dead Drop
+
+/// A sealed message flooded over the entire mesh for a specific recipient.
+///
+/// Security properties:
+/// - Content is sealed (ChaCha20-Poly1305) — relay nodes see only the target peerID and expiry.
+/// - Any node that receives it re-broadcasts it and stores it locally for 12 hours.
+/// - When the target peer appears in the mesh, any node that has the drop delivers it.
+/// - `id` is a UUID used for deduplication across hops (same as RelayEnvelope pattern).
+///
+/// Use case: "I want to send you a message even though you're not online right now,
+/// without any server involved."
+public struct DeadDropEnvelope: Codable, Sendable {
+    /// Unique ID for deduplication — same across all hops.
+    public let id:           String
+    /// peerID of the intended recipient.
+    public let targetPeerID: String
+    /// Sealed (encrypted for recipient's DH key) inner WireMessage.
+    public let sealed:       SealedMessage
+    /// When this drop expires — nodes discard it after this time.
+    public let expiresAt:    Date
+
+    public init(targetPeerID: String, sealed: SealedMessage, ttl: TimeInterval = 12 * 3600) {
+        self.id           = UUID().uuidString
+        self.targetPeerID = targetPeerID
+        self.sealed       = sealed
+        self.expiresAt    = Date().addingTimeInterval(ttl)
     }
 }
 

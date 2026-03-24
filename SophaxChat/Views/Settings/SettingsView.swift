@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var tcpConnectError: String?   = nil
     @State private var showingContactCard: Bool   = false
     @State private var showingTorOnboarding: Bool = false
+    @State private var showingBackup: Bool        = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -31,6 +32,7 @@ struct SettingsView: View {
                 blockedSection
                 securitySection
                 globalSection
+                backupSection
                 aboutSection
             }
             .navigationTitle("Settings")
@@ -50,6 +52,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingTorOnboarding) {
                 TorOnboardingView()
+            }
+            .sheet(isPresented: $showingBackup) {
+                BackupView().environmentObject(appState)
             }
         }
     }
@@ -311,6 +316,21 @@ struct SettingsView: View {
             .padding(.leading, 58)
         }
         .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private var backupSection: some View {
+        Section {
+            Button {
+                showingBackup = true
+            } label: {
+                Label("Backup & Restore", systemImage: "externaldrive.badge.checkmark")
+            }
+        } header: {
+            Text("Data")
+        } footer: {
+            Text("Encrypted local backup. No cloud, no server — you keep the key.")
+        }
     }
 
     @ViewBuilder

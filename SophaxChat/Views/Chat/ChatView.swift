@@ -70,6 +70,10 @@ struct ChatView: View {
     @State private var showingRenameAlert = false
     @State private var renameText: String = ""
 
+    // Dead drop
+    @State private var showingDeadDrop = false
+    @State private var deadDropText: String = ""
+
     // TOFU nudge dismiss state persisted per peer
     @AppStorage private var verifyNudgeDismissed: Bool
     init(peer: KnownPeer) {
@@ -128,6 +132,19 @@ struct ChatView: View {
                 ForwardPickerView(message: message)
                     .environmentObject(appState)
             }
+            .alert("Dead Drop", isPresented: $showingDeadDrop) {
+                TextField("Message", text: $deadDropText)
+                    .autocorrectionDisabled()
+                Button("Send via Mesh") {
+                    let text = deadDropText.trimmingCharacters(in: .whitespaces)
+                    guard !text.isEmpty else { return }
+                    appState.sendDeadDrop(text: text, toPeerID: peer.id)
+                    deadDropText = ""
+                }
+                Button("Cancel", role: .cancel) { deadDropText = "" }
+            } message: {
+                Text("Your message will be flooded over the mesh network. \(peer.username) will receive it when they come online nearby — no internet needed.")
+            }
     }
 
     // Extracted so the Swift type checker doesn't time out on one giant body expression.
@@ -159,12 +176,25 @@ struct ChatView: View {
                 Image(systemName: isSearching ? "xmark.circle" : "magnifyingglass")
             }
 
-            // Online indicator
-            HStack(spacing: 4) {
-                Circle().fill(isOnline ? .green : .gray).frame(width: 8, height: 8)
-                Text(isOnline ? "Online" : "Offline")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            // Online indicator + dead drop when offline
+            if isOnline {
+                HStack(spacing: 4) {
+                    Circle().fill(.green).frame(width: 8, height: 8)
+                    Text("Online")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button {
+                    showingDeadDrop = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.gray).frame(width: 8, height: 8)
+                        Text("Dead Drop")
+                            .font(.caption2)
+                    }
+                }
+                .foregroundStyle(.secondary)
             }
 
             // Disappearing messages

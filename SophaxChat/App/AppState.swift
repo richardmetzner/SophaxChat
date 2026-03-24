@@ -196,6 +196,10 @@ final class AppState: ObservableObject {
         chatManager?.sendMessage(text, toPeerID: peerID, expiresAt: expiresAt, replyToID: replyToID)
     }
 
+    func sendDeadDrop(text: String, toPeerID peerID: String) {
+        try? chatManager?.sendDeadDrop(toPeerID: peerID, text: text)
+    }
+
     func sendTypingIndicator(toPeerID peerID: String, isTyping: Bool) {
         chatManager?.sendTypingIndicator(toPeerID: peerID, isTyping: isTyping)
     }
@@ -818,6 +822,48 @@ final class AppState: ObservableObject {
 
     private func saveVerifiedPeers() {
         keychainSave("verifiedPeers") { try keychain.saveVerifiedPeers(verifiedPeers) }
+    }
+
+    // MARK: - Backup
+
+    /// Build an encrypted backup blob. Caller presents the ShareSheet.
+    func exportBackup(passphrase: String) throws -> Data {
+        guard let cm = chatManager else {
+            throw SophaxError.sessionNotInitialized
+        }
+        let store    = cm.messageStore
+        let peerIDs  = store.allConversationPeerIDs()
+        var messages = [String: [StoredMessage]]()
+        for pid in peerIDs {
+            messages[pid] = (try? store.messages(forPeer: pid)) ?? []
+        }
+        let backup = SophaxBackup(
+            version:   1,
+            createdAt: Date(),
+            username:  cm.identity.publicIdentity.username,
+            peers:     peers,
+            messages:  messages
+        )
+        return try BackupManager.export(backup: backup, passphrase: passphrase)
+    }
+
+    /// Restore message history and contacts from an encrypted backup blob.
+    /// Does NOT replace identity keys — a new session will be needed with each contact.
+    func importBackup(data: Data, passphrase: String) throws {
+        guard let cm = chatManager else {
+            throw SophaxError.sessionNotInitialized
+        }
+        let backup = try BackupManager.import(data: data, passphrase: passphrase)
+        // Restore messages
+        let store = cm.messageStore
+        for (peerID, msgs) in backup.messages {
+            for msg in msgs { try? store.append(message: msg) }
+        }
+        // Restore contacts (merge — don't overwrite existing)
+        for peer in backup.peers where !peers.contains(where: { $0.id == peer.id }) {
+            peers.append(peer)
+        }
+        savePeers()
     }
 }
 

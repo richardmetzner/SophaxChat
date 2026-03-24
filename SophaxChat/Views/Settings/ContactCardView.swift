@@ -8,6 +8,9 @@ import SophaxChatCore
 struct ContactCardView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    #if !targetEnvironment(macCatalyst) && canImport(CoreNFC)
+    @StateObject private var nfc = NFCContactManager()
+    #endif
 
     private var contactURL: URL? {
         guard let peerID = appState.chatManager?.identity.publicIdentity.peerID,
@@ -79,14 +82,29 @@ struct ContactCardView: View {
 
                 // Share button
                 if let url = contactURL {
-                    ShareLink(item: url) {
-                        Text("Share")
-                            .font(.body.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.accentColor)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    VStack(spacing: 12) {
+                        #if !targetEnvironment(macCatalyst) && canImport(CoreNFC)
+                        Button {
+                            nfc.writeContact(url: url.absoluteString)
+                        } label: {
+                            Label("NFC Tap", systemImage: "wave.3.right")
+                                .font(.body.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color.accentColor)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        #endif
+                        ShareLink(item: url) {
+                            Text("Share Link")
+                                .font(.body.weight(.medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .foregroundStyle(.primary)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
                     }
                     .padding(.horizontal, 32)
                     .padding(.bottom, 32)

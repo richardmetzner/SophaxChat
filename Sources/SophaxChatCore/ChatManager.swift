@@ -169,6 +169,12 @@ public final class ChatManager: @unchecked Sendable {
     private static let maxStoredForwardPerPeer  = 30    // prevents single-peer DoS
     private static let storeAndForwardTTL: TimeInterval = 48 * 60 * 60   // 48 hours
 
+    /// Dead drops stored at this node — re-broadcast when target peer appears.
+    private var deadDrops: [DeadDropEnvelope] = []
+    private static let maxDeadDrops: Int              = 100
+    private static let deadDropDedupeWindow: TimeInterval = 60   // seconds
+    private var seenDeadDropIDs: [String: Date]       = [:]      // id → receivedAt
+
     /// Fires every 60 seconds to purge messages whose expiresAt has passed.
     private var expiryTimer: Timer?
 
@@ -330,6 +336,8 @@ public final class ChatManager: @unchecked Sendable {
         messageStore.deleteExpiredMessages()
         let now = Date()
         storedForwardItems.removeAll { $0.expiresAt <= now }
+        deadDrops.removeAll { $0.expiresAt <= now }
+        seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < 24 * 3600 }
     }
 
     /// Maximum text message body length in UTF-8 bytes.
@@ -1058,6 +1066,7 @@ public final class ChatManager: @unchecked Sendable {
 
         // Deliver any messages we were holding for this peer (store-and-forward relay role)
         deliverStoredForwardItems(toPeerID: peerID)
+        deliverDeadDrops(toPeerID: peerID)
     }
 
     private func handleInitiateSession(_ payload: InitiateSessionMessage) throws {
@@ -1382,6 +1391,78 @@ public final class ChatManager: @unchecked Sendable {
             try? mesh.send(wire, toPeerID: peerID)
         }
         storedForwardItems.removeAll { $0.targetPeerID == peerID }
+    }
+
+    // MARK: - Dead Drop
+
+    /// Send a sealed message flooded over the entire mesh.
+    /// The content is invisible to relay nodes — only the target can open it.
+    /// Note: Dead drops do NOT use Double Ratchet (no session needed — that's the point).
+    /// They use one-shot ECDH sealing, similar to sealed sender.
+    public func sendDeadDrop(toPeerID peerID: String, text: String) throws {
+        guard let peer = knownPeers[peerID] else { throw SophaxError.sessionNotInitialized }
+        // Build a plain wire message carrying the text as a MessageContent
+        let content = MessageContent(body: text, replyToID: nil, expiresAt: nil)
+        let inner   = try wireBuilder.build(.message, payload: content)
+        // Seal it for the recipient's DH public key (one-shot ECDH, no session needed)
+        let sealed  = try sealWireMessage(inner, recipientDHPublicKey: peer.dhKeyPublic)
+        let drop    = DeadDropEnvelope(targetPeerID: peerID, sealed: sealed)
+        let wire    = try wireBuilder.build(.deadDrop, payload: drop)
+        // Flood over mesh — TCP intentionally excluded (dead drops are mesh-only by design)
+        mesh.broadcast(wire, excluding: nil)
+        // Store locally so we can deliver if target connects to us later
+        storeDeadDrop(drop)
+    }
+
+    private func handleDeadDrop(_ drop: DeadDropEnvelope) {
+        // Deduplicate
+        let now = Date()
+        seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < Self.deadDropDedupeWindow * 100 }
+        guard seenDeadDropIDs[drop.id] == nil, drop.expiresAt > now else { return }
+        seenDeadDropIDs[drop.id] = now
+
+        let myPeerID = identity.publicIdentity.peerID
+
+        // Is this drop for us?
+        if drop.targetPeerID == myPeerID {
+            guard let inner = try? unsealMessage(
+                drop.sealed, recipientDHPrivateKey: identity.dhKeyPair.privateKey
+            ) else { return }
+            try? processRelayedInnerMessage(inner, hopCount: 0)
+            return
+        }
+
+        // Not for us — store and re-broadcast
+        storeDeadDrop(drop)
+        if let wire = try? wireBuilder.build(.deadDrop, payload: drop) {
+            mesh.broadcast(wire, excluding: nil)
+        }
+
+        // If target is directly connected, deliver immediately
+        if mesh.connectedPeerIDs().contains(drop.targetPeerID) {
+            if let wire = try? wireBuilder.build(.deadDrop, payload: drop) {
+                try? mesh.send(wire, toPeerID: drop.targetPeerID)
+            }
+        }
+    }
+
+    private func storeDeadDrop(_ drop: DeadDropEnvelope) {
+        guard drop.expiresAt > Date() else { return }
+        guard !deadDrops.contains(where: { $0.id == drop.id }) else { return }
+        if deadDrops.count >= Self.maxDeadDrops { deadDrops.removeFirst() }
+        deadDrops.append(drop)
+    }
+
+    /// Deliver any stored dead drops when a peer comes online.
+    private func deliverDeadDrops(toPeerID peerID: String) {
+        let pending = deadDrops.filter { $0.targetPeerID == peerID && $0.expiresAt > Date() }
+        guard !pending.isEmpty else { return }
+        for drop in pending {
+            if let wire = try? wireBuilder.build(.deadDrop, payload: drop) {
+                try? mesh.send(wire, toPeerID: peerID)
+            }
+        }
+        deadDrops.removeAll { $0.targetPeerID == peerID }
     }
 
     private func handleGroupMemberLeft(_ payload: GroupMemberLeftMessage, senderID: String) {
@@ -1725,6 +1806,11 @@ public final class ChatManager: @unchecked Sendable {
 
         case .channelAnnouncement:
             break   // Channel announcements are broadcast-only; not forwarded via relay
+
+        case .deadDrop:
+            if let drop = try? wireBuilder.decodePayload(DeadDropEnvelope.self, from: message) {
+                handleDeadDrop(drop)
+            }
         }
     }
 
