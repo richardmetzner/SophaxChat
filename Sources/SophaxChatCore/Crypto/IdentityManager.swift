@@ -109,6 +109,12 @@ public final class IdentityManager: @unchecked Sendable {
     public var signingKeyPair: SigningKeyPair { signingPair }
     public var dhKeyPair: DHKeyPair { dhPair }
 
+    /// SHA256 hex fingerprint of the identity keys — used in backup to detect cross-identity restores.
+    public var identityFingerprint: String {
+        let combined = publicIdentity.signingKeyPublic + publicIdentity.dhKeyPublic
+        return Data(SHA256.hash(data: combined)).hexString
+    }
+
     /// The Tor v3 .onion hostname derived from the identity's Ed25519 signing key.
     /// Permanent and deterministic — equal to `<peerID>.onion` in structure but
     /// computed via the Tor spec (SHA3-256 checksum + base32). Returns nil only if

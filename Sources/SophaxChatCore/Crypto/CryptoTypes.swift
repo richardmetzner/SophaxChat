@@ -130,6 +130,7 @@ public enum SophaxError: Error, LocalizedError {
     case keychainError(OSStatus)
     case sessionStateCorrupted
     case missingChainKey
+    case identityMismatch
 
     public var errorDescription: String? {
         switch self {
@@ -157,6 +158,8 @@ public enum SophaxError: Error, LocalizedError {
             return "Session state is corrupted"
         case .missingChainKey:
             return "Chain key is missing — cannot encrypt/decrypt"
+        case .identityMismatch:
+            return "This backup was created by a different identity. Restoring will merge contact history from another account."
         }
     }
 }

@@ -91,14 +91,40 @@ public final class KeychainManager {
         try delete(account: "otpk.\(id)")
     }
 
-    // MARK: - Session State
+    // MARK: - Session MAC Key (for HMAC-wrapping session state blobs)
 
-    public func saveSessionState(data: Data, peerID: String) throws {
-        try save(data: data, account: "session.\(peerID)")
+    /// Returns the device-specific session MAC key, creating one if absent.
+    /// Used to detect session-state tampering or cross-device replay attacks.
+    private func loadOrCreateSessionMACKey() throws -> SymmetricKey {
+        if let data = try? load(account: "session.mac_key") {
+            return SymmetricKey(data: data)
+        }
+        let key     = SymmetricKey(size: .bits256)
+        let keyData = key.withUnsafeBytes { Data($0) }
+        try save(data: keyData, account: "session.mac_key")
+        return key
     }
 
+    // MARK: - Session State
+
+    /// Persist ratchet session state wrapped with a 32-byte HMAC prefix.
+    /// Format: HMAC-SHA256(macKey, data) || data
+    public func saveSessionState(data: Data, peerID: String) throws {
+        let macKey = try loadOrCreateSessionMACKey()
+        let mac    = Data(HMAC<SHA256>.authenticationCode(for: data, using: macKey))
+        try save(data: mac + data, account: "session.\(peerID)")
+    }
+
+    /// Load and verify session state. Throws `SophaxError.sessionStateCorrupted` on HMAC mismatch.
     public func loadSessionState(peerID: String) throws -> Data {
-        return try load(account: "session.\(peerID)")
+        let raw    = try load(account: "session.\(peerID)")
+        guard raw.count > 32 else { throw SophaxError.sessionStateCorrupted }
+        let mac    = raw.prefix(32)
+        let data   = raw.dropFirst(32)
+        let macKey = try loadOrCreateSessionMACKey()
+        let expected = Data(HMAC<SHA256>.authenticationCode(for: data, using: macKey))
+        guard mac == expected else { throw SophaxError.sessionStateCorrupted }
+        return data
     }
 
     public func deleteSessionState(peerID: String) throws {

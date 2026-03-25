@@ -124,11 +124,15 @@ public final class PreKeyManager: @unchecked Sendable {
 
     /// Returns and removes a one-time prekey by ID.
     /// Call this when Bob processes an incoming session initiation message.
-    public func consumeOneTimePreKey(id: UInt32) -> DHKeyPair? {
-        let pair = oneTimePreKeys.removeValue(forKey: id)
-        if pair != nil {
-            try? keychain.deleteOneTimePreKey(id: id)
-        }
+    /// Deletes from Keychain first to ensure the key is permanently gone even
+    /// if the process crashes between the two operations.
+    public func consumeOneTimePreKey(id: UInt32) throws -> DHKeyPair? {
+        guard let pair = oneTimePreKeys[id] else { return nil }
+        // Delete from Keychain before removing from memory. If the Keychain delete
+        // fails, we do NOT consume the key — better to allow retrying than to silently
+        // leave stale key material that can never be cleaned up.
+        try keychain.deleteOneTimePreKey(id: id)
+        oneTimePreKeys.removeValue(forKey: id)
         return pair
     }
 
