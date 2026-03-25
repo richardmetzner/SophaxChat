@@ -406,9 +406,10 @@ final class AppState: ObservableObject {
 
     private func scheduleNotification(for message: StoredMessage, fromPeer peerID: String) {
         let content  = UNMutableNotificationContent()
-        let peerName = peers.first(where: { $0.id == peerID }).map { displayName(for: $0) } ?? "New message"
-        content.title              = peerName
-        content.body               = message.body
+        // Do NOT include message body or sender name — these appear on the lock screen
+        // even when the device is locked, leaking conversation metadata to bystanders.
+        content.title              = "SophaxChat"
+        content.body               = "New message"
         content.sound              = .default
         content.threadIdentifier   = peerID
         content.categoryIdentifier = "SOPHAX_MSG"
@@ -417,16 +418,13 @@ final class AppState: ObservableObject {
     }
 
     private func scheduleGroupNotification(for message: StoredMessage, groupID: String) {
-        guard let group = groups.first(where: { $0.id == groupID }) else { return }
-        let senderName = message.senderID.flatMap { sid in
-            peers.first(where: { $0.id == sid }).map { displayName(for: $0) }
-        } ?? "Someone"
+        guard groups.first(where: { $0.id == groupID }) != nil else { return }
         let content  = UNMutableNotificationContent()
-        content.title              = group.name
-        content.subtitle           = senderName
-        content.body               = message.body
+        // Do NOT include group name, sender name, or message body — lock screen privacy.
+        content.title              = "SophaxChat"
+        content.body               = "New group message"
         content.sound              = .default
-        content.threadIdentifier   = group.conversationID
+        content.threadIdentifier   = groupID
         content.categoryIdentifier = "SOPHAX_MSG"
         let request = UNNotificationRequest(identifier: message.id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
@@ -816,23 +814,36 @@ final class AppState: ObservableObject {
         for pid in peerIDs {
             messages[pid] = (try? store.messages(forPeer: pid)) ?? []
         }
+        // Include identity fingerprint so restore can warn if the backup belongs to a different identity.
+        let pub         = cm.identity.publicIdentity
+        let fingerprint = cm.identity.identityFingerprint
         let backup = SophaxBackup(
-            version:   1,
-            createdAt: Date(),
-            username:  cm.identity.publicIdentity.username,
-            peers:     peers,
-            messages:  messages
+            version:             1,
+            createdAt:           Date(),
+            username:            pub.username,
+            peers:               peers,
+            messages:            messages,
+            identityFingerprint: fingerprint
         )
         return try BackupManager.export(backup: backup, passphrase: passphrase)
     }
 
     /// Restore message history and contacts from an encrypted backup blob.
     /// Does NOT replace identity keys — a new session will be needed with each contact.
+    /// Throws `SophaxError.identityMismatch` (as a warning) if the backup fingerprint differs.
     func importBackup(data: Data, passphrase: String) throws {
         guard let cm = chatManager else {
             throw SophaxError.sessionNotInitialized
         }
         let backup = try BackupManager.import(data: data, passphrase: passphrase)
+
+        // Warn if restoring from a different identity (e.g., accidental wrong backup).
+        if let backupFP = backup.identityFingerprint,
+           backupFP != cm.identity.identityFingerprint {
+            // Surface a non-fatal warning — caller may choose to proceed or abort.
+            delegate?.chatManager(cm, didEncounterError: SophaxError.identityMismatch)
+        }
+
         // Restore messages
         let store = cm.messageStore
         for (peerID, msgs) in backup.messages {
