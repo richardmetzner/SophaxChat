@@ -13,12 +13,17 @@
 		15AD3EDBE8A5024082651AD4 /* NetworkProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B5D82448CAE0D1840C78A0F /* NetworkProtocol.swift */; };
 		160720F5127BBEA852C693FD /* ChatManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D46CE11ABBA6438139570E /* ChatManager.swift */; };
 		18B230F530BED75A789D59A8 /* SophaxChatCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F026517E60C9F0DF6C94788E /* SophaxChatCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		1A0AC6688AD2AC000A931D01 /* TORConfiguration.m in Sources */ = {isa = PBXBuildFile; fileRef = F084C91292F3FA522C0C75C7 /* TORConfiguration.m */; };
+		20E7DBF16DE3299C6FDD1CCC /* TorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B55132FDEBDB22F024E879C2 /* TorManager.swift */; };
 		21B0477D3A2F2549FFC67283 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD39FB7881F54A1D3378751 /* CameraPickerView.swift */; };
 		220FF2982C25CAB26B5BA786 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3556F9510B45A452131547B4 /* Localizable.strings */; };
 		225206DA8D5D4254A65C6DBA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1F03561696A98CB3B93AAC /* OnboardingView.swift */; };
 		22B8FD264346CE0E86CB4F26 /* BackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52EB490280D67CA4921A3EC /* BackupView.swift */; };
+		2BD51DB2F88FF18908586688 /* tor.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 178D195EC818800831BD365F /* tor.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2E4DC22C56DF29439C08B52B /* NSCharacterSet+PredefinedSets.m in Sources */ = {isa = PBXBuildFile; fileRef = 9621B78B980A52BE7EED691B /* NSCharacterSet+PredefinedSets.m */; };
 		31BDAAE10E0E4AB0A74C1242 /* IdentityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CB34CEE37C7867B6C1F3BF2 /* IdentityManager.swift */; };
 		33C82A4E9460186A11E4035E /* DoubleRatchet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA9CCE7BA81156A8562115CF /* DoubleRatchet.swift */; };
+		388ECCDE40D42C2735CB0159 /* TORNode.m in Sources */ = {isa = PBXBuildFile; fileRef = B2DA285D21A5826C3B30CF74 /* TORNode.m */; };
 		400C000D6FC25C288AB73DBF /* MessageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6459A3E71AACFC99D43A361 /* MessageTransport.swift */; };
 		40D1C2A61A964521AD18EFD2 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 221C33EDFE4F1C6608A3A045 /* MessageBubbleView.swift */; };
 		43474D63994CCF9C9FF81C52 /* CreateGroupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11D37B8E2548D1989382A0DB /* CreateGroupView.swift */; };
@@ -26,24 +31,30 @@
 		43F175EFBA8EEAB3778799D1 /* SophaxChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE9B13C28C028ED49E4EE61 /* SophaxChatApp.swift */; };
 		47611816B8B0F74904D0B944 /* AudioMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B51EB1828A0F7348D12F0DF /* AudioMessageView.swift */; };
 		47D77D3F30CE73E7AB6EB61B /* Keccak.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60F59ECFDBB6DAF3A6D50822 /* Keccak.swift */; };
+		5F9172C36BF8F47F7CCC18BD /* TORCircuit.m in Sources */ = {isa = PBXBuildFile; fileRef = 8800A91F65CF6654EFB63479 /* TORCircuit.m */; };
 		62FF857C708CB671C74BD59D /* TCPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF66D713037A9373D6FE7AF /* TCPTransport.swift */; };
 		66842F5D3D1D446A626C5A90 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15E58FFFBE857C470B5FB04F /* AppState.swift */; };
 		6CD4902882B05FBCD2AA1E94 /* RelayRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF7C91E26A2BB3D875DD506 /* RelayRouter.swift */; };
 		77535E232F8EF1DF4001A4EA /* MessageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779F777A1C5E15F42CFE2E42 /* MessageStore.swift */; };
 		7ABCC331FE480FCE2E7E466F /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815D1C200DF5C7B88897F497 /* ChatListView.swift */; };
+		7C701BC37736FDAD6DF036F9 /* TORController.m in Sources */ = {isa = PBXBuildFile; fileRef = A56633DC0920361E38748794 /* TORController.m */; };
 		814506A0D66AA4F953EB1EA7 /* NFCContactManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1E43E38DA8CCAA29470C79 /* NFCContactManager.swift */; };
 		834512AEDAEA007A43B17A1A /* NetworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4278EA983AFC5F075CAA977C /* NetworkTests.swift */; };
 		898EF6877499D9C56E487047 /* OnionAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3D40AB49874C16C44B0082 /* OnionAddress.swift */; };
 		8B714B53723275155406EF28 /* IdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9BFDABE7886E3AED296B2D7 /* IdentityView.swift */; };
 		8C071146C7CE5EFE8412C0FA /* SophaxChatCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F026517E60C9F0DF6C94788E /* SophaxChatCore.framework */; };
-		8D4566958624CBF18F617E94 /* TorOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4395FDF72527F4A0B0CF616C /* TorOnboardingView.swift */; };
 		93691FD2860170AEAD556E2A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */; };
 		976120E2EC507C535E49F71F /* BackupManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7F7784D1EB2716FC84AF4D8 /* BackupManager.swift */; };
 		994D2492C3F26FF43C4FE69B /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A63E812A5B4C3520C5DB66 /* KeychainManager.swift */; };
+		9EE767D784D639CFD6EAEDE1 /* TORAuthKey.m in Sources */ = {isa = PBXBuildFile; fileRef = 13D5FCC0EAD802903B14CEDD /* TORAuthKey.m */; };
+		A535BAA528701B78D94614B1 /* TORX25519KeyPair.m in Sources */ = {isa = PBXBuildFile; fileRef = 8ADA8D2E7DCA976592C30453 /* TORX25519KeyPair.m */; };
+		A55A031487CA8CF608584365 /* tor.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 178D195EC818800831BD365F /* tor.xcframework */; };
 		A7A1DD6DB8E75EE013167473 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CF7375C9846B878662FB02 /* ChatView.swift */; };
+		AD6E3BC6842CB2DCA252154F /* TOROnionAuth.m in Sources */ = {isa = PBXBuildFile; fileRef = BB1E10AA4A5CED5F001EF4B1 /* TOROnionAuth.m */; };
 		B15177D16C677E750060C0E9 /* GroupTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B29474AA6023C1A083279DC /* GroupTypes.swift */; };
 		B23495CBC9CC3F4859D55731 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAC2F7F38467942CDAB3ED6 /* VoiceRecorder.swift */; };
 		B4CC406ECAE1258BD5A4BFD6 /* SophaxChatCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F026517E60C9F0DF6C94788E /* SophaxChatCore.framework */; };
+		B4FCB4E4F23262EC261D1189 /* TORThread.m in Sources */ = {isa = PBXBuildFile; fileRef = F875087AE4312F5B09E33D57 /* TORThread.m */; };
 		B6D3727A5878192A7ED89BAD /* MeshManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9498CFAE4DAEC9C6FF086C /* MeshManager.swift */; };
 		BB494547A00FF73DF48BB126 /* X3DH.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56028505B9B7E422FA2A0224 /* X3DH.swift */; };
 		BC44E64776A4055AE325BF0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4050235742B30650035D3ADF /* Assets.xcassets */; };
@@ -55,8 +66,10 @@
 		D331FC9F0F4E22AC8AF01142 /* CryptoTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C820E10E9668787E4A69472A /* CryptoTypes.swift */; };
 		DE6391BAE49EA012718A056B /* GroupChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1ECC64BA74FB7E6A5B7B4D4 /* GroupChatView.swift */; };
 		DFBE3B2E6FEF278B921B6B35 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5647D3B76AD67EBE0DE3FE8 /* SettingsView.swift */; };
+		DFF696D0DF3B9D6307DA75F7 /* NSBundle+GeoIP.m in Sources */ = {isa = PBXBuildFile; fileRef = D5F04FC93194FB07E526D6BB /* NSBundle+GeoIP.m */; };
 		E2F0BE9123C23B1C087F5563 /* ContactScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A97FADF78894EFE4196AE9 /* ContactScannerView.swift */; };
 		EC2B567C44F26EFDF2DC1DAF /* ContactCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0426318D87103BF51B2162A9 /* ContactCardView.swift */; };
+		F78810D08BB720A5DFFBDD87 /* TORLogging.m in Sources */ = {isa = PBXBuildFile; fileRef = 3634A39AA01B6DD855621DBC /* TORLogging.m */; };
 		F93FB6401D7C369013B74345 /* RelayRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 324A26FFC78A501B8E5613BF /* RelayRouterTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -96,6 +109,7 @@
 			dstSubfolderSpec = 10;
 			files = (
 				CDE85E6620CF588CEFB2CB77 /* SophaxChatCore.framework in Embed Frameworks */,
+				2BD51DB2F88FF18908586688 /* tor.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -104,58 +118,84 @@
 
 /* Begin PBXFileReference section */
 		0426318D87103BF51B2162A9 /* ContactCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactCardView.swift; sourceTree = "<group>"; };
+		104342B6558EC5138444DBFC /* SophaxChat-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SophaxChat-Bridging-Header.h"; sourceTree = "<group>"; };
 		1120A019736F1D00D9352C57 /* SophaxChatCoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SophaxChatCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		11D37B8E2548D1989382A0DB /* CreateGroupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateGroupView.swift; sourceTree = "<group>"; };
+		13D5FCC0EAD802903B14CEDD /* TORAuthKey.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORAuthKey.m; sourceTree = "<group>"; };
 		15E58FFFBE857C470B5FB04F /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		178D195EC818800831BD365F /* tor.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = tor.xcframework; path = Frameworks/tor.xcframework; sourceTree = "<group>"; };
 		17A7645A40C984662D9200E8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		221C33EDFE4F1C6608A3A045 /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
+		2513D0C04A7CCF29FAF01339 /* TORController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORController.h; sourceTree = "<group>"; };
 		2AB869DF87E68F784CB02D6C /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		2B51EB1828A0F7348D12F0DF /* AudioMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioMessageView.swift; sourceTree = "<group>"; };
 		2F3D40AB49874C16C44B0082 /* OnionAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnionAddress.swift; sourceTree = "<group>"; };
 		324A26FFC78A501B8E5613BF /* RelayRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRouterTests.swift; sourceTree = "<group>"; };
+		3634A39AA01B6DD855621DBC /* TORLogging.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORLogging.m; sourceTree = "<group>"; };
 		3B29474AA6023C1A083279DC /* GroupTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTypes.swift; sourceTree = "<group>"; };
 		3BAC2F7F38467942CDAB3ED6 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
 		3F1F03561696A98CB3B93AAC /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		3FF7C91E26A2BB3D875DD506 /* RelayRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayRouter.swift; sourceTree = "<group>"; };
 		4050235742B30650035D3ADF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4278EA983AFC5F075CAA977C /* NetworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkTests.swift; sourceTree = "<group>"; };
-		4395FDF72527F4A0B0CF616C /* TorOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorOnboardingView.swift; sourceTree = "<group>"; };
 		4508E2836B1D722E988A77EA /* LanDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanDiscovery.swift; sourceTree = "<group>"; };
+		4CBED0772E3E9B9340D9983A /* TORAuthKey.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORAuthKey.h; sourceTree = "<group>"; };
 		55D252C1F40504DBD9496663 /* AIAssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAssistantView.swift; sourceTree = "<group>"; };
 		56028505B9B7E422FA2A0224 /* X3DH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = X3DH.swift; sourceTree = "<group>"; };
 		58A63E812A5B4C3520C5DB66 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
+		59504942752C9FE21489E8C2 /* NSCharacterSet+PredefinedSets.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "NSCharacterSet+PredefinedSets.h"; sourceTree = "<group>"; };
 		59CF7375C9846B878662FB02 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		5B5D82448CAE0D1840C78A0F /* NetworkProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProtocol.swift; sourceTree = "<group>"; };
 		5C9498CFAE4DAEC9C6FF086C /* MeshManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshManager.swift; sourceTree = "<group>"; };
 		60F59ECFDBB6DAF3A6D50822 /* Keccak.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keccak.swift; sourceTree = "<group>"; };
 		6873FFCDF0C0F0BF98125F26 /* FullScreenImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageView.swift; sourceTree = "<group>"; };
+		696E34C3E0D0D59F0C7205C1 /* TORCircuit.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORCircuit.h; sourceTree = "<group>"; };
 		6A1E43E38DA8CCAA29470C79 /* NFCContactManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCContactManager.swift; sourceTree = "<group>"; };
 		6CB34CEE37C7867B6C1F3BF2 /* IdentityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityManager.swift; sourceTree = "<group>"; };
 		779F777A1C5E15F42CFE2E42 /* MessageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageStore.swift; sourceTree = "<group>"; };
 		815D1C200DF5C7B88897F497 /* ChatListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListView.swift; sourceTree = "<group>"; };
 		81D46CE11ABBA6438139570E /* ChatManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatManager.swift; sourceTree = "<group>"; };
 		868AAEDE9939D03497332FF5 /* AppLockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockView.swift; sourceTree = "<group>"; };
+		8800A91F65CF6654EFB63479 /* TORCircuit.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORCircuit.m; sourceTree = "<group>"; };
+		89B0059BAAEDCE70176DA421 /* TOROnionAuth.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TOROnionAuth.h; sourceTree = "<group>"; };
+		8ADA8D2E7DCA976592C30453 /* TORX25519KeyPair.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORX25519KeyPair.m; sourceTree = "<group>"; };
+		8AE66DD9EDB99622A5284063 /* NSBundle+GeoIP.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "NSBundle+GeoIP.h"; sourceTree = "<group>"; };
 		91AA1BC487BE80E0FFC5335D /* CryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoTests.swift; sourceTree = "<group>"; };
+		9621B78B980A52BE7EED691B /* NSCharacterSet+PredefinedSets.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSCharacterSet+PredefinedSets.m"; sourceTree = "<group>"; };
 		A09C7E02CF9D89FE6C13A950 /* PreKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreKeyManager.swift; sourceTree = "<group>"; };
 		A52EB490280D67CA4921A3EC /* BackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupView.swift; sourceTree = "<group>"; };
+		A56633DC0920361E38748794 /* TORController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORController.m; sourceTree = "<group>"; };
 		ABD39FB7881F54A1D3378751 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
+		B2DA285D21A5826C3B30CF74 /* TORNode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORNode.m; sourceTree = "<group>"; };
+		B55132FDEBDB22F024E879C2 /* TorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorManager.swift; sourceTree = "<group>"; };
+		B698D2DCBC57FC388EFE7F06 /* TORControlCommand.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORControlCommand.h; sourceTree = "<group>"; };
 		B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		BB1E10AA4A5CED5F001EF4B1 /* TOROnionAuth.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TOROnionAuth.m; sourceTree = "<group>"; };
 		BBA70D055C12057597E9CB7A /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = cs.lproj/Localizable.strings; sourceTree = "<group>"; };
 		BFE9B13C28C028ED49E4EE61 /* SophaxChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SophaxChatApp.swift; sourceTree = "<group>"; };
+		C05AA8A4474E05D3A7E827C2 /* TORNode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORNode.h; sourceTree = "<group>"; };
 		C1ECC64BA74FB7E6A5B7B4D4 /* GroupChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChatView.swift; sourceTree = "<group>"; };
+		C22BCFF022E5F9C623DE497F /* TORConfiguration.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORConfiguration.h; sourceTree = "<group>"; };
 		C820E10E9668787E4A69472A /* CryptoTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoTypes.swift; sourceTree = "<group>"; };
 		CA16B12AEADB7788947F8CF7 /* AdvancedCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedCryptoTests.swift; sourceTree = "<group>"; };
 		CA9CCE7BA81156A8562115CF /* DoubleRatchet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoubleRatchet.swift; sourceTree = "<group>"; };
+		D5F04FC93194FB07E526D6BB /* NSBundle+GeoIP.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSBundle+GeoIP.m"; sourceTree = "<group>"; };
 		D6459A3E71AACFC99D43A361 /* MessageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTransport.swift; sourceTree = "<group>"; };
 		D6AA224B2DAE6F1832309166 /* SophaxChat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SophaxChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D7F7784D1EB2716FC84AF4D8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		D9BFDABE7886E3AED296B2D7 /* IdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityView.swift; sourceTree = "<group>"; };
 		E4A97FADF78894EFE4196AE9 /* ContactScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactScannerView.swift; sourceTree = "<group>"; };
 		E5647D3B76AD67EBE0DE3FE8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E5673859FC5E5CE25A3064C0 /* TORX25519KeyPair.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORX25519KeyPair.h; sourceTree = "<group>"; };
+		E8EC825757BCE1CEE2010025 /* TORLogging.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORLogging.h; sourceTree = "<group>"; };
 		EDD82DF676B380323CA8CC3C /* SophaxChat.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SophaxChat.entitlements; sourceTree = "<group>"; };
 		EDF66D713037A9373D6FE7AF /* TCPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TCPTransport.swift; sourceTree = "<group>"; };
 		F0122A8E19F72D3E3BBF39DA /* AttachmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentStore.swift; sourceTree = "<group>"; };
 		F026517E60C9F0DF6C94788E /* SophaxChatCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = SophaxChatCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F084C91292F3FA522C0C75C7 /* TORConfiguration.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORConfiguration.m; sourceTree = "<group>"; };
+		F262F2BD6D4145C950AD6727 /* TORControlReplyCode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORControlReplyCode.h; sourceTree = "<group>"; };
+		F875087AE4312F5B09E33D57 /* TORThread.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORThread.m; sourceTree = "<group>"; };
+		FADDCAC39008C6F221A58205 /* TORThread.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORThread.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,6 +212,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B4CC406ECAE1258BD5A4BFD6 /* SophaxChatCore.framework in Frameworks */,
+				A55A031487CA8CF608584365 /* tor.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -207,6 +248,7 @@
 				AB737CC8E2A93A8385A18924 /* SophaxChat */,
 				29995BCD0AFDD3BAB0D19041 /* SophaxChatCore */,
 				58A8086D591993980AF29B01 /* SophaxChatCoreTests */,
+				99E66C34A4A46CFF8129E4E3 /* Frameworks */,
 				B808D81EE882245CCF4047B6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -239,6 +281,15 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		640426377FBE28918E489015 /* Tor */ = {
+			isa = PBXGroup;
+			children = (
+				B55132FDEBDB22F024E879C2 /* TorManager.swift */,
+				F71EDE193BFE9D18FE8B5582 /* TorFramework */,
+			);
+			path = Tor;
+			sourceTree = "<group>";
+		};
 		7ABEB69C49F736800F270D81 /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -256,6 +307,14 @@
 				55D252C1F40504DBD9496663 /* AIAssistantView.swift */,
 			);
 			path = AI;
+			sourceTree = "<group>";
+		};
+		99E66C34A4A46CFF8129E4E3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				178D195EC818800831BD365F /* tor.xcframework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		9DE5A5292FAF2B4BF196E2AC /* App */ = {
@@ -310,10 +369,12 @@
 				4050235742B30650035D3ADF /* Assets.xcassets */,
 				17A7645A40C984662D9200E8 /* Info.plist */,
 				B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */,
+				104342B6558EC5138444DBFC /* SophaxChat-Bridging-Header.h */,
 				EDD82DF676B380323CA8CC3C /* SophaxChat.entitlements */,
 				9DE5A5292FAF2B4BF196E2AC /* App */,
 				B548F742A042223389CF0000 /* NFC */,
 				5F5D39222729C483F853999E /* Resources */,
+				640426377FBE28918E489015 /* Tor */,
 				7ABEB69C49F736800F270D81 /* Views */,
 			);
 			path = SophaxChat;
@@ -346,7 +407,6 @@
 				E4A97FADF78894EFE4196AE9 /* ContactScannerView.swift */,
 				D9BFDABE7886E3AED296B2D7 /* IdentityView.swift */,
 				E5647D3B76AD67EBE0DE3FE8 /* SettingsView.swift */,
-				4395FDF72527F4A0B0CF616C /* TorOnboardingView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -364,6 +424,37 @@
 				56028505B9B7E422FA2A0224 /* X3DH.swift */,
 			);
 			path = Crypto;
+			sourceTree = "<group>";
+		};
+		F71EDE193BFE9D18FE8B5582 /* TorFramework */ = {
+			isa = PBXGroup;
+			children = (
+				8AE66DD9EDB99622A5284063 /* NSBundle+GeoIP.h */,
+				D5F04FC93194FB07E526D6BB /* NSBundle+GeoIP.m */,
+				59504942752C9FE21489E8C2 /* NSCharacterSet+PredefinedSets.h */,
+				9621B78B980A52BE7EED691B /* NSCharacterSet+PredefinedSets.m */,
+				4CBED0772E3E9B9340D9983A /* TORAuthKey.h */,
+				13D5FCC0EAD802903B14CEDD /* TORAuthKey.m */,
+				696E34C3E0D0D59F0C7205C1 /* TORCircuit.h */,
+				8800A91F65CF6654EFB63479 /* TORCircuit.m */,
+				C22BCFF022E5F9C623DE497F /* TORConfiguration.h */,
+				F084C91292F3FA522C0C75C7 /* TORConfiguration.m */,
+				B698D2DCBC57FC388EFE7F06 /* TORControlCommand.h */,
+				2513D0C04A7CCF29FAF01339 /* TORController.h */,
+				A56633DC0920361E38748794 /* TORController.m */,
+				F262F2BD6D4145C950AD6727 /* TORControlReplyCode.h */,
+				E8EC825757BCE1CEE2010025 /* TORLogging.h */,
+				3634A39AA01B6DD855621DBC /* TORLogging.m */,
+				C05AA8A4474E05D3A7E827C2 /* TORNode.h */,
+				B2DA285D21A5826C3B30CF74 /* TORNode.m */,
+				89B0059BAAEDCE70176DA421 /* TOROnionAuth.h */,
+				BB1E10AA4A5CED5F001EF4B1 /* TOROnionAuth.m */,
+				FADDCAC39008C6F221A58205 /* TORThread.h */,
+				F875087AE4312F5B09E33D57 /* TORThread.m */,
+				E5673859FC5E5CE25A3064C0 /* TORX25519KeyPair.h */,
+				8ADA8D2E7DCA976592C30453 /* TORX25519KeyPair.m */,
+			);
+			path = TorFramework;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -509,10 +600,21 @@
 				8B714B53723275155406EF28 /* IdentityView.swift in Sources */,
 				40D1C2A61A964521AD18EFD2 /* MessageBubbleView.swift in Sources */,
 				814506A0D66AA4F953EB1EA7 /* NFCContactManager.swift in Sources */,
+				DFF696D0DF3B9D6307DA75F7 /* NSBundle+GeoIP.m in Sources */,
+				2E4DC22C56DF29439C08B52B /* NSCharacterSet+PredefinedSets.m in Sources */,
 				225206DA8D5D4254A65C6DBA /* OnboardingView.swift in Sources */,
 				DFBE3B2E6FEF278B921B6B35 /* SettingsView.swift in Sources */,
 				43F175EFBA8EEAB3778799D1 /* SophaxChatApp.swift in Sources */,
-				8D4566958624CBF18F617E94 /* TorOnboardingView.swift in Sources */,
+				9EE767D784D639CFD6EAEDE1 /* TORAuthKey.m in Sources */,
+				5F9172C36BF8F47F7CCC18BD /* TORCircuit.m in Sources */,
+				1A0AC6688AD2AC000A931D01 /* TORConfiguration.m in Sources */,
+				7C701BC37736FDAD6DF036F9 /* TORController.m in Sources */,
+				F78810D08BB720A5DFFBDD87 /* TORLogging.m in Sources */,
+				388ECCDE40D42C2735CB0159 /* TORNode.m in Sources */,
+				AD6E3BC6842CB2DCA252154F /* TOROnionAuth.m in Sources */,
+				B4FCB4E4F23262EC261D1189 /* TORThread.m in Sources */,
+				A535BAA528701B78D94614B1 /* TORX25519KeyPair.m in Sources */,
+				20E7DBF16DE3299C6FDD1CCC /* TorManager.swift in Sources */,
 				B23495CBC9CC3F4859D55731 /* VoiceRecorder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -683,11 +785,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = SophaxChat/SophaxChat.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = Z93Z3857SJ;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Frameworks\"",
+				);
 				INFOPLIST_FILE = SophaxChat/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -698,6 +806,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.sophax.SophaxChat;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_CATALYST = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "SophaxChat/SophaxChat-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				UIApplicationSceneManifest = "";
 			};
@@ -707,11 +816,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = SophaxChat/SophaxChat.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = Z93Z3857SJ;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Frameworks\"",
+				);
 				INFOPLIST_FILE = SophaxChat/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -722,6 +837,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.sophax.SophaxChat;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_CATALYST = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "SophaxChat/SophaxChat-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				UIApplicationSceneManifest = "";
 			};

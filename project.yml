@@ -25,6 +25,8 @@ targets:
       - path: SophaxChat
     dependencies:
       - target: SophaxChatCore
+      - framework: Frameworks/tor.xcframework
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sophax.SophaxChat
@@ -37,6 +39,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        SWIFT_OBJC_BRIDGING_HEADER: SophaxChat/SophaxChat-Bridging-Header.h
+        CLANG_ENABLE_MODULES: YES
+        CLANG_ENABLE_OBJC_ARC: YES
     info:
       path: SophaxChat/Info.plist
       properties:

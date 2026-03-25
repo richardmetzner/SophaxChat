@@ -7,12 +7,12 @@ import SophaxChatCore
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var torManager = TorManager.shared
 
     @State private var tcpConnectAddress: String = ""
     @State private var showTCPConnectAlert: Bool  = false
     @State private var tcpConnectError: String?   = nil
     @State private var showingContactCard: Bool   = false
-    @State private var showingTorOnboarding: Bool = false
     @State private var showingBackup: Bool        = false
 
     private var trimmedTCPAddress: String {
@@ -49,9 +49,6 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingContactCard) {
                 ContactCardView().environmentObject(appState)
-            }
-            .sheet(isPresented: $showingTorOnboarding) {
-                TorOnboardingView()
             }
             .sheet(isPresented: $showingBackup) {
                 BackupView().environmentObject(appState)
@@ -114,13 +111,7 @@ struct SettingsView: View {
             // Main toggle
             Toggle(isOn: Binding(
                 get: { appState.tcpEnabled },
-                set: { enabled in
-                    appState.tcpEnabled = enabled
-                    if enabled && !UserDefaults.standard.bool(forKey: "com.sophax.tor.onboardingShown") {
-                        showingTorOnboarding = true
-                        UserDefaults.standard.set(true, forKey: "com.sophax.tor.onboardingShown")
-                    }
-                }
+                set: { appState.tcpEnabled = $0 }
             )) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Chat with anyone in the world")
@@ -146,8 +137,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var torStatusCard: some View {
-        if appState.isOrbotDetected {
-            // Tor is running — show share card
+        switch torManager.state {
+        case .ready:
             Button { showingContactCard = true } label: {
                 HStack(spacing: 14) {
                     ZStack {
@@ -160,7 +151,7 @@ struct SettingsView: View {
                         Text("Anonymous & ready")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("Share your address so others can reach you")
+                        Text("Tor is running — share your address to receive messages")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -170,57 +161,50 @@ struct SettingsView: View {
                 }
                 .padding(.vertical, 4)
             }
-        } else {
-            // Tor not running — guide user
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle().fill(Color.orange.opacity(0.12)).frame(width: 44, height: 44)
-                        Image(systemName: "lock.shield")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.orange)
-                    }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Add anonymity with Tor")
+
+        case .starting:
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(Color.accentColor.opacity(0.10)).frame(width: 44, height: 44)
+                    Image(systemName: "network")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.accentColor)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Connecting to Tor…")
                             .font(.subheadline.weight(.semibold))
-                        Text("Hides your IP address from the other person")
-                            .font(.caption)
+                        Spacer()
+                        Text("\(torManager.bootstrapProgress)%")
+                            .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
+                    ProgressView(value: Double(torManager.bootstrapProgress), total: 100)
+                        .tint(Color.accentColor)
                 }
-                #if targetEnvironment(macCatalyst)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("How to set up on Mac:")
-                        .font(.caption.weight(.medium))
-                    Label("Download Tor Browser at torproject.org", systemImage: "1.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Label("Open Tor Browser and keep it running", systemImage: "2.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Label("That's it — SophaxChat will use it automatically", systemImage: "3.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.leading, 58)
-                Link("Download Tor Browser →", destination: URL(string: "https://www.torproject.org/download/")!)
-                    .font(.caption.weight(.medium))
-                    .padding(.leading, 58)
-                #else
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("How to set up on iPhone:")
-                        .font(.caption.weight(.medium))
-                    Label("Install Orbot from the App Store", systemImage: "1.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Label("Open Orbot and turn on the VPN", systemImage: "2.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Label("Come back here — it will say \"ready\"", systemImage: "3.circle.fill")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.leading, 58)
-                Link("Get Orbot on App Store →", destination: URL(string: "https://apps.apple.com/app/orbot/id1609461599")!)
-                    .font(.caption.weight(.medium))
-                    .padding(.leading, 58)
-                #endif
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
+
+        case .failed(let reason):
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(Color.red.opacity(0.10)).frame(width: 44, height: 44)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.red)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Tor unavailable")
+                        .font(.subheadline.weight(.semibold))
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+
+        case .stopped:
+            EmptyView()
         }
     }
 

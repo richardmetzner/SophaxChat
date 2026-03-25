@@ -75,8 +75,6 @@ final class AppState: ObservableObject {
     @Published var isScreenBeingRecorded: Bool = false
     /// Momentarily true after the user takes a screenshot — shown as a brief warning.
     @Published var didTakeScreenshot: Bool = false
-    /// True when Orbot (SOCKS5 on 127.0.0.1:9050) is reachable. Probed on foreground.
-    @Published var isOrbotDetected: Bool = false
     /// Momentarily non-nil after a contact card link is successfully parsed — shown as a toast.
     @Published var lastAddedContactAddress: String? = nil
     /// Non-nil when a sophaxchat:// link is waiting for user confirmation before connecting.
@@ -103,6 +101,10 @@ final class AppState: ObservableObject {
         if keychain.hasIdentity() {
             setupChatManager(username: nil)
         }
+        // Start embedded Tor immediately. On subsequent launches the guard-node
+        // cache means bootstrap completes in ~3-8 s instead of 15-30 s.
+        TorManager.shared.start()
+        observeTorState()
     }
 
     // MARK: - Setup
@@ -523,7 +525,6 @@ final class AppState: ObservableObject {
     /// No-op if TCP is disabled or no peers have an address.
     /// Decentralized: connects directly peer-to-peer, no server involved.
     func reconnectTCPPeers() {
-        probeOrbot()
         guard tcpEnabled, let tcp = chatManager?.tcpTransport else { return }
         for peer in peers {
             guard let addr = peer.tcpAddress,
@@ -638,43 +639,18 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: - Orbot detection
+    // MARK: - Embedded Tor
 
-    /// Probes 127.0.0.1:9050 with a 1.5-second timeout to check whether Orbot's SOCKS5
-    /// proxy is reachable. Non-blocking — result published via `isOrbotDetected`.
-    func probeOrbot() {
-        let conn = NWConnection(
-            to: .hostPort(host: "127.0.0.1", port: 9050),
-            using: .tcp
-        )
-        // Use a dedicated serial queue so reads and writes of `handled` are
-        // serialized — the NWConnection state handler and the timeout closure
-        // may fire concurrently on different threads.
-        let serialQ = DispatchQueue(label: "com.sophax.probeOrbot", qos: .background)
-        nonisolated(unsafe) var handled = false
-
-        conn.stateUpdateHandler = { [weak self] state in
-            serialQ.async {
-                guard !handled else { return }
-                switch state {
-                case .ready:
-                    handled = true
-                    conn.cancel()
-                    Task { @MainActor [weak self] in self?.isOrbotDetected = true }
-                case .failed, .cancelled:
-                    handled = true
-                    Task { @MainActor [weak self] in self?.isOrbotDetected = false }
-                default:
-                    break
+    /// Observes TorManager state. When Tor becomes ready, auto-wires the SOCKS5 proxy
+    /// into tcpSocksProxy if the user has not manually overridden it.
+    private func observeTorState() {
+        Task { [weak self] in
+            for await state in TorManager.shared.$state.values {
+                guard let self else { return }
+                if case .ready = state, self.tcpSocksProxy.isEmpty {
+                    self.tcpSocksProxy = TorManager.socksProxy
                 }
             }
-        }
-        conn.start(queue: serialQ)
-        serialQ.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard !handled else { return }
-            handled = true
-            conn.cancel()
-            Task { @MainActor [weak self] in self?.isOrbotDetected = false }
         }
     }
 
