@@ -51,3 +51,6 @@ store_assets/
 # Logs
 *.log
 .claude/
+
+# Large binary dependencies (download via scripts/setup_frameworks.sh)
+Frameworks/
