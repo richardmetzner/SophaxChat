@@ -255,6 +255,12 @@ struct SettingsView: View {
 
             // Expert options — collapsed by default
             DisclosureGroup("Expert settings") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Warning: changing the proxy overrides Tor and exposes your IP. Only modify if you know exactly what you're doing.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.vertical, 4)
+                }
                 VStack(spacing: 0) {
                     HStack {
                         Text("Proxy")
