@@ -1095,7 +1095,10 @@ public final class ChatManager: @unchecked Sendable {
         // Retrieve and consume the one-time prekey if Alice used one,
         // then replenish the supply so future sessions have keys available.
         let usedOPKId = payload.usedOneTimePreKeyId
-        let otpk = usedOPKId.flatMap { preKeys.consumeOneTimePreKey(id: $0) }
+        var otpk: DHKeyPair? = nil
+        if let id = usedOPKId {
+            otpk = try preKeys.consumeOneTimePreKey(id: id)
+        }
         try? preKeys.replenishIfNeeded()
 
         // Notify delegate so the UI can warn when no OPK was available (reduced entropy)
@@ -1376,11 +1379,11 @@ public final class ChatManager: @unchecked Sendable {
             guard let inner = try? unsealMessage(
                 item.sealed, recipientDHPrivateKey: identity.dhKeyPair.privateKey
             ) else { continue }
-            // Verify signature if sender is known
-            if let peer = knownPeers[inner.senderID] {
-                guard (try? WireMessageBuilder.verify(
-                    inner, signingKeyPublic: peer.signingKeyPublic
-                )) == true else { continue }
+            // Reject unknown senders for non-self-authenticating message types.
+            if inner.type != .hello && inner.type != .initiateSession {
+                guard let peer = knownPeers[inner.senderID],
+                      (try? WireMessageBuilder.verify(inner, signingKeyPublic: peer.signingKeyPublic)) == true
+                else { continue }
             }
             try? processRelayedInnerMessage(inner, hopCount: 0)
         }
@@ -1422,8 +1425,11 @@ public final class ChatManager: @unchecked Sendable {
     private func handleDeadDrop(_ drop: DeadDropEnvelope) {
         // Deduplicate
         let now = Date()
-        seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < Self.deadDropDedupeWindow * 100 }
-        guard seenDeadDropIDs[drop.id] == nil, drop.expiresAt > now else { return }
+        seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < Self.deadDropDedupeWindow }
+        // Clamp expiry to prevent attackers setting expiresAt far in the future
+        // to consume unbounded storage on relay nodes.
+        let clampedExpiry = min(drop.expiresAt, now.addingTimeInterval(Self.storeAndForwardTTL))
+        guard seenDeadDropIDs[drop.id] == nil, clampedExpiry > now else { return }
         seenDeadDropIDs[drop.id] = now
 
         let myPeerID = identity.publicIdentity.peerID
@@ -1701,12 +1707,12 @@ public final class ChatManager: @unchecked Sendable {
             // ── Destination reached — process the inner message ───────────────
             let inner = envelope.message
 
-            // Verify inner message signature if we know the original sender
-            if let peer = knownPeers[inner.senderID] {
-                guard (try? WireMessageBuilder.verify(
-                    inner, signingKeyPublic: peer.signingKeyPublic
-                )) == true else {
-                    return   // Bad signature on inner message — drop silently
+            // Reject unknown senders for non-self-authenticating types. processRelayedInnerMessage
+            // already enforces this, but checking here avoids unnecessary decryption work.
+            if inner.type != .hello && inner.type != .initiateSession {
+                guard let peer = knownPeers[inner.senderID] else { return }
+                guard (try? WireMessageBuilder.verify(inner, signingKeyPublic: peer.signingKeyPublic)) == true else {
+                    return
                 }
             }
 
@@ -1725,7 +1731,8 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     /// Dispatch a WireMessage that arrived via the relay system.
-    private func processRelayedInnerMessage(_ message: WireMessage, hopCount: UInt8) throws {
+    /// `depth` prevents recursive sealed message processing (stack overflow / DoS).
+    private func processRelayedInnerMessage(_ message: WireMessage, hopCount: UInt8, depth: Int = 0) throws {
         // .hello and .initiateSession are self-authenticating — the signing key is embedded
         // in the payload itself (PreKeyBundle / senderBundle). All other message types must
         // come from a known peer whose key we have already verified.
@@ -1735,9 +1742,17 @@ public final class ChatManager: @unchecked Sendable {
         // handleIncomingMessage(), but the inner senderID could be anyone — allowing
         // unauthenticated reactions, read receipts, and group messages to reach the UI.
         if message.type != .hello && message.type != .initiateSession {
-            guard let peer = knownPeers[message.senderID],
-                  (try? WireMessageBuilder.verify(message, signingKeyPublic: peer.signingKeyPublic)) == true
-            else { return }
+            guard let peer = knownPeers[message.senderID] else { return }
+            do {
+                guard try WireMessageBuilder.verify(message, signingKeyPublic: peer.signingKeyPublic) else {
+                    return
+                }
+            } catch {
+                #if DEBUG
+                print("[ChatManager] ⚠️ Sig verify error from \(message.senderID.prefix(8)): \(error)")
+                #endif
+                return
+            }
         }
 
         switch message.type {
@@ -1781,15 +1796,20 @@ public final class ChatManager: @unchecked Sendable {
             handleGroupMessage(payload)
 
         case .sealed:
+            // Reject nested sealed messages to prevent recursive DoS (stack overflow / CPU exhaustion).
+            guard depth == 0 else { return }
             let sealed = try wireBuilder.decodePayload(SealedMessage.self, from: message)
             let inner  = try unsealMessage(sealed, recipientDHPrivateKey: identity.dhKeyPair.privateKey)
-            // Verify inner signature using sender's known key
-            if let peer = knownPeers[inner.senderID] {
-                guard (try? WireMessageBuilder.verify(inner, signingKeyPublic: peer.signingKeyPublic)) == true else {
-                    return
-                }
+            // Reject sealed messages from unknown senders — we cannot verify their signature.
+            // Self-authenticating types (.hello, .initiateSession) are handled in the recursive
+            // call's own guard block above, so they still work for new peer discovery.
+            if inner.type != .hello && inner.type != .initiateSession {
+                guard let peer = knownPeers[inner.senderID] else { return }
+                do {
+                    guard try WireMessageBuilder.verify(inner, signingKeyPublic: peer.signingKeyPublic) else { return }
+                } catch { return }
             }
-            try processRelayedInnerMessage(inner, hopCount: hopCount)
+            try processRelayedInnerMessage(inner, hopCount: hopCount, depth: depth + 1)
 
         case .groupReaction:
             let payload = try wireBuilder.decodePayload(GroupReactionMessage.self, from: message)
@@ -1938,12 +1958,22 @@ extension ChatManager: MeshManagerDelegate {
         //   • everything else — MUST come from a known peer with a verified signature.
         //     Unknown senders cannot send arbitrary message types; we drop silently.
         if message.type != .hello && message.type != .initiateSession {
-            guard let peer = knownPeers[message.senderID],
-                  (try? WireMessageBuilder.verify(
-                    message, signingKeyPublic: peer.signingKeyPublic
-                  )) == true else {
+            guard let peer = knownPeers[message.senderID] else {
                 #if DEBUG
-                print("[ChatManager] ⚠️ Sig fail or unknown sender: type=\(message.type.rawValue) sender=\(message.senderID.prefix(8))")
+                print("[ChatManager] ⚠️ Unknown sender: type=\(message.type.rawValue) sender=\(message.senderID.prefix(8))")
+                #endif
+                return
+            }
+            do {
+                guard try WireMessageBuilder.verify(message, signingKeyPublic: peer.signingKeyPublic) else {
+                    #if DEBUG
+                    print("[ChatManager] ⚠️ Invalid signature: type=\(message.type.rawValue) sender=\(message.senderID.prefix(8))")
+                    #endif
+                    return
+                }
+            } catch {
+                #if DEBUG
+                print("[ChatManager] ⚠️ Sig verify error: type=\(message.type.rawValue) sender=\(message.senderID.prefix(8)) error=\(error)")
                 #endif
                 return
             }
@@ -2024,10 +2054,11 @@ extension ChatManager: MeshManagerDelegate {
                 // Sealed sender arriving on a direct connection (unusual but valid)
                 let sealed = try wireBuilder.decodePayload(SealedMessage.self, from: message)
                 let inner  = try unsealMessage(sealed, recipientDHPrivateKey: identity.dhKeyPair.privateKey)
-                if let peer = knownPeers[inner.senderID] {
-                    guard (try? WireMessageBuilder.verify(inner, signingKeyPublic: peer.signingKeyPublic)) == true else {
-                        break
-                    }
+                // Reject unknown senders (non-self-authenticating types).
+                if inner.type != .hello && inner.type != .initiateSession {
+                    guard let peer = knownPeers[inner.senderID],
+                          (try? WireMessageBuilder.verify(inner, signingKeyPublic: peer.signingKeyPublic)) == true
+                    else { break }
                 }
                 try processRelayedInnerMessage(inner, hopCount: 0)
 

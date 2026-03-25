@@ -186,8 +186,10 @@ extension MeshManager: MCNearbyServiceAdvertiserDelegate {
                            didReceiveInvitationFromPeer peerID: MCPeerID,
                            withContext context: Data?,
                            invitationHandler: @escaping (Bool, MCSession?) -> Void) {
-        // Accept all transport connections — cryptographic authentication happens at app layer
-        invitationHandler(true, session)
+        // Limit concurrent mesh connections to prevent connection-flood DoS.
+        // Cryptographic authentication still happens at the app layer after acceptance.
+        let accept = session.connectedPeers.count < 50
+        invitationHandler(accept, accept ? session : nil)
     }
 
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
