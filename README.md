@@ -391,7 +391,7 @@ The Android port uses the same wire protocol as iOS. Messages between iOS and An
 
 **GMS-free:** Works on GrapheneOS, CalyxOS, and any AOSP device. Google Play Services are detected at runtime; if absent, Wi-Fi Direct (`android.net.wifi.p2p.*`) is used instead. No GMS imports in the codebase.
 
-**Feature parity with iOS:** The Android UI matches the iOS app on all key features — App Lock (BiometricPrompt), unread badges, typing indicators, message long-press menu (copy / delete / block / reply), reply-to-message with quoted preview, Safety Number screen, deep link confirmation dialog, and onboarding slides.
+**Feature parity with iOS:** The Android UI matches the iOS app on all key features — App Lock (BiometricPrompt), unread badges, typing indicators, message long-press menu (copy / delete / block / reply), reply-to-message with quoted preview, Safety Number screen, deep link confirmation dialog, onboarding slides, message reactions (6-emoji picker + reaction pills), disappearing messages (per-conversation timer, auto-cleanup), contact renaming, and per-conversation message search.
 
 See [`android/README.md`](android/README.md) for build instructions and architecture.
 
@@ -521,6 +521,15 @@ See [SECURITY.md § Security Review Findings](SECURITY.md) for full details. Key
 | ~~A-4~~ | ~~LOW~~ | ~~TCP connections held indefinitely on slow peers~~ — **fixed**: 120s idle timeout per connection, reset on each frame |
 | ~~A-5~~ | ~~LOW~~ | ~~Deep link triggers immediate TCP connect~~ — **fixed**: confirmation dialog required on both iOS and Android |
 | ~~A-6~~ | ~~LOW~~ | ~~App Lock leaves notifications visible~~ — **fixed**: `removeAllDeliveredNotifications()` on lock |
+| ~~S3-A1~~ | ~~HIGH~~ | ~~Android port parsing without bounds check~~ — **fixed**: `toIntOrNull()?.takeIf { it in 1..65535 }` |
+| ~~S3-A2~~ | ~~HIGH~~ | ~~Tor v3 onion address validated only by `.endsWith(".onion")`~~ — **fixed**: strict regex `^[a-z2-7]{56}\.onion$` |
+| ~~S3-I1~~ | ~~HIGH~~ | ~~X3DH dhConcat not zeroed after key derivation~~ — **fixed**: `initializeMemory(as: UInt8.self, repeating: 0)` |
+| ~~S3-A3~~ | ~~MEDIUM~~ | ~~Android app SharedPreferences stored in plaintext~~ — **fixed**: migrated to `EncryptedSharedPreferences` |
+| ~~S3-A4~~ | ~~MEDIUM~~ | ~~Double Ratchet message key `mk` not zeroed after use~~ — **fixed**: `mk.fill(0)` after encrypt/decrypt |
+| ~~S3-A5~~ | ~~MEDIUM~~ | ~~Android clipboard no auto-clear~~ — **fixed**: 60s delayed clear matching iOS |
+| ~~S3-I2~~ | ~~MEDIUM~~ | ~~X3DH dhConcat length not validated~~ — **fixed**: `precondition(count == 96 \|\| count == 128)` |
+| ~~S3-A6~~ | ~~LOW~~ | ~~Android exception messages exposed to user~~ — **fixed**: generic user-facing strings, debug-only `Log.e` |
+| ~~S3-I3~~ | ~~LOW~~ | ~~`assert()` in IdentityManager stripped in Release builds~~ — **fixed**: replaced with `precondition()` |
 
 ### Responsible Disclosure
 
@@ -595,6 +604,8 @@ Do not open public issues for security bugs.
 
 - [x] Security Audit II — six findings resolved: SKD monotonicity, relay inner-message signature, global relay rate limit (50/10s), TCP 120s idle timeout, deep link confirmation gate, app lock notification clear
 - [x] Android feature parity — App Lock (BiometricPrompt), unread badges, typing indicators, long-press menu (copy / delete / block / reply), reply-to-message, Safety Number screen, deep link confirmation, onboarding backup + verification slides
+- [x] Security Audit III — ten findings resolved: port bounds check, strict Tor v3 regex, X3DH dhConcat zeroing, EncryptedSharedPreferences for app state, Double Ratchet `mk.fill(0)`, Android clipboard auto-clear, dhConcat length precondition, error message sanitization, `assert` → `precondition` in IdentityManager
+- [x] Android reactions, disappearing messages, contact renaming, message search — full feature parity with iOS
 
 ### Seeking external support
 
