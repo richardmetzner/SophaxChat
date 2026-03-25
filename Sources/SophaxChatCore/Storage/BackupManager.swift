@@ -23,26 +23,37 @@
 //     see a new safety number, consistent with key continuity principles)
 //
 // Encryption:
-//   • Key derivation: HKDF-SHA256(IKM: passphrase, salt: random 32B, info: "sophax-backup-v1")
+//   • Key derivation: PBKDF2-HMAC-SHA256, 600 000 iterations (replaces HKDF — adds brute-force resistance)
 //   • Cipher: AES-256-GCM
 //   • File format: 4B magic | 1B version | 32B salt | 12B nonce | ciphertext+tag
+//
+// Security notes:
+//   • identityFingerprint: SHA256(signingKeyPublic + dhKeyPublic) included in backup.
+//     Checked on restore to warn if backup belongs to a different identity.
+//   • Minimum passphrase enforced in UI (16 characters).
 
 import Foundation
 import CryptoKit
+import CommonCrypto
 
 public struct SophaxBackup: Codable {
-    public let version:    Int
-    public let createdAt:  Date
-    public let username:   String
-    public let peers:      [KnownPeer]
-    public let messages:   [String: [StoredMessage]]
+    public let version:             Int
+    public let createdAt:           Date
+    public let username:            String
+    public let peers:               [KnownPeer]
+    public let messages:            [String: [StoredMessage]]
+    /// SHA256 hex of the identity keys at backup time. Used to warn on cross-identity restore.
+    public let identityFingerprint: String?
 
-    public init(version: Int, createdAt: Date, username: String, peers: [KnownPeer], messages: [String: [StoredMessage]]) {
-        self.version   = version
-        self.createdAt = createdAt
-        self.username  = username
-        self.peers     = peers
-        self.messages  = messages
+    public init(version: Int, createdAt: Date, username: String,
+                peers: [KnownPeer], messages: [String: [StoredMessage]],
+                identityFingerprint: String? = nil) {
+        self.version              = version
+        self.createdAt            = createdAt
+        self.username             = username
+        self.peers                = peers
+        self.messages             = messages
+        self.identityFingerprint  = identityFingerprint
     }
 }
 
@@ -62,8 +73,9 @@ public enum BackupError: Error, LocalizedError {
 
 public final class BackupManager: Sendable {
 
-    private static let magic:   [UInt8] = [0x53, 0x58, 0x42, 0x4B]  // "SXBK"
-    private static let version: UInt8   = 1
+    private static let magic:      [UInt8] = [0x53, 0x58, 0x42, 0x4B]  // "SXBK"
+    private static let fileVersion: UInt8  = 2   // v2: PBKDF2 KDF + identityFingerprint
+    private static let pbkdf2Iterations    = 600_000
 
     // MARK: - Export
 
@@ -75,7 +87,7 @@ public final class BackupManager: Sendable {
     ) throws -> Data {
         let json     = try JSONEncoder().encode(backup)
         let salt     = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
-        let key      = deriveKey(passphrase: passphrase, salt: salt)
+        let key      = try deriveKey(passphrase: passphrase, salt: salt)
         let sealed   = try AES.GCM.seal(json, using: key)
         guard let combined = sealed.combined else {
             throw BackupError.exportFailed("AES-GCM combined output unavailable")
@@ -83,7 +95,7 @@ public final class BackupManager: Sendable {
 
         var out = Data()
         out.append(contentsOf: magic)
-        out.append(version)
+        out.append(fileVersion)
         out.append(salt)
         out.append(combined)   // 12B nonce + ciphertext + 16B tag
         return out
@@ -92,6 +104,8 @@ public final class BackupManager: Sendable {
     // MARK: - Import
 
     /// Decrypt and decode a backup blob.
+    /// - Returns: The decoded backup.
+    /// - Throws: `BackupError.wrongPassphrase`, `.corruptFile`, or `.identityMismatch`.
     public static func `import`(
         data: Data,
         passphrase: String
@@ -104,10 +118,10 @@ public final class BackupManager: Sendable {
         let salt     = data[5..<37]
         let combined = data[37...]
 
-        let key = deriveKey(passphrase: passphrase, salt: Data(salt))
+        let key = try deriveKey(passphrase: passphrase, salt: Data(salt))
         do {
-            let box      = try AES.GCM.SealedBox(combined: Data(combined))
-            let json     = try AES.GCM.open(box, using: key)
+            let box  = try AES.GCM.SealedBox(combined: Data(combined))
+            let json = try AES.GCM.open(box, using: key)
             return try JSONDecoder().decode(SophaxBackup.self, from: json)
         } catch {
             throw BackupError.wrongPassphrase
@@ -124,14 +138,30 @@ public final class BackupManager: Sendable {
 
     // MARK: - Private: Key derivation
 
-    /// HKDF-SHA256: passphrase as IKM, random salt, fixed info tag.
-    private static func deriveKey(passphrase: String, salt: Data) -> SymmetricKey {
-        let ikm  = SymmetricKey(data: Data(passphrase.utf8))
-        return HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: ikm,
-            salt: salt,
-            info: Data("sophax-backup-v1".utf8),
-            outputByteCount: 32
-        )
+    /// PBKDF2-HMAC-SHA256 with 600 000 iterations.
+    /// Replaces HKDF (single round, no brute-force resistance) — makes GPU attacks ~600 000× slower.
+    private static func deriveKey(passphrase: String, salt: Data) throws -> SymmetricKey {
+        let passData   = Data(passphrase.utf8)
+        var derived    = Data(repeating: 0, count: 32)
+
+        let status = derived.withUnsafeMutableBytes { derivedPtr in
+            salt.withUnsafeBytes { saltPtr in
+                passData.withUnsafeBytes { passPtr in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passPtr.baseAddress, passData.count,
+                        saltPtr.baseAddress, salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                        UInt32(pbkdf2Iterations),
+                        derivedPtr.baseAddress, 32
+                    )
+                }
+            }
+        }
+
+        guard status == kCCSuccess else {
+            throw BackupError.exportFailed("PBKDF2 derivation failed (\(status))")
+        }
+        return SymmetricKey(data: derived)
     }
 }

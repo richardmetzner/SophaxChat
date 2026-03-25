@@ -45,7 +45,7 @@ struct BackupView: View {
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    .disabled(passphrase.count < 8 || passphrase != confirm || isExporting)
+                    .disabled(passphrase.count < 16 || passphrase != confirm || isExporting)
                     .fileExporter(
                         isPresented: Binding(get: { exportItem != nil }, set: { if !$0 { exportItem = nil } }),
                         document: exportItem,
@@ -113,8 +113,8 @@ struct BackupView: View {
     // MARK: - Actions
 
     private func export() {
-        guard passphrase == confirm, passphrase.count >= 8 else {
-            errorText = "Passphrases do not match or are too short (min 8 characters)."
+        guard passphrase == confirm, passphrase.count >= 16 else {
+            errorText = "Passphrases do not match or are too short (min 16 characters)."
             return
         }
         isExporting = true
