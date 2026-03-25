@@ -18,9 +18,13 @@ import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.MessageDirection
 import com.sophax.sophaxchat.storage.MessageStore
 import com.sophax.sophaxchat.storage.StoredMessage
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -146,6 +150,36 @@ class AppState(application: Application) : AndroidViewModel(application) {
         _pendingDeepLink.value = null
     }
 
+    // Contact aliases (rename)
+    private val _peerAliases = MutableStateFlow<Map<String, String>>(
+        prefs.all.entries
+            .filter { it.key.startsWith("alias_") }
+            .associate { it.key.removePrefix("alias_") to (it.value as? String ?: "") }
+    )
+    val peerAliases: StateFlow<Map<String, String>> = _peerAliases.asStateFlow()
+
+    fun renamePeer(peerID: String, alias: String) {
+        _peerAliases.update { it + (peerID to alias) }
+        prefs.edit().putString("alias_$peerID", alias).apply()
+    }
+
+    fun displayName(peerID: String, fallback: String): String =
+        _peerAliases.value[peerID]?.takeIf { it.isNotBlank() } ?: fallback
+
+    // Disappearing messages — per-conversation timer (ms, 0 = off)
+    private val _disappearingTimers = MutableStateFlow<Map<String, Long>>(
+        prefs.all.entries
+            .filter { it.key.startsWith("disappear_") }
+            .associate { it.key.removePrefix("disappear_") to (it.value as? Long ?: 0L) }
+    )
+    val disappearingTimers: StateFlow<Map<String, Long>> = _disappearingTimers.asStateFlow()
+
+    fun setDisappearingTimer(conversationID: String, ms: Long) {
+        _disappearingTimers.update { if (ms == 0L) it - conversationID else it + (conversationID to ms) }
+        if (ms == 0L) prefs.edit().remove("disappear_$conversationID").apply()
+        else prefs.edit().putLong("disappear_$conversationID", ms).apply()
+    }
+
     // Typing indicators
     private val _typingPeers = MutableStateFlow<Set<String>>(emptySet())
     val typingPeers: StateFlow<Set<String>> = _typingPeers.asStateFlow()
@@ -198,12 +232,31 @@ class AppState(application: Application) : AndroidViewModel(application) {
         if (parts.size == 2) block(parts[0], parts[1].toIntOrNull() ?: 9050)
     }
 
+    // Reactions
+    fun addReaction(conversationID: String, messageID: String, senderID: String, emoji: String?) {
+        messageStore.addReaction(conversationID, messageID, senderID, emoji)
+        updateMessages(conversationID, messageStore.loadMessages(conversationID))
+    }
+
+    fun sendReaction(toPeerID: String, messageID: String, emoji: String?, isGroup: Boolean = false, groupID: String? = null) {
+        _chatManager?.sendReaction(toPeerID, messageID, emoji, isGroup, groupID)
+        addReaction(if (isGroup && groupID != null) groupID else toPeerID, messageID, myPeerID, emoji)
+    }
+
     // -----------------------------------------------------------------------
     // Notifications
     // -----------------------------------------------------------------------
 
     init {
         NotificationHelper.createChannel(getApplication())
+        // Cleanup expired messages every 10s
+        viewModelScope.launch {
+            while (true) {
+                delay(10_000)
+                messageStore.deleteExpiredMessages()
+                loadAllMessages()
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -285,6 +338,9 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 _errorMessage.value = "Connection error. Please try again."
                 if (BuildConfig.DEBUG) Log.e("AppState", "didEncounterError", error)
             }
+            override fun didReceiveReaction(conversationID: String, messageID: String, emoji: String?, senderID: String) {
+                addReaction(conversationID, messageID, senderID, emoji)
+            }
             override fun didUpdateTypingState(peerID: String, isTyping: Boolean) {
                 typingClearRunners.remove(peerID)?.let { mainHandler.removeCallbacks(it) }
                 if (isTyping) {
@@ -318,7 +374,10 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendMessage(toPeerID: String, body: String) {
-        _chatManager?.sendMessage(toPeerID, body)
+        val expiresAt = _disappearingTimers.value[toPeerID]
+            ?.takeIf { it > 0L }
+            ?.let { System.currentTimeMillis() + it }
+        _chatManager?.sendMessage(toPeerID, body, expiresAt)
         updateMessages(toPeerID, messageStore.loadMessages(toPeerID))
     }
 

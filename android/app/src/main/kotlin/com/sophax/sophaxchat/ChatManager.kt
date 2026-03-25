@@ -46,6 +46,7 @@ interface ChatManagerDelegate {
     fun messageDelivered(messageID: String, toPeerID: String)
     fun didEncounterError(error: Exception)
     fun didUpdateTypingState(peerID: String, isTyping: Boolean)
+    fun didReceiveReaction(conversationID: String, messageID: String, emoji: String?, senderID: String = conversationID)
 }
 
 // ---------------------------------------------------------------------------
@@ -193,18 +194,17 @@ class ChatManager(
         sendOrRoute(wire, toPeerID)
     }
 
-    fun sendMessage(toPeerID: String, body: String) {
+    fun sendMessage(toPeerID: String, body: String, expiresAt: Long? = null) {
         val messageID = UUID.randomUUID().toString()
 
-        // Store locally
         val stored = StoredMessage(
             id = messageID, peerID = toPeerID,
             direction = MessageDirection.sent.name, body = body,
-            status = MessageStatus.sending.name
+            status = MessageStatus.sending.name, expiresAt = expiresAt
         )
         messageStore.store(stored)
 
-        val wire = buildOutboundWire(toPeerID, body, messageID) ?: return
+        val wire = buildOutboundWire(toPeerID, body, messageID, expiresAt) ?: return
         sendOrRoute(wire, toPeerID)
     }
 
@@ -212,8 +212,9 @@ class ChatManager(
     // Build outbound wire (X3DH or DR encrypt)
     // -----------------------------------------------------------------------
 
-    private fun buildOutboundWire(peerID: String, body: String, messageID: String): WireMessage? {
-        val content = MessageContent(body = body, timestamp = Date())
+    private fun buildOutboundWire(peerID: String, body: String, messageID: String, expiresAt: Long? = null): WireMessage? {
+        val content = MessageContent(body = body, timestamp = Date(),
+            expiresAt = expiresAt?.let { Date(it) })
         val contentBytes = json.encodeToString(content).toByteArray()
 
         // Case 1: existing DR session
@@ -365,6 +366,34 @@ class ChatManager(
         broadcastToGroup(group, gwm)
     }
 
+    fun sendReaction(toPeerID: String, messageID: String, emoji: String?, isGroup: Boolean, groupID: String?) {
+        if (isGroup && groupID != null) {
+            val r = GroupReactionMessage(groupID = groupID, targetMessageID = messageID, emoji = emoji)
+            val wire = builder().build(WireMessageType.groupReaction.name, r)
+            groups[groupID]?.memberIDs
+                ?.filter { it != identity.publicIdentity.peerID }
+                ?.forEach { sendOrRoute(wire, it) }
+        } else {
+            val r = ReactionMessage(targetMessageID = messageID, emoji = emoji)
+            val wire = buildReactionWire(toPeerID, r) ?: return
+            sendOrRoute(wire, toPeerID)
+        }
+    }
+
+    private fun buildReactionWire(peerID: String, reaction: ReactionMessage): WireMessage? {
+        val bytes = json.encodeToString(reaction).toByteArray()
+        synchronized(sessionLock) { sessions[peerID] }?.let { dr ->
+            return try {
+                val payload = ChatMessagePayload(
+                    ratchetMessage = dr.encrypt(bytes).toWire(),
+                    messageID = UUID.randomUUID().toString()
+                )
+                builder().build(WireMessageType.reaction.name, payload)
+            } catch (e: Exception) { delegate?.didEncounterError(e); null }
+        }
+        return null
+    }
+
     fun leaveGroup(group: GroupInfo) {
         val myID = identity.publicIdentity.peerID
         val remaining = group.memberIDs.filter { it != myID }
@@ -468,6 +497,8 @@ class ChatManager(
             WireMessageType.groupMessage.name      -> handleGroupMessage(message)
             WireMessageType.groupMemberLeft.name   -> handleGroupMemberLeft(message)
             WireMessageType.typing.name            -> handleTyping(message)
+            WireMessageType.reaction.name          -> handleReaction(message)
+            WireMessageType.groupReaction.name     -> handleGroupReaction(message)
         }
     }
 
@@ -608,7 +639,8 @@ class ChatManager(
                 id = payload.messageID, peerID = peerID,
                 direction = MessageDirection.received.name,
                 body = content.body, status = MessageStatus.delivered.name,
-                replyToID = content.replyToID
+                replyToID = content.replyToID,
+                expiresAt = content.expiresAt?.time
             )
             messageStore.store(stored)
             delegate?.didReceiveMessage(stored, peerID)
@@ -640,6 +672,23 @@ class ChatManager(
         val typing = try { json.decodeFromString<TypingMessage>(String(message.payload)) }
                      catch (e: Exception) { return }
         delegate?.didUpdateTypingState(message.senderID, typing.isTyping)
+    }
+
+    private fun handleReaction(message: WireMessage) {
+        val senderID = message.senderID
+        val dr = synchronized(sessionLock) { sessions[senderID] } ?: return
+        val plain = try {
+            val payload = json.decodeFromString<ChatMessagePayload>(String(message.payload))
+            dr.decrypt(payload.ratchetMessage.fromWire())
+        } catch (e: Exception) { return }
+        val r = try { json.decodeFromString<ReactionMessage>(String(plain)) } catch (e: Exception) { return }
+        delegate?.didReceiveReaction(senderID, r.targetMessageID, r.emoji)
+    }
+
+    private fun handleGroupReaction(message: WireMessage) {
+        val r = try { json.decodeFromString<GroupReactionMessage>(String(message.payload)) }
+                catch (e: Exception) { return }
+        delegate?.didReceiveReaction(r.groupID, r.targetMessageID, r.emoji, senderID = message.senderID)
     }
 
     // -----------------------------------------------------------------------

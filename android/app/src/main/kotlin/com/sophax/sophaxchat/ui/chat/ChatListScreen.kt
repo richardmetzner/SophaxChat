@@ -38,6 +38,7 @@ fun ChatListScreen(
     val peers        by appState.peers.collectAsState()
     val groups       by appState.groups.collectAsState()
     val unreadCounts by appState.unreadCounts.collectAsState()
+    val peerAliases  by appState.peerAliases.collectAsState()
 
     Scaffold(
         topBar = {
@@ -75,7 +76,7 @@ fun ChatListScreen(
                     }
                 }
                 items(peers, key = { it.id }) { peer ->
-                    PeerRow(peer, unread = unreadCounts[peer.id] ?: 0, onClick = { onPeerTap(peer.id) })
+                    PeerRow(peer, displayName = peerAliases[peer.id]?.takeIf { it.isNotBlank() } ?: peer.username, unread = unreadCounts[peer.id] ?: 0, onClick = { onPeerTap(peer.id) })
                 }
             }
         }
@@ -164,8 +165,8 @@ private fun GroupRow(group: GroupInfo, unread: Int, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PeerRow(peer: KnownPeer, unread: Int, onClick: () -> Unit) {
-    val initial = peer.username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+private fun PeerRow(peer: KnownPeer, displayName: String, unread: Int, onClick: () -> Unit) {
+    val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 
     Row(
         modifier = Modifier
@@ -187,7 +188,7 @@ private fun PeerRow(peer: KnownPeer, unread: Int, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(peer.username, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(displayName, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             Text(
                 if (peer.isOnline) "Online" else "Last seen recently",
                 fontSize = 13.sp,

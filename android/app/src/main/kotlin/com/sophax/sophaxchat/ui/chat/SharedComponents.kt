@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
@@ -21,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.StoredMessage
 
@@ -35,6 +38,8 @@ internal fun copyToClipboard(context: Context, text: String) {
     }, 60_000L)
 }
 
+private val REACTION_EMOJIS = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
+
 @Composable
 fun MessageContextMenu(
     expanded: Boolean,
@@ -42,10 +47,26 @@ fun MessageContextMenu(
     body: String,
     onReply: () -> Unit,
     onDelete: () -> Unit,
-    onBlock: (() -> Unit)? = null
+    onBlock: (() -> Unit)? = null,
+    onReact: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        if (onReact != null) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                REACTION_EMOJIS.forEach { emoji ->
+                    TextButton(
+                        onClick = { onDismiss(); onReact(emoji) },
+                        contentPadding = PaddingValues(4.dp),
+                        modifier = Modifier.size(40.dp)
+                    ) { Text(emoji, fontSize = 20.sp) }
+                }
+            }
+            HorizontalDivider()
+        }
         DropdownMenuItem(
             text = { Text("Reply") },
             onClick = { onDismiss(); onReply() }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.sophax.sophaxchat.AppState
 import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.storage.MessageDirection
@@ -156,7 +158,8 @@ fun GroupChatScreen(
                     onBlock    = if (msg.direction != MessageDirection.sent.name) {
                         { appState.blockPeer(msg.peerID) }
                     } else null,
-                    onReply    = { replyTo = msg }
+                    onReply    = { replyTo = msg },
+                    onReact    = { emoji -> appState.sendReaction(group.id, msg.id, emoji, isGroup = true, groupID = group.id) }
                 )
             }
         }
@@ -183,7 +186,8 @@ private fun GroupMessageBubble(
     senderName: String,
     onDelete: () -> Unit = {},
     onBlock: (() -> Unit)? = null,
-    onReply: () -> Unit = {}
+    onReply: () -> Unit = {},
+    onReact: ((String) -> Unit)? = null
 ) {
     val isMe = message.direction == MessageDirection.sent.name
     var showMenu by remember { mutableStateOf(false) }
@@ -239,8 +243,31 @@ private fun GroupMessageBubble(
                     body      = message.body,
                     onReply   = onReply,
                     onDelete  = onDelete,
-                    onBlock   = onBlock
+                    onBlock   = onBlock,
+                    onReact   = onReact
                 )
+            }
+            // Reaction pills
+            if (message.reactions.isNotEmpty()) {
+                val grouped = message.reactions.values.groupBy { it }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(top = 2.dp, start = if (!isMe) 4.dp else 0.dp)
+                ) {
+                    grouped.forEach { (emoji, senders) ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            tonalElevation = 1.dp
+                        ) {
+                            Text(
+                                if (senders.size > 1) "$emoji ${senders.size}" else emoji,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }

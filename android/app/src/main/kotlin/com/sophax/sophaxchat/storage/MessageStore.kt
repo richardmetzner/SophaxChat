@@ -26,7 +26,9 @@ data class StoredMessage(
     val timestampMs: Long = System.currentTimeMillis(),
     var status: String = MessageStatus.sending.name,
     val replyToID: String? = null,
-    val attachmentMimeType: String? = null
+    val attachmentMimeType: String? = null,
+    val expiresAt: Long? = null,
+    val reactions: Map<String, String> = emptyMap()  // senderID -> emoji
 ) {
     val timestamp: Date get() = Date(timestampMs)
     val isSent: Boolean get() = direction == MessageDirection.sent.name
@@ -96,6 +98,27 @@ class MessageStore(context: Context) {
             else msg
         }
         prefs.edit().putString(key(conversationID), json.encodeToString(messages)).apply()
+    }
+
+    fun addReaction(conversationID: String, messageID: String, senderID: String, emoji: String?) {
+        val messages = loadMessages(conversationID).toMutableList()
+        val idx = messages.indexOfFirst { it.id == messageID }
+        if (idx < 0) return
+        val updated = messages[idx].reactions.toMutableMap()
+        if (emoji == null) updated.remove(senderID) else updated[senderID] = emoji
+        messages[idx] = messages[idx].copy(reactions = updated)
+        prefs.edit().putString(key(conversationID), json.encodeToString(messages)).apply()
+    }
+
+    fun deleteExpiredMessages() {
+        val now = System.currentTimeMillis()
+        allConversationIDs().forEach { convID ->
+            val messages = loadMessages(convID)
+            val filtered = messages.filter { it.expiresAt == null || it.expiresAt > now }
+            if (filtered.size != messages.size) {
+                prefs.edit().putString(key(convID), json.encodeToString(filtered)).apply()
+            }
+        }
     }
 
     fun deleteMessage(id: String, peerID: String) {

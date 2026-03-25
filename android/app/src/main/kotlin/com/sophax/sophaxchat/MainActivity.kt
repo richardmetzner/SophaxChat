@@ -122,16 +122,18 @@ private fun AppNavigation(appState: AppState) {
 
         composable("chat/{peerID}") { backStack ->
             val peerID      = backStack.arguments?.getString("peerID") ?: return@composable
-            val peer        = peers.firstOrNull { it.id == peerID }
-            val allMessages by appState.messages.collectAsState()
-            val msgs        = allMessages[peerID] ?: emptyList()
-            val typingPeers by appState.typingPeers.collectAsState()
+            val peer              = peers.firstOrNull { it.id == peerID }
+            val allMessages      by appState.messages.collectAsState()
+            val msgs              = allMessages[peerID] ?: emptyList()
+            val typingPeers      by appState.typingPeers.collectAsState()
+            val peerAliases      by appState.peerAliases.collectAsState()
+            val disappearTimers  by appState.disappearingTimers.collectAsState()
 
             // Populate cache from disk on first open
             LaunchedEffect(peerID) { appState.messagesFor(peerID) }
 
             ChatScreen(
-                peerUsername      = peer?.username ?: peerID,
+                peerUsername      = appState.displayName(peerID, peer?.username ?: peerID),
                 peerOnline        = peer?.isOnline ?: false,
                 messages          = msgs,
                 peerID            = peerID,
@@ -143,7 +145,11 @@ private fun AppNavigation(appState: AppState) {
                 onTyping          = { appState.sendTyping(peerID) },
                 onDeleteMessage   = { msgID -> appState.deleteMessage(msgID, peerID) },
                 onBlockPeer       = { appState.blockPeer(it) },
-                onSafetyNumber    = { navController.navigate("safety_number/$peerID") }
+                onSafetyNumber    = { navController.navigate("safety_number/$peerID") },
+                onReact           = { msgID, emoji -> appState.sendReaction(peerID, msgID, emoji) },
+                onRename          = { alias -> appState.renamePeer(peerID, alias) },
+                disappearingMs    = disappearTimers[peerID] ?: 0L,
+                onSetDisappearing = { ms -> appState.setDisappearingTimer(peerID, ms) }
             )
         }
 
