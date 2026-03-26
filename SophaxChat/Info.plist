@@ -68,10 +68,5 @@
 		<key>UIColorName</key>
 		<string>AccentColor</string>
 	</dict>
-	<!-- App Store export compliance: SophaxChat uses non-exempt strong encryption
-	     (ChaCha20-Poly1305, X25519 ECDH, Ed25519). Self-classified under EAR
-	     §740.17(b)(1) — publicly available open-source encryption software. -->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 </dict>
 </plist>
