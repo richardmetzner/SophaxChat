@@ -337,7 +337,7 @@ public final class ChatManager: @unchecked Sendable {
         let now = Date()
         storedForwardItems.removeAll { $0.expiresAt <= now }
         deadDrops.removeAll { $0.expiresAt <= now }
-        seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < 24 * 3600 }
+        seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < Self.deadDropDedupeWindow }
     }
 
     /// Maximum text message body length in UTF-8 bytes.
