@@ -792,8 +792,15 @@ final class AppState: ObservableObject {
            let saved = try? JSONDecoder().decode([String: String].self, from: data),
            !saved.isEmpty {
             verifiedPeers = saved
-            keychainSave("verifiedPeers:migration") { try keychain.saveVerifiedPeers(saved) }
-            UserDefaults.standard.removeObject(forKey: legacyKey)
+            do {
+                try keychain.saveVerifiedPeers(saved)
+                UserDefaults.standard.removeObject(forKey: legacyKey)
+            } catch {
+                // Leave in UserDefaults and retry on next launch
+                #if DEBUG
+                print("[AppState] ⚠️ verifiedPeers migration to Keychain failed: \(error)")
+                #endif
+            }
         }
     }
 

@@ -47,6 +47,8 @@ struct SophaxChatApp: App {
                     appState.isBlurred = true
                     appState.lockApp()
                     scheduleBackgroundMeshRefresh()
+                    // Clear clipboard on background to prevent sensitive message content leaking
+                    UIPasteboard.general.string = ""
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                     appState.isBlurred = false
