@@ -6,23 +6,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sophax.sophaxchat.AppState
+import com.sophax.sophaxchat.network.TorState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(appState: AppState, onBack: () -> Unit, onBackup: () -> Unit = {}) {
-    val username    by appState.username.collectAsState()
-    val tcpEnabled  by appState.tcpEnabled.collectAsState()
-    val socksProxy  by appState.socksProxy.collectAsState()
+    val username     by appState.username.collectAsState()
+    val tcpEnabled   by appState.tcpEnabled.collectAsState()
     val blockedPeers by appState.blockedPeers.collectAsState()
+    val torState     by appState.torManager.state.collectAsState()
+    val torProgress  by appState.torManager.bootstrapProgress.collectAsState()
 
     var usernameEdit by remember(username) { mutableStateOf(username) }
-    var proxyEdit    by remember(socksProxy) { mutableStateOf(socksProxy) }
     var showQR       by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -69,6 +72,71 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit, onBackup: () -> Unit 
             // ----------------------------------------------------------------
             SectionLabel("Network")
 
+            // Tor status card
+            when (val ts = torState) {
+                is TorState.Ready -> Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Security, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("Anonymous & ready",
+                                style = MaterialTheme.typography.titleSmall)
+                            Text("Tor is running — share your address to receive messages",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                is TorState.Starting -> Card {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp), strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text("Connecting to Tor…",
+                                style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.weight(1f))
+                            Text("$torProgress%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { torProgress / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                is TorState.Failed -> Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Tor unavailable: ${ts.reason}",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                else -> {}
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -76,21 +144,6 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit, onBackup: () -> Unit 
             ) {
                 Text("Connect Globally (TCP / Tor)", style = MaterialTheme.typography.bodyLarge)
                 Switch(checked = tcpEnabled, onCheckedChange = { appState.setTcpEnabled(it) })
-            }
-
-            if (tcpEnabled) {
-                OutlinedTextField(
-                    value = proxyEdit,
-                    onValueChange = { proxyEdit = it },
-                    label = { Text("SOCKS5 Proxy (host:port)") },
-                    placeholder = { Text("127.0.0.1:9050") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Button(
-                    onClick = { appState.setSocksProxy(proxyEdit) },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Apply Proxy") }
             }
 
             OutlinedButton(

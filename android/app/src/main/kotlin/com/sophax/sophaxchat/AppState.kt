@@ -12,6 +12,8 @@ import androidx.security.crypto.MasterKey
 import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.crypto.IdentityManager
 import com.sophax.sophaxchat.crypto.PreKeyManager
+import com.sophax.sophaxchat.network.TorManager
+import com.sophax.sophaxchat.network.TorState
 import com.sophax.sophaxchat.notifications.NotificationHelper
 import com.sophax.sophaxchat.protocol.KnownPeer
 import com.sophax.sophaxchat.storage.AttachmentStore
@@ -53,6 +55,7 @@ class AppState(application: Application) : AndroidViewModel(application) {
 
     val identity     = IdentityManager(application)
     val messageStore = MessageStore(application)
+    val torManager   = TorManager(application)
 
     private var _chatManager: ChatManager? = null
     val chatManager: ChatManager? get() = _chatManager
@@ -255,6 +258,19 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 delay(10_000)
                 messageStore.deleteExpiredMessages()
                 loadAllMessages()
+            }
+        }
+        // Start embedded Tor immediately — proxy auto-configured on bootstrap
+        torManager.start()
+        observeTorState()
+    }
+
+    private fun observeTorState() {
+        viewModelScope.launch {
+            torManager.state.collect { torState ->
+                if (torState is TorState.Ready && _socksProxy.value.isEmpty()) {
+                    setSocksProxy(TorManager.SOCKS_PROXY)
+                }
             }
         }
     }

@@ -21,6 +21,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="32" />
 
+    <!-- Foreground service (embedded Tor) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_NETWORK_PROCESS" />
+
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -35,6 +39,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.SophaxChat">
+
+        <!-- Embedded Tor daemon service (no Orbot required) -->
+        <service
+            android:name="org.torproject.android.service.TorService"
+            android:exported="false"
+            android:foregroundServiceType="networkProcess" />
 
         <activity
             android:name=".MainActivity"

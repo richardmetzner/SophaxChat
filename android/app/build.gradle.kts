@@ -96,5 +96,8 @@ dependencies {
     // QR code generation
     implementation(libs.zxing.core)
 
+    // Embedded Tor (Guardian Project — no Orbot required)
+    implementation(libs.tor.android)
+
     debugImplementation(libs.androidx.ui.tooling)
 }
