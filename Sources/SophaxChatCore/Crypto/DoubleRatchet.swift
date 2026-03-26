@@ -178,6 +178,7 @@ public final class DoubleRatchet: @unchecked Sendable {
         let (newCK, mk) = Self.kdfCK(ck)
         state.sendingChainKey = SerializableSymmetricKey(newCK)
 
+        guard state.sendMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
         let header = RatchetHeader(
             senderRatchetKey:    state.sendingRatchetPublicKey,
             previousChainLength: state.previousSendingChainLength,
@@ -211,6 +212,7 @@ public final class DoubleRatchet: @unchecked Sendable {
            let header = try? decryptHeaderBytes(message.encryptedHeader, using: hkr) {
             try skipMessageKeys(until: header.messageNumber)
             guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
+            guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
             let (newCK, mk) = Self.kdfCK(ck)
             state.receivingChainKey = SerializableSymmetricKey(newCK)
             state.receiveMessageCount += 1
@@ -229,6 +231,7 @@ public final class DoubleRatchet: @unchecked Sendable {
         try skipMessageKeys(until: header.messageNumber)
 
         guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
+        guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
         let (newCK, mk) = Self.kdfCK(ck)
         state.receivingChainKey = SerializableSymmetricKey(newCK)
         state.receiveMessageCount += 1
@@ -243,6 +246,14 @@ public final class DoubleRatchet: @unchecked Sendable {
 
     public static func importState(_ data: Data) throws -> DoubleRatchet {
         let state = try JSONDecoder().decode(RatchetSessionState.self, from: data)
+        let totalSkipped = state.skippedKeyBundles.values.reduce(0) { $0 + $1.count }
+        guard totalSkipped <= CryptoConstants.maxSkippedMessages else {
+            throw SophaxError.invalidState
+        }
+        guard state.sendMessageCount < UInt32.max,
+              state.receiveMessageCount < UInt32.max else {
+            throw SophaxError.invalidState
+        }
         return DoubleRatchet(state: state)
     }
 
