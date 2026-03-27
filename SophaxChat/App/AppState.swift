@@ -134,6 +134,7 @@ final class AppState: ObservableObject {
             )
             manager.delegate      = self
             manager.myTCPAddress  = myTCPAddress.isEmpty ? nil : myTCPAddress
+            manager.registerKnownGroups(groups)
             manager.start()
             if tcpEnabled { startTCPTransport(on: manager) }
 
@@ -535,8 +536,8 @@ final class AppState: ObservableObject {
     // MARK: - App lock
 
     var appLockEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "com.sophax.appLockEnabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "com.sophax.appLockEnabled") }
+        get { keychain.loadAppLockEnabled() ?? false }
+        set { try? keychain.saveAppLockEnabled(newValue) }
     }
 
     func lockApp() {

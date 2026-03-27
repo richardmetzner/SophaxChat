@@ -155,6 +155,8 @@ extension MeshManager: MCSessionDelegate {
     public func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         queue.async { [weak self] in
             guard let self else { return }
+            // Reject oversized payloads before decoding to prevent memory DoS
+            guard data.count <= 50 * 1024 * 1024 else { return }
             guard let message = try? JSONDecoder().decode(WireMessage.self, from: data) else {
                 return   // Malformed — drop silently
             }

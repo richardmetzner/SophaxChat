@@ -157,6 +157,10 @@ public final class ChatManager: @unchecked Sendable {
     private var skippedGroupMessageKeys: [String: [UInt32: SymmetricKey]] = [:]
     private static let maxSkippedKeysCacheSize = 200
 
+    /// Known group membership keyed by groupID. Populated on create/join, cleared on leave.
+    /// Used to reject messages from peers not in the group.
+    private var joinedGroups: [String: Set<String>] = [:]
+
     /// Messages stored on behalf of offline peers (relay-store role).
     private struct StoredForwardItem {
         let targetPeerID: String
@@ -463,11 +467,20 @@ public final class ChatManager: @unchecked Sendable {
             }
         }
 
+        joinedGroups[groupID] = Set(allMembers)
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didJoinGroup: group)
         }
         return group
+    }
+
+    /// Register groups that were persisted across restarts (called by the delegate on startup).
+    public func registerKnownGroups(_ groups: [GroupInfo]) {
+        for group in groups {
+            joinedGroups[group.id] = Set(group.memberIDs)
+        }
     }
 
     /// Flood a channel announcement so nearby peers (non-members) can discover this group.
@@ -757,6 +770,7 @@ public final class ChatManager: @unchecked Sendable {
         }
 
         // Clean up local state
+        joinedGroups.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)               // v1 cleanup
         keychain.deleteAllSenderKeyStates(groupID: group.id)     // v2 cleanup
         try? messageStore.deleteConversation(peerID: group.conversationID)
@@ -1365,11 +1379,12 @@ public final class ChatManager: @unchecked Sendable {
             storedForwardItems.removeFirst()
         }
 
+        let clampedExpiry = min(payload.expiresAt, Date().addingTimeInterval(Self.storeAndForwardTTL))
         storedForwardItems.append(StoredForwardItem(
             targetPeerID: payload.targetPeerID,
             messageID:    payload.messageID,
             sealed:       payload.sealed,
-            expiresAt:    payload.expiresAt
+            expiresAt:    clampedExpiry
         ))
     }
 
@@ -1526,6 +1541,8 @@ public final class ChatManager: @unchecked Sendable {
 
     private func handleGroupInviteReceived(_ inviteData: Data, fromPeer peerID: String) {
         guard let invite = try? JSONDecoder().decode(GroupInvitePayload.self, from: inviteData) else { return }
+        // Cap member list to prevent memory DoS from a malformed or malicious invite
+        guard invite.memberIDs.count <= 100 else { return }
         let myID = identity.publicIdentity.peerID
 
         if let senderChainKey = invite.senderChainKey {
@@ -1564,12 +1581,14 @@ public final class ChatManager: @unchecked Sendable {
             keychainSave("groupKey:\(invite.groupID)") { try keychain.saveGroupKey(groupKey, groupID: invite.groupID) }
         }
 
+        let dedupedMembers = Array(Set(invite.memberIDs))
         let group = GroupInfo(
             id:        invite.groupID,
             name:      invite.groupName,
-            memberIDs: invite.memberIDs,
+            memberIDs: dedupedMembers,
             creatorID: invite.creatorID
         )
+        joinedGroups[invite.groupID] = Set(dedupedMembers)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didJoinGroup: group)
@@ -1577,6 +1596,11 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     private func handleGroupMessage(_ payload: GroupWireMessage) {
+        // Reject messages from peers who are not in this group
+        if let members = joinedGroups[payload.groupID] {
+            guard members.contains(payload.senderPeerID) else { return }
+        }
+
         let body:            String
         var attachDecryptKey: SymmetricKey? = nil
 
@@ -1948,9 +1972,11 @@ extension ChatManager: MeshManagerDelegate {
         // Reject messages with timestamps too far from now.
         // Relay envelopes get a wider window (10 min) to tolerate multi-hop latency;
         // all other types use a strict 5-minute window.
-        let age: TimeInterval = abs(message.timestamp.timeIntervalSinceNow)
+        // Directional validation: reject messages too far in the past OR more than 30s in the future.
+        // Using abs() previously allowed future-dated messages up to maxAge seconds ahead.
+        let offset: TimeInterval = message.timestamp.timeIntervalSinceNow // positive = future
         let maxAge: TimeInterval = message.type == .relay ? 600 : 300
-        guard age < maxAge else { return }
+        guard offset > -maxAge, offset < 30 else { return }
 
         // Signature verification:
         //   • .hello          — self-verifying (signing key inside bundle); handled below.
@@ -2121,6 +2147,11 @@ extension ChatManager: MeshManagerDelegate {
         guard let skdData = content.senderKeyData,
               let skd     = try? JSONDecoder().decode(SenderKeyDistributionMessage.self, from: skdData)
         else { return }
+
+        // Reject sender key from a peer who is not in the group
+        if let members = joinedGroups[skd.groupID] {
+            guard members.contains(peerID) else { return }
+        }
 
         var states = keychain.loadPeerSenderKeyStates(groupID: skd.groupID)
         // Reject non-monotonic distributions — a peer must never lower their iteration.

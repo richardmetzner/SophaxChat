@@ -456,7 +456,7 @@ private struct GroupMessageBubble: View {
                     Button {
                         UIPasteboard.general.string = message.body
                         let copied = message.body
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
                             if UIPasteboard.general.string == copied {
                                 UIPasteboard.general.string = ""
                             }

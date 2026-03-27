@@ -178,7 +178,12 @@ public final class KeychainManager {
             kSecAttrService:  service,
             kSecAttrAccount:  "group.key.\(groupID)"
         ]
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(query as CFDictionary)
+        #if DEBUG
+        if status != errSecSuccess && status != errSecItemNotFound {
+            print("[Keychain] deleteGroupKey failed: \(status)")
+        }
+        #endif
     }
 
     // MARK: - Sender Key States (v2 group messaging)
@@ -216,11 +221,30 @@ public final class KeychainManager {
         let q1: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
                                    kSecAttrService: service,
                                    kSecAttrAccount: "skd.peers.\(groupID)"]
-        SecItemDelete(q1 as CFDictionary)
+        let s1 = SecItemDelete(q1 as CFDictionary)
         let q2: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
                                    kSecAttrService: service,
                                    kSecAttrAccount: "skd.mine.\(groupID)"]
-        SecItemDelete(q2 as CFDictionary)
+        let s2 = SecItemDelete(q2 as CFDictionary)
+        #if DEBUG
+        for (label, status) in [("peers", s1), ("mine", s2)] where
+            status != errSecSuccess && status != errSecItemNotFound {
+            print("[Keychain] deleteAllSenderKeyStates(\(label)) failed: \(status)")
+        }
+        #endif
+    }
+
+    // MARK: - App Lock setting
+
+    /// Stores the app-lock-enabled flag in Keychain so it is excluded from iCloud/iTunes backups.
+    public func saveAppLockEnabled(_ enabled: Bool) throws {
+        let data = Data([enabled ? 1 : 0])
+        try save(data: data, account: "app.lock.enabled")
+    }
+
+    public func loadAppLockEnabled() -> Bool? {
+        guard let data = try? load(account: "app.lock.enabled") else { return nil }
+        return data.first == 1
     }
 
     // MARK: - Verified Peers (Safety Number pinning)

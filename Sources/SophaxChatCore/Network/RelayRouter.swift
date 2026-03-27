@@ -88,6 +88,9 @@ public final class RelayRouter: @unchecked Sendable {
         if globalRelayCount >= maxGlobalRelaysPerWindow { return true }
         globalRelayCount += 1
 
+        // Evict expired sender windows to prevent unbounded memory growth
+        senderWindows = senderWindows.filter { now.timeIntervalSince($0.value.windowStart) < windowSeconds * 2 }
+
         // Per-sender window
         if var window = senderWindows[senderID] {
             if now.timeIntervalSince(window.windowStart) >= windowSeconds {
