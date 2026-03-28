@@ -531,7 +531,9 @@ final class AppState: ObservableObject {
         content.title              = "SophaxChat"
         content.body               = "New message"
         content.sound              = .default
-        content.threadIdentifier   = peerID
+        // Hash the peerID so the raw hex fingerprint is not exposed in the Notification
+        // Centre grouping — observable on the lock screen without authentication.
+        content.threadIdentifier   = Data(SHA256.hash(data: Data(peerID.utf8))).prefix(8).hexString
         content.categoryIdentifier = "SOPHAX_MSG"
         let request = UNNotificationRequest(identifier: message.id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
@@ -544,7 +546,7 @@ final class AppState: ObservableObject {
         content.title              = "SophaxChat"
         content.body               = "New group message"
         content.sound              = .default
-        content.threadIdentifier   = groupID
+        content.threadIdentifier   = Data(SHA256.hash(data: Data(groupID.utf8))).prefix(8).hexString
         content.categoryIdentifier = "SOPHAX_MSG"
         let request = UNNotificationRequest(identifier: message.id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)

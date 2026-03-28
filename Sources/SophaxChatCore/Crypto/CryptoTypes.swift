@@ -10,6 +10,9 @@
 
 import Foundation
 import CryptoKit
+#if canImport(Darwin)
+import Darwin   // for timingsafe_bcmp
+#endif
 
 // MARK: - Type Aliases
 
@@ -80,6 +83,17 @@ public struct SerializableSymmetricKey: Codable, Equatable {
 
     public var key: SymmetricKey {
         SymmetricKey(data: rawData)
+    }
+
+    /// Constant-time equality — auto-synthesised `==` on Data short-circuits on the first
+    /// differing byte, opening a timing side-channel when keys are compared in security paths.
+    public static func == (lhs: SerializableSymmetricKey, rhs: SerializableSymmetricKey) -> Bool {
+        guard lhs.rawData.count == rhs.rawData.count else { return false }
+        return lhs.rawData.withUnsafeBytes { lp in
+            rhs.rawData.withUnsafeBytes { rp in
+                timingsafe_bcmp(lp.baseAddress!, rp.baseAddress!, lp.count) == 0
+            }
+        }
     }
 }
 

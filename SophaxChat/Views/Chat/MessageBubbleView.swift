@@ -23,6 +23,11 @@ struct MessageBubbleView: View {
     @State private var attachmentData:    Data?    = nil
     @State private var showFullScreen:    Bool     = false
 
+    /// Shared cancellable task for clipboard auto-clear. Static so cancelling it
+    /// from any bubble instance reliably cancels the previous timer regardless of
+    /// which message was copied last.
+    private static var clipboardClearTask: DispatchWorkItem?
+
     private var isSent: Bool { message.direction == .sent }
 
     // Look up the message being replied to (if any)
@@ -86,13 +91,14 @@ struct MessageBubbleView: View {
                         Divider()
                         Button {
                             UIPasteboard.general.string = message.body
-                            // Auto-clear after 30 s so sensitive text doesn't linger in the clipboard
-                            let copied = message.body
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
-                                if UIPasteboard.general.string == copied {
-                                    UIPasteboard.general.string = ""
-                                }
-                            }
+                            // Cancel any previously scheduled clipboard clear before scheduling
+                            // a new one — prevents the race where copying message A then B leaves
+                            // A's timer unable to clear (B is now in clipboard) so A lingers forever.
+                            // Reduced to 10 s for tighter sensitive-data exposure window.
+                            MessageBubbleView.clipboardClearTask?.cancel()
+                            let task = DispatchWorkItem { UIPasteboard.general.string = "" }
+                            MessageBubbleView.clipboardClearTask = task
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: task)
                         } label: {
                             Label("Copy", systemImage: "doc.on.doc")
                         }
