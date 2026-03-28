@@ -1016,6 +1016,25 @@ final class AppState: ObservableObject {
         return try BackupManager.export(backup: backup, passphrase: passphrase)
     }
 
+    // MARK: - Identity backup / restore
+
+    /// Export the local identity keypair + username as an encrypted blob (file extension `.sophaxid`).
+    /// - Parameter passphrase: Must be at least 12 characters (enforced in UI).
+    func exportIdentity(passphrase: String) throws -> Data {
+        guard let cm = chatManager else { throw SophaxError.sessionNotInitialized }
+        return try IdentityExportManager.export(identity: cm.identity, passphrase: passphrase)
+    }
+
+    /// Import an identity backup, replacing the current keypair.
+    /// Stops the ChatManager, writes new keys to Keychain, restarts with the restored identity.
+    /// All existing DR sessions become invalid after this call.
+    func importIdentity(data: Data, passphrase: String) throws {
+        chatManager?.stop()
+        chatManager = nil
+        try IdentityExportManager.import(data: data, passphrase: passphrase, keychain: keychain)
+        setupChatManager(username: nil)
+    }
+
     /// Restore message history and contacts from an encrypted backup blob.
     /// Does NOT replace identity keys — a new session will be needed with each contact.
     /// Throws `SophaxError.identityMismatch` (as a warning) if the backup fingerprint differs.

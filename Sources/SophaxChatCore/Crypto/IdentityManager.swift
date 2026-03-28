@@ -123,6 +123,16 @@ public final class IdentityManager: @unchecked Sendable {
     public var signingKeyPair: SigningKeyPair { signingPair }
     public var dhKeyPair: DHKeyPair { dhPair }
 
+    /// Raw 32-byte Ed25519 private key — used only by IdentityExportManager for backup.
+    public func signingPrivateKeyData() throws -> Data {
+        signingPair.privateKey.rawRepresentation
+    }
+
+    /// Raw 32-byte X25519 DH private key — used only by IdentityExportManager for backup.
+    public func dhPrivateKeyData() throws -> Data {
+        dhPair.privateKey.rawRepresentation
+    }
+
     /// SHA256 hex fingerprint of the identity keys — used in backup to detect cross-identity restores.
     public var identityFingerprint: String {
         let combined = publicIdentity.signingKeyPublic + publicIdentity.dhKeyPublic

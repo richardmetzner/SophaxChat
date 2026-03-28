@@ -6,15 +6,27 @@
 
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 import SophaxChatCore
 
 struct IdentityView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showingRenameAlert  = false
-    @State private var renameText          = ""
-    @State private var avatarPickerItem:   PhotosPickerItem? = nil
+    @State private var showingRenameAlert   = false
+    @State private var renameText           = ""
+    @State private var avatarPickerItem:    PhotosPickerItem? = nil
+
+    // Identity backup
+    @State private var exportPassphrase     = ""
+    @State private var exportedBlob:        IdentityTransferable? = nil
+    @State private var exportError:         String? = nil
+    @State private var showingImportPicker  = false
+    @State private var showingImportConfirm = false
+    @State private var pendingImportData:   Data?   = nil
+    @State private var importPassphrase     = ""
+    @State private var importError:         String? = nil
+    @State private var importSuccess        = false
 
     private var identity: IdentityManager? { appState.chatManager?.identity }
 
@@ -137,6 +149,97 @@ struct IdentityView: View {
                     Text("Identity Verification")
                 }
 
+                // Identity backup
+                Section {
+                    // Export
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Export Identity", systemImage: "square.and.arrow.up.on.square")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Save your encryption keys so you can restore your identity on a new device.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        SecureField("Passphrase (min 12 chars)", text: $exportPassphrase)
+                            .textContentType(.newPassword)
+                            .autocorrectionDisabled()
+                        if let err = exportError {
+                            Text(err).font(.caption).foregroundStyle(.red)
+                        }
+                        if exportedBlob != nil {
+                            Button {
+                                // fileExporter is shown via the binding below
+                            } label: {
+                                Label("Share Identity File", systemImage: "square.and.arrow.up")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .fileExporter(
+                                isPresented: Binding(
+                                    get: { exportedBlob != nil },
+                                    set: { if !$0 { exportedBlob = nil } }
+                                ),
+                                document: exportedBlob!,
+                                contentType: .sophaxIdentity,
+                                defaultFilename: IdentityExportManager.suggestedFilename()
+                            ) { _ in }
+                        } else {
+                            Button {
+                                exportError = nil
+                                let trimmed = exportPassphrase.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard trimmed.count >= 12 else {
+                                    exportError = "Passphrase must be at least 12 characters."
+                                    return
+                                }
+                                do {
+                                    let data = try appState.exportIdentity(passphrase: trimmed)
+                                    exportedBlob = IdentityTransferable(data: data)
+                                } catch {
+                                    exportError = error.localizedDescription
+                                }
+                            } label: {
+                                Label("Create Identity Backup", systemImage: "key.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(exportPassphrase.trimmingCharacters(in: .whitespacesAndNewlines).count < 12)
+                        }
+                    }
+                    .padding(.vertical, 4)
+
+                    // Import
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Restore Identity", systemImage: "square.and.arrow.down.on.square")
+                            .font(.subheadline.weight(.semibold))
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                            Text("Replaces current keys. All sessions will be reset.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        if importSuccess {
+                            Label("Identity restored successfully.", systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                        if let err = importError {
+                            Text(err).font(.caption).foregroundStyle(.red)
+                        }
+                        Button {
+                            showingImportPicker = true
+                        } label: {
+                            Label("Load Identity File…", systemImage: "folder")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("Identity Backup")
+                } footer: {
+                    Text("The identity file contains your private keys encrypted with your passphrase. Keep it safe — anyone with the file and passphrase can impersonate you.")
+                }
+
                 // Security info
                 Section {
                     Label("End-to-end encrypted", systemImage: "lock.fill")
@@ -203,8 +306,62 @@ struct IdentityView: View {
             } message: {
                 Text("Your new username will be shared with nearby peers.")
             }
+            .fileImporter(
+                isPresented: $showingImportPicker,
+                allowedContentTypes: [UTType(filenameExtension: "sophaxid") ?? .data]
+            ) { result in
+                guard case .success(let url) = result,
+                      url.startAccessingSecurityScopedResource(),
+                      let data = try? Data(contentsOf: url) else { return }
+                url.stopAccessingSecurityScopedResource()
+                pendingImportData = data
+                showingImportConfirm = true
+            }
+            .alert("Enter Passphrase", isPresented: $showingImportConfirm) {
+                SecureField("Passphrase", text: $importPassphrase)
+                    .textContentType(.password)
+                Button("Restore", role: .destructive) {
+                    importError   = nil
+                    importSuccess = false
+                    guard let data = pendingImportData else { return }
+                    do {
+                        try appState.importIdentity(data: data, passphrase: importPassphrase)
+                        importSuccess    = true
+                        importPassphrase = ""
+                        pendingImportData = nil
+                    } catch {
+                        importError      = error.localizedDescription
+                        importPassphrase = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    importPassphrase = ""
+                    pendingImportData = nil
+                }
+            } message: {
+                Text("Enter the passphrase used when you exported this identity file. Your current keys will be replaced.")
+            }
         }
     }
+}
+
+// MARK: - FileDocument wrapper for identity export
+
+struct IdentityTransferable: FileDocument {
+    static var readableContentTypes: [UTType] { [.sophaxIdentity, .data] }
+    let data: Data
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        guard let d = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+        self.data = d
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+extension UTType {
+    static let sophaxIdentity = UTType(exportedAs: "com.sophax.sophaxidentity")
 }
 
 #Preview {
