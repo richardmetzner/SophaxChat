@@ -169,7 +169,7 @@
 		B2DA285D21A5826C3B30CF74 /* TORNode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TORNode.m; sourceTree = "<group>"; };
 		B55132FDEBDB22F024E879C2 /* TorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorManager.swift; sourceTree = "<group>"; };
 		B698D2DCBC57FC388EFE7F06 /* TORControlCommand.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TORControlCommand.h; sourceTree = "<group>"; };
-		B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B923808CAB04B189E33B6391 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB1E10AA4A5CED5F001EF4B1 /* TOROnionAuth.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TOROnionAuth.m; sourceTree = "<group>"; };
 		BBA70D055C12057597E9CB7A /* cs */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = cs; path = cs.lproj/Localizable.strings; sourceTree = "<group>"; };
 		BFE9B13C28C028ED49E4EE61 /* SophaxChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SophaxChatApp.swift; sourceTree = "<group>"; };
@@ -181,7 +181,7 @@
 		CA9CCE7BA81156A8562115CF /* DoubleRatchet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoubleRatchet.swift; sourceTree = "<group>"; };
 		D5F04FC93194FB07E526D6BB /* NSBundle+GeoIP.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSBundle+GeoIP.m"; sourceTree = "<group>"; };
 		D6459A3E71AACFC99D43A361 /* MessageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTransport.swift; sourceTree = "<group>"; };
-		D6AA224B2DAE6F1832309166 /* SophaxChat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SophaxChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6AA224B2DAE6F1832309166 /* SophaxChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SophaxChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D7F7784D1EB2716FC84AF4D8 /* BackupManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupManager.swift; sourceTree = "<group>"; };
 		D9BFDABE7886E3AED296B2D7 /* IdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityView.swift; sourceTree = "<group>"; };
 		E4A97FADF78894EFE4196AE9 /* ContactScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactScannerView.swift; sourceTree = "<group>"; };
@@ -528,7 +528,6 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					7F19A4E18FFE93EF266B0DB3 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -791,8 +790,13 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
-				DEVELOPMENT_TEAM = "";
-				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "TOR*.m TORX25519KeyPair.m NSBundle+GeoIP.m NSCharacterSet+PredefinedSets.m";
+				DEVELOPMENT_TEAM = 7968S3NQPH;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = (
+					"TOR*.m",
+					TORX25519KeyPair.m,
+					"NSBundle+GeoIP.m",
+					"NSCharacterSet+PredefinedSets.m",
+				);
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",
@@ -823,8 +827,13 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
-				DEVELOPMENT_TEAM = "";
-				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "TOR*.m TORX25519KeyPair.m NSBundle+GeoIP.m NSCharacterSet+PredefinedSets.m";
+				DEVELOPMENT_TEAM = 7968S3NQPH;
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = (
+					"TOR*.m",
+					TORX25519KeyPair.m,
+					"NSBundle+GeoIP.m",
+					"NSCharacterSet+PredefinedSets.m",
+				);
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",
