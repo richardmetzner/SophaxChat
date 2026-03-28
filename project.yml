@@ -33,7 +33,7 @@ targets:
         INFOPLIST_FILE: SophaxChat/Info.plist
         CODE_SIGN_ENTITLEMENTS: SophaxChat/SophaxChat.entitlements
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: "Z93Z3857SJ"
+        DEVELOPMENT_TEAM: ""
         UIApplicationSceneManifest: ""
         SUPPORTS_MAC_CATALYST: YES
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -42,6 +42,8 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: SophaxChat/SophaxChat-Bridging-Header.h
         CLANG_ENABLE_MODULES: YES
         CLANG_ENABLE_OBJC_ARC: YES
+        # Exclude Tor ObjC sources from Mac Catalyst — tor.xcframework has no macOS slice
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "TOR*.m TORX25519KeyPair.m NSBundle+GeoIP.m NSCharacterSet+PredefinedSets.m"
     info:
       path: SophaxChat/Info.plist
       properties:

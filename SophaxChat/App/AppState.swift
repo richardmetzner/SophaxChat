@@ -101,10 +101,11 @@ final class AppState: ObservableObject {
         if keychain.hasIdentity() {
             setupChatManager(username: nil)
         }
-        // Start embedded Tor immediately. On subsequent launches the guard-node
-        // cache means bootstrap completes in ~3-8 s instead of 15-30 s.
+        // Start embedded Tor immediately (iOS only — Mac Catalyst uses system network directly).
+        #if !targetEnvironment(macCatalyst)
         TorManager.shared.start()
         observeTorState()
+        #endif
     }
 
     // MARK: - Setup
@@ -640,6 +641,7 @@ final class AppState: ObservableObject {
 
     // MARK: - Embedded Tor
 
+    #if !targetEnvironment(macCatalyst)
     /// Observes TorManager state. When Tor becomes ready, auto-wires the SOCKS5 proxy
     /// into tcpSocksProxy if the user has not manually overridden it.
     private func observeTorState() {
@@ -652,6 +654,7 @@ final class AppState: ObservableObject {
             }
         }
     }
+    #endif
 
     // MARK: - Deep link handling
 
@@ -848,8 +851,7 @@ final class AppState: ObservableObject {
         // Warn if restoring from a different identity (e.g., accidental wrong backup).
         if let backupFP = backup.identityFingerprint,
            backupFP != cm.identity.identityFingerprint {
-            // Surface a non-fatal warning — caller may choose to proceed or abort.
-            delegate?.chatManager(cm, didEncounterError: SophaxError.identityMismatch)
+            throw SophaxError.identityMismatch
         }
 
         // Restore messages

@@ -528,7 +528,7 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					7F19A4E18FFE93EF266B0DB3 = {
-						DevelopmentTeam = Z93Z3857SJ;
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -791,7 +791,8 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
-				DEVELOPMENT_TEAM = Z93Z3857SJ;
+				DEVELOPMENT_TEAM = "";
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "TOR*.m TORX25519KeyPair.m NSBundle+GeoIP.m NSCharacterSet+PredefinedSets.m";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",
@@ -822,7 +823,8 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
-				DEVELOPMENT_TEAM = Z93Z3857SJ;
+				DEVELOPMENT_TEAM = "";
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]" = "TOR*.m TORX25519KeyPair.m NSBundle+GeoIP.m NSCharacterSet+PredefinedSets.m";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"Frameworks\"",

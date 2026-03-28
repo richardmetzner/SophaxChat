@@ -7,7 +7,9 @@ import SophaxChatCore
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    #if !targetEnvironment(macCatalyst)
     @ObservedObject private var torManager = TorManager.shared
+    #endif
 
     @State private var tcpConnectAddress: String = ""
     @State private var showTCPConnectAlert: Bool  = false
@@ -123,7 +125,9 @@ struct SettingsView: View {
             }
 
             if appState.tcpEnabled {
+                #if !targetEnvironment(macCatalyst)
                 torStatusCard
+                #endif
                 connectCard
             }
         } header: {
@@ -135,6 +139,7 @@ struct SettingsView: View {
         }
     }
 
+    #if !targetEnvironment(macCatalyst)
     @ViewBuilder
     private var torStatusCard: some View {
         switch torManager.state {
@@ -207,6 +212,7 @@ struct SettingsView: View {
             EmptyView()
         }
     }
+    #endif // !targetEnvironment(macCatalyst)
 
     @ViewBuilder
     private var connectCard: some View {

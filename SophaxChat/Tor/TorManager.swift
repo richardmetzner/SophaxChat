@@ -7,6 +7,7 @@
 import Foundation
 import Network
 
+#if !targetEnvironment(macCatalyst)
 @MainActor
 final class TorManager: ObservableObject {
 
@@ -30,7 +31,7 @@ final class TorManager: ObservableObject {
     // MARK: - Private
 
     private var thread: TorThread?
-    private var controller: TORController?
+    private var controller: TorController?
     private var statusObserver: Any?
 
     private var torDataDir: URL {
@@ -103,7 +104,7 @@ final class TorManager: ObservableObject {
     }
 
     private func authenticate(config: TorConfiguration) {
-        let ctrl = TORController(socketURL: controlSocketURL)
+        let ctrl = TorController(socketURL: controlSocketURL)
         controller = ctrl
 
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -124,7 +125,7 @@ final class TorManager: ObservableObject {
         }
     }
 
-    private func observeBootstrap(ctrl: TORController) {
+    private func observeBootstrap(ctrl: TorController) {
         // Subscribe to STATUS_CLIENT BOOTSTRAP events
         statusObserver = ctrl.addObserver(forStatusEvents: { [weak self] type, _, action, args in
             guard type == "STATUS_CLIENT", action == "BOOTSTRAP",
@@ -158,3 +159,4 @@ final class TorManager: ObservableObject {
         return Int(after.prefix(3).filter(\.isNumber)) ?? 0
     }
 }
+#endif // !targetEnvironment(macCatalyst)
