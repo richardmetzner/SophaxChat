@@ -1641,6 +1641,9 @@ public final class ChatManager: @unchecked Sendable {
 
     private func handleGroupInviteReceived(_ inviteData: Data, fromPeer peerID: String) {
         guard let invite = try? JSONDecoder().decode(GroupInvitePayload.self, from: inviteData) else { return }
+        // The creatorID inside the payload must match the verified DR sender — prevents a peer
+        // with an established session from forwarding a fabricated invite on someone else's behalf.
+        guard invite.creatorID == peerID else { return }
         // Cap member list to prevent memory DoS from a malformed or malicious invite
         guard invite.memberIDs.count <= 100 else { return }
         let myID = identity.publicIdentity.peerID
@@ -1696,10 +1699,16 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     private func handleGroupMessage(_ payload: GroupWireMessage) {
-        // Reject messages from peers who are not in this group
-        if let members = joinedGroups[payload.groupID] {
-            guard members.contains(payload.senderPeerID) else { return }
-        }
+        // Reject messages from peers who are not in this group.
+        // Guard (not if-let) so that an unknown groupID is also rejected — prevents
+        // injection into a group whose member list hasn't been cached yet.
+        guard let members = joinedGroups[payload.groupID],
+              members.contains(payload.senderPeerID) else { return }
+
+        // Reject messages with timestamps too far in the past (>5 min) or future (>30 s)
+        // — same window applied to direct messages — to prevent replay and backdating.
+        let msgAge = Date().timeIntervalSince(payload.timestamp)
+        guard msgAge < 300, msgAge > -30 else { return }
 
         let body:            String
         var attachDecryptKey: SymmetricKey? = nil
