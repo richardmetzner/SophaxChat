@@ -184,8 +184,11 @@ public final class IdentityManager: @unchecked Sendable {
     /// Generates a 60-character safety number split into 12 groups of 5 digits.
     /// Used for out-of-band identity verification (read aloud or compare QR codes).
     private static func generateSafetyNumberStatic(signing: Data, dh: Data) -> String {
-        let combined = signing + dh
-        let hash     = SHA512.hash(data: combined)
+        // Domain separator prevents another app that uses the same raw key material from
+        // producing the same safety number, and makes the hash input unambiguous.
+        let domainSep = Data("SophaxChat_SafetyNumber_v1".utf8)
+        let combined  = domainSep + signing + dh
+        let hash      = SHA512.hash(data: combined)
         let hashData = Data(hash)
         // SHA512 produces 64 bytes; we consume the first 30.
         precondition(hashData.count >= 30, "SHA512 produced invalid output length")

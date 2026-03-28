@@ -44,8 +44,10 @@ public enum X3DH {
         recipientBundle: PreKeyBundle
     ) throws -> SenderResult {
 
-        // 1. Validate bundle timestamp
-        guard abs(recipientBundle.timestamp.timeIntervalSinceNow) < CryptoConstants.maxPreKeyBundleAge else {
+        // 1. Validate bundle timestamp — only accept bundles from the past (not future-dated).
+        // Using abs() here would wrongly accept bundles up to maxPreKeyBundleAge in the future.
+        let bundleAge = Date().timeIntervalSince(recipientBundle.timestamp)
+        guard bundleAge >= 0, bundleAge < CryptoConstants.maxPreKeyBundleAge else {
             throw SophaxError.stalePreKeyBundle
         }
 

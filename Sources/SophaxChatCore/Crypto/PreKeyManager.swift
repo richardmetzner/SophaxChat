@@ -50,6 +50,14 @@ public struct PreKeyBundle: Codable, Sendable {
     /// Verifies the signed prekey signature against the identity key.
     /// MUST be called before using the bundle.
     public func verifySignedPreKey() throws -> Bool {
+        // Explicit length checks before passing to CryptoKit — gives a clear error
+        // and prevents library-specific exception messages from leaking algorithm details.
+        guard signingKeyPublic.count      == 32,
+              dhIdentityKeyPublic.count   == 32,
+              signedPreKeyPublic.count    == 32,
+              signedPreKeySignature.count == 64 else {
+            throw SophaxError.invalidMessageFormat("Invalid prekey bundle key dimensions")
+        }
         let identityKey = try Curve25519.Signing.PublicKey(rawRepresentation: signingKeyPublic)
         return identityKey.isValidSignature(signedPreKeySignature, for: signedPreKeyPublic)
     }
@@ -172,8 +180,13 @@ public final class PreKeyManager: @unchecked Sendable {
     // MARK: - Private
 
     private func generateOneTimePreKeys(count: Int) throws {
+        // Mutable set tracks both pre-existing and newly generated IDs within this
+        // batch to prevent (rare) collisions that would silently overwrite a prekey.
+        var usedIDs = Set(oneTimePreKeys.keys)
         for _ in 0..<count {
-            let id   = UInt32.random(in: 1...UInt32.max)
+            var id: UInt32
+            repeat { id = UInt32.random(in: 1...UInt32.max) } while usedIDs.contains(id)
+            usedIDs.insert(id)
             let pair = DHKeyPair()
             oneTimePreKeys[id] = pair
             try keychain.saveOneTimePreKey(id: id, key: pair.privateKey)
