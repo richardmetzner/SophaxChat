@@ -122,8 +122,10 @@ public final class KeychainManager {
         let mac    = raw.prefix(32)
         let data   = raw.dropFirst(32)
         let macKey = try loadOrCreateSessionMACKey()
-        let expected = Data(HMAC<SHA256>.authenticationCode(for: data, using: macKey))
-        guard mac == expected else { throw SophaxError.sessionStateCorrupted }
+        // Constant-time verification — avoids timing side-channel from Data's short-circuit ==
+        guard HMAC<SHA256>.isValidAuthenticationCode(mac, authenticating: data, using: macKey) else {
+            throw SophaxError.sessionStateCorrupted
+        }
         return data
     }
 

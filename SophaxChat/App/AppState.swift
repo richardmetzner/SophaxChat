@@ -48,6 +48,8 @@ final class AppState: ObservableObject {
     @Published var myAvatarData: Data? = nil
     /// peerIDs whose identity key changed since last known state — shown as security alerts.
     @Published var keyChangeAlerts: [String] = []
+    /// Set when biometric/passcode evaluation is unavailable during unlock — shown in AppLockView.
+    @Published var unlockError: String? = nil
 
     // MARK: - TCP / internet mode
 
@@ -677,10 +679,12 @@ final class AppState: ObservableObject {
         let ctx = LAContext()
         var error: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            isAppLocked = false   // No biometrics + no passcode configured — just unlock
-            setupChatManager(username: nil)
+            // Device has no passcode or biometrics configured.
+            // Do NOT silently unlock — keep the app locked and surface an error.
+            unlockError = "Device authentication unavailable. Set a passcode in iOS Settings."
             return
         }
+        unlockError = nil
         ctx.evaluatePolicy(.deviceOwnerAuthentication,
                            localizedReason: "Unlock SophaxChat") { success, _ in
             DispatchQueue.main.async { [weak self] in
