@@ -110,6 +110,8 @@ public protocol ChatManagerDelegate: AnyObject {
     /// A peer's identity keys changed from a previously stored value.
     /// This may indicate a legitimate re-install or a potential MITM.
     func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String)
+    /// The local user's sender key for a group was rotated (break-in recovery).
+    func chatManager(_ manager: ChatManager, didRotateSenderKey forGroupID: String)
 }
 
 // MARK: - ChatManager
@@ -805,6 +807,34 @@ public final class ChatManager: @unchecked Sendable {
         }
         persistSkippedGroupKeyCache()
         try? messageStore.deleteConversation(peerID: group.conversationID)
+    }
+
+    /// Rotate our sender key for a group — generates a fresh random chain key, saves it,
+    /// and distributes a new SenderKeyDistributionMessage to all members.
+    /// Use this for break-in recovery when a device may have been compromised.
+    public func rotateSenderKey(forGroup group: GroupInfo) {
+        let myID       = identity.publicIdentity.peerID
+        let tmpKey     = SymmetricKey(size: .bits256)
+        let newChainKey = tmpKey.withUnsafeBytes { Data($0) }
+        let newState   = SenderKeyState(chainKey: newChainKey, iteration: 0)
+        keychainSave("mySenderKey:\(group.id)") { try self.keychain.saveMySenderKeyState(newState, groupID: group.id) }
+
+        let skd = SenderKeyDistributionMessage(groupID: group.id, chainKey: newChainKey, iteration: 0)
+        guard let skdData = try? JSONEncoder().encode(skd) else { return }
+        for memberID in group.memberIDs where memberID != myID {
+            let content = MessageContent(body: "", type: .senderKeyDistribution, senderKeyData: skdData)
+            if let wire = try? buildOutboundWire(content: content,
+                                                  messageID: UUID().uuidString,
+                                                  toPeerID: memberID) {
+                try? sendOrQueue(wire, toPeerID: memberID, messageID: UUID().uuidString)
+            }
+        }
+
+        let manager = self
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(manager, didRotateSenderKey: group.id)
+        }
     }
 
     /// Send a binary attachment (image or audio) to `peerID`.

@@ -38,8 +38,9 @@ struct GroupChatView: View {
     @State private var searchQuery: String = ""
 
     // UI state
-    @State private var showingMemberList   = false
-    @State private var showingLeaveConfirm = false
+    @State private var showingMemberList    = false
+    @State private var showingLeaveConfirm  = false
+    @State private var showingRotateConfirm = false
 
     private var messages: [StoredMessage] {
         appState.messages[group.conversationID] ?? []
@@ -202,6 +203,10 @@ struct GroupChatView: View {
                 Label("Members (\(group.memberIDs.count))", systemImage: "person.2")
             }
             Divider()
+            Button { showingRotateConfirm = true } label: {
+                Label("Reset Encryption Key", systemImage: "key.slash")
+            }
+            Divider()
             Button(role: .destructive) { showingLeaveConfirm = true } label: {
                 Label("Leave Group", systemImage: "rectangle.portrait.and.arrow.right")
             }
@@ -210,6 +215,18 @@ struct GroupChatView: View {
                 Image(systemName: "person.2").font(.caption2)
                 Text("\(group.memberIDs.count)").font(.caption2).foregroundStyle(.secondary)
             }
+        }
+        .confirmationDialog(
+            "Reset Encryption Key?",
+            isPresented: $showingRotateConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reset Key", role: .destructive) {
+                appState.rotateSenderKey(forGroup: group)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A new encryption key will be generated and shared with all members. Use this if your device may have been compromised.")
         }
     }
 

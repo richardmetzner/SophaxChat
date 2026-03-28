@@ -334,6 +334,11 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Rotate the local user's sender key for a group (break-in recovery).
+    func rotateSenderKey(forGroup group: GroupInfo) {
+        chatManager?.rotateSenderKey(forGroup: group)
+    }
+
     /// Send a video file as an encrypted attachment.
     func sendVideo(_ url: URL, toPeerID peerID: String, expiresAt: Date? = nil) {
         Task {
@@ -1224,5 +1229,9 @@ extension AppState: @preconcurrency ChatManagerDelegate {
     func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String) {
         guard !keyChangeAlerts.contains(forPeerID) else { return }
         keyChangeAlerts.append(forPeerID)
+    }
+
+    func chatManager(_ manager: ChatManager, didRotateSenderKey forGroupID: String) {
+        // No persistent state update needed — rotation is confirmed by the Keychain write in ChatManager.
     }
 }
