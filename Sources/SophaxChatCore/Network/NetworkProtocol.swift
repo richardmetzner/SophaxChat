@@ -115,6 +115,27 @@ public enum WireMessageType: String, Codable, Sendable {
     /// Dead drop — sealed message flooded over the mesh for a specific recipient.
     /// Relay nodes cannot read the content (sealed). Stored for 12h at each node.
     case deadDrop
+    /// Edit a previously sent message — replaces the body text in-place.
+    case editMessage
+}
+
+// MARK: - Edit Message
+
+/// Sent when the author edits a previously sent message.
+/// Encrypted with Double Ratchet. Only the original sender can edit.
+public struct EditMessagePayload: Codable, Sendable {
+    /// Stable ID of the message being edited.
+    public let messageID: String
+    /// Replacement body text.
+    public let newBody:   String
+    /// Wall-clock time of the edit (set by sender).
+    public let editedAt:  Date
+
+    public init(messageID: String, newBody: String, editedAt: Date = Date()) {
+        self.messageID = messageID
+        self.newBody   = newBody
+        self.editedAt  = editedAt
+    }
 }
 
 // MARK: - Hello (Handshake)
@@ -185,6 +206,9 @@ public struct MessageContent: Codable, Sendable {
     /// JSON-encoded SenderKeyDistributionMessage — only set when type == .senderKeyDistribution.
     public let senderKeyData: Data?
 
+    /// Populated when type == .edit — carries the edit payload.
+    public let editPayload: EditMessagePayload?
+
     public init(
         body:               String,
         type:               MessageType = .text,
@@ -194,7 +218,8 @@ public struct MessageContent: Codable, Sendable {
         attachmentMimeType: String?     = nil,
         audioDuration:      Double?     = nil,
         groupInviteData:    Data?       = nil,
-        senderKeyData:      Data?       = nil
+        senderKeyData:      Data?       = nil,
+        editPayload:        EditMessagePayload? = nil
     ) {
         self.body               = body
         self.type               = type
@@ -206,6 +231,7 @@ public struct MessageContent: Codable, Sendable {
         self.audioDuration      = audioDuration
         self.groupInviteData    = groupInviteData
         self.senderKeyData      = senderKeyData
+        self.editPayload        = editPayload
     }
 }
 
@@ -546,6 +572,11 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
     /// Group messages only: peerIDs that have sent a groupReadReceipt back to us.
     /// Nil for direct messages and for messages received before this field was added.
     public var deliveredBy:        [String]?
+    /// True if the message body was edited after initial delivery.
+    /// Backward-compatible: old stored messages decode this as false (missing key).
+    public var isEdited:           Bool
+    /// When the message was last edited. Nil for unedited messages.
+    public var editedAt:           Date?
 
     public enum Direction: String, Codable, Sendable {
         case sent, received
@@ -571,7 +602,9 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
         reactions:          [String: String]? = nil,
         senderID:           String?         = nil,
         receivedAt:         Date?           = nil,
-        deliveredBy:        [String]?       = nil
+        deliveredBy:        [String]?       = nil,
+        isEdited:           Bool            = false,
+        editedAt:           Date?           = nil
     ) {
         self.id                 = id
         self.peerID             = peerID
@@ -589,6 +622,8 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
         self.senderID           = senderID
         self.receivedAt         = receivedAt
         self.deliveredBy        = deliveredBy
+        self.isEdited           = isEdited
+        self.editedAt           = editedAt
     }
 }
 
@@ -667,6 +702,8 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
     public var isDirectlyConnected: Bool    // false = reachable only via relay
     /// "host:port" if the peer advertises a TCP address in their PreKeyBundle; nil otherwise.
     public var tcpAddress:       String?
+    /// JPEG avatar data received from the peer's PreKeyBundle. nil = no avatar set.
+    public var avatarData:       Data?
 
     public init(from bundle: PreKeyBundle, safetyNumber: String) {
         self.id                  = bundle.peerID
@@ -678,5 +715,31 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         self.isOnline            = true
         self.isDirectlyConnected = true
         self.tcpAddress          = bundle.tcpAddress
+        self.avatarData          = bundle.avatarData
+    }
+
+    /// Construct a KnownPeer directly (used when importing contacts via invite link).
+    public init(
+        id:                  String,
+        username:            String,
+        signingKeyPublic:    Data,
+        dhKeyPublic:         Data,
+        safetyNumber:        String,
+        lastSeen:            Date?,
+        isOnline:            Bool,
+        isDirectlyConnected: Bool,
+        tcpAddress:          String? = nil,
+        avatarData:          Data?   = nil
+    ) {
+        self.id                  = id
+        self.username            = username
+        self.signingKeyPublic    = signingKeyPublic
+        self.dhKeyPublic         = dhKeyPublic
+        self.safetyNumber        = safetyNumber
+        self.lastSeen            = lastSeen
+        self.isOnline            = isOnline
+        self.isDirectlyConnected = isDirectlyConnected
+        self.tcpAddress          = tcpAddress
+        self.avatarData          = avatarData
     }
 }

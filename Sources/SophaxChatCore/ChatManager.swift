@@ -104,6 +104,12 @@ public protocol ChatManagerDelegate: AnyObject {
     /// A group message we sent was acknowledged by `peerID` (they decrypted it successfully).
     func chatManager(_ manager: ChatManager, groupMessageDelivered messageID: String,
                      inGroup groupID: String, byPeer peerID: String)
+    /// A received message was edited by its sender. The delegate should update local state.
+    func chatManager(_ manager: ChatManager, didReceiveEditedMessage messageID: String,
+                     newBody: String, editedAt: Date, peerID: String)
+    /// A peer's identity keys changed from a previously stored value.
+    /// This may indicate a legitimate re-install or a potential MITM.
+    func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String)
 }
 
 // MARK: - ChatManager
@@ -121,6 +127,9 @@ public final class ChatManager: @unchecked Sendable {
     private let keychain:       KeychainManager
     private let wireBuilder:    WireMessageBuilder
     private let relayRouter:    RelayRouter
+
+    /// Persistent log of observed peer identity keys for auditability.
+    public let keyLog = KeyTransparencyLog()
 
     // MARK: - State
 
@@ -413,6 +422,18 @@ public final class ChatManager: @unchecked Sendable {
         let payload = ReadReceiptMessage(messageIDs: messageIDs)
         guard let wire = try? wireBuilder.build(.readReceipt, payload: payload) else { return }
         try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+    }
+
+    /// Edit a previously sent text message. Sends a Double Ratchet–encrypted edit to the peer.
+    /// Also updates the local message store immediately.
+    public func sendEditMessage(messageID: String, newBody: String, toPeerID peerID: String) {
+        let editedAt = Date()
+        let editPayload = EditMessagePayload(messageID: messageID, newBody: newBody, editedAt: editedAt)
+        let content = MessageContent(body: newBody, editPayload: editPayload)
+        let wireID = UUID().uuidString
+        guard let wire = try? buildOutboundWire(content: content, messageID: wireID, toPeerID: peerID) else { return }
+        try? sendOrQueue(wire, toPeerID: peerID, messageID: wireID)
+        try? messageStore.updateMessage(id: messageID, peerID: peerID, newBody: newBody, editedAt: editedAt)
     }
 
     /// Send an emoji reaction (or remove one) on a specific message.
@@ -1068,6 +1089,15 @@ public final class ChatManager: @unchecked Sendable {
         // Detect reconnect: peer was known but is now coming back online
         let wasOffline = knownPeers[peerID].map { !$0.isOnline } ?? false
 
+        // Record in the key transparency log; only alert if an existing peer's key changed
+        let isKnown = knownPeers[peerID] != nil
+        let logEntryIsNew = keyLog.record(
+            peerID:     peerID,
+            signingKey: bundle.signingKeyPublic,
+            dhKey:      bundle.dhIdentityKeyPublic
+        )
+        let keyChanged = isKnown && logEntryIsNew
+
         knownPeers[peerID]  = peer
         peerBundles[peerID] = bundle
 
@@ -1077,6 +1107,9 @@ public final class ChatManager: @unchecked Sendable {
             self.delegate?.chatManager(self, didDiscoverPeer: peer)
             if reconnected {
                 self.delegate?.chatManager(self, peerDidReconnect: peer)
+            }
+            if keyChanged {
+                self.delegate?.chatManager(self, didDetectKeyChange: peerID)
             }
         }
 
@@ -1249,6 +1282,12 @@ public final class ChatManager: @unchecked Sendable {
             return
         }
 
+        // Edit payload — update an existing message body; don't create a new message
+        if let edit = content.editPayload {
+            handleEditMessage(edit, fromPeer: peerID)
+            return
+        }
+
         let displayBody: String
         switch content.type {
         case .text:  displayBody = content.body
@@ -1304,6 +1343,27 @@ public final class ChatManager: @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, messagesRead: payload.messageIDs, byPeer: peerID)
+        }
+    }
+
+    /// Handle an incoming message edit. Only accepts edits for messages we received from `peerID`.
+    private func handleEditMessage(_ payload: EditMessagePayload, fromPeer peerID: String) {
+        guard !payload.newBody.isEmpty, payload.newBody.utf8.count <= Self.maxMessageBytes else { return }
+        // Only allow the original sender to edit their own messages.
+        guard let msgs = try? messageStore.messages(forPeer: peerID),
+              let existing = msgs.first(where: { $0.id == payload.messageID }),
+              existing.direction == .received else { return }
+        try? messageStore.updateMessage(
+            id: payload.messageID, peerID: peerID,
+            newBody: payload.newBody, editedAt: payload.editedAt
+        )
+        let messageID = payload.messageID
+        let newBody   = payload.newBody
+        let editedAt  = payload.editedAt
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didReceiveEditedMessage: messageID,
+                                       newBody: newBody, editedAt: editedAt, peerID: peerID)
         }
     }
 
@@ -1815,6 +1875,10 @@ public final class ChatManager: @unchecked Sendable {
             let payload = try wireBuilder.decodePayload(ReactionMessage.self, from: message)
             handleReaction(payload, fromPeer: message.senderID)
 
+        case .editMessage:
+            let payload = try wireBuilder.decodePayload(EditMessagePayload.self, from: message)
+            handleEditMessage(payload, fromPeer: message.senderID)
+
         case .groupMessage:
             let payload = try wireBuilder.decodePayload(GroupWireMessage.self, from: message)
             handleGroupMessage(payload)
@@ -2041,6 +2105,10 @@ extension ChatManager: MeshManagerDelegate {
             case .reaction:
                 let payload = try wireBuilder.decodePayload(ReactionMessage.self, from: message)
                 handleReaction(payload, fromPeer: message.senderID)
+
+            case .editMessage:
+                let payload = try wireBuilder.decodePayload(EditMessagePayload.self, from: message)
+                handleEditMessage(payload, fromPeer: message.senderID)
 
             case .groupMessage:
                 let payload = try wireBuilder.decodePayload(GroupWireMessage.self, from: message)

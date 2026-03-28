@@ -102,6 +102,35 @@ public final class MessageStore: @unchecked Sendable {
         try saveToDisk(messages: messages, peerID: convID)
     }
 
+    /// Update the body text of a message, marking it as edited.
+    public func updateMessage(id: String, peerID: String, newBody: String, editedAt: Date) throws {
+        var messages = (try? self.messages(forPeer: peerID)) ?? []
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        let old = messages[idx]
+        messages[idx] = StoredMessage(
+            id:                 old.id,
+            peerID:             old.peerID,
+            direction:          old.direction,
+            body:               newBody,
+            timestamp:          old.timestamp,
+            status:             old.status,
+            replyToID:          old.replyToID,
+            expiresAt:          old.expiresAt,
+            hopCount:           old.hopCount,
+            attachmentID:       old.attachmentID,
+            attachmentMimeType: old.attachmentMimeType,
+            audioDuration:      old.audioDuration,
+            reactions:          old.reactions,
+            senderID:           old.senderID,
+            receivedAt:         old.receivedAt,
+            deliveredBy:        old.deliveredBy,
+            isEdited:           true,
+            editedAt:           editedAt
+        )
+        cache[peerID] = messages
+        try saveToDisk(messages: messages, peerID: peerID)
+    }
+
     /// Update message status (sent → delivered, sending → failed, etc.).
     public func updateStatus(_ status: StoredMessage.MessageStatus, forMessageID messageID: String, peerID: String) throws {
         var messages = (try? self.messages(forPeer: peerID)) ?? []

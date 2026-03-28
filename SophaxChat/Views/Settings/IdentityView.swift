@@ -5,14 +5,16 @@
 // Also links to settings and security options.
 
 import SwiftUI
+import PhotosUI
 import SophaxChatCore
 
 struct IdentityView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showingRenameAlert = false
-    @State private var renameText         = ""
+    @State private var showingRenameAlert  = false
+    @State private var renameText          = ""
+    @State private var avatarPickerItem:   PhotosPickerItem? = nil
 
     private var identity: IdentityManager? { appState.chatManager?.identity }
 
@@ -23,14 +25,42 @@ struct IdentityView: View {
                 Section {
                     if let id = identity?.publicIdentity {
                         VStack(spacing: 16) {
-                            // Avatar
-                            ZStack {
-                                Circle()
-                                    .fill(Color.accentColor.opacity(0.12))
-                                    .frame(width: 80, height: 80)
-                                Text(String(id.username.prefix(1)).uppercased())
-                                    .font(.system(size: 36, weight: .bold))
-                                    .foregroundStyle(Color.accentColor)
+                            // Avatar — tap to change
+                            PhotosPicker(selection: $avatarPickerItem, matching: .images) {
+                                if let data = appState.myAvatarData, let uiImage = UIImage(data: data) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 80, height: 80)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.accentColor.opacity(0.3), lineWidth: 2))
+                                } else {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.accentColor.opacity(0.12))
+                                            .frame(width: 80, height: 80)
+                                        Text(String(id.username.prefix(1)).uppercased())
+                                            .font(.system(size: 36, weight: .bold))
+                                            .foregroundStyle(Color.accentColor)
+                                        Image(systemName: "camera.fill")
+                                            .font(.caption)
+                                            .foregroundStyle(.white)
+                                            .padding(5)
+                                            .background(Color.accentColor)
+                                            .clipShape(Circle())
+                                            .offset(x: 26, y: 26)
+                                    }
+                                }
+                            }
+                            .onChange(of: avatarPickerItem) { _, item in
+                                guard let item else { return }
+                                Task {
+                                    if let data = try? await item.loadTransferable(type: Data.self),
+                                       let img  = UIImage(data: data) {
+                                        appState.setMyAvatar(img)
+                                    }
+                                    avatarPickerItem = nil
+                                }
                             }
 
                             VStack(spacing: 4) {
@@ -39,19 +69,43 @@ struct IdentityView: View {
                                 Text("Peer ID: \(id.peerID.prefix(16))…")
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
-                                Button("Change Username") {
-                                    renameText = id.username
-                                    showingRenameAlert = true
+                                HStack(spacing: 8) {
+                                    Button("Change Username") {
+                                        renameText = id.username
+                                        showingRenameAlert = true
+                                    }
+                                    .font(.caption)
+                                    .buttonStyle(.bordered)
+                                    .tint(.accentColor)
+
+                                    if appState.myAvatarData != nil {
+                                        Button("Remove Photo", role: .destructive) {
+                                            appState.removeMyAvatar()
+                                        }
+                                        .font(.caption)
+                                        .buttonStyle(.bordered)
+                                    }
                                 }
-                                .font(.caption)
-                                .buttonStyle(.bordered)
-                                .tint(.accentColor)
                             }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .listRowBackground(Color.clear)
                     }
+                }
+
+                // Share contact link
+                Section {
+                    if let link = appState.generateInviteLink() {
+                        ShareLink(item: link, subject: Text("Add me on SophaxChat"),
+                                  message: Text("Tap to add me as a contact in SophaxChat — encrypted, serverless, no account needed.")) {
+                            Label("Share Contact Link", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                } header: {
+                    Text("Invite")
+                } footer: {
+                    Text("Share this link so others can add you as a contact — no Bluetooth or WiFi needed.")
                 }
 
                 // Safety number

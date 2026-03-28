@@ -43,6 +43,10 @@ public struct PreKeyBundle: Codable, Sendable {
     /// Propagated in Hello messages so nearby peers automatically learn internet addresses.
     public let tcpAddress: String?
 
+    /// Optional JPEG avatar (64×64, ≤8 KB). nil = no avatar set.
+    /// Propagated in Hello messages so contacts see the sender's photo.
+    public let avatarData: Data?
+
     /// Verifies the signed prekey signature against the identity key.
     /// MUST be called before using the bundle.
     public func verifySignedPreKey() throws -> Bool {
@@ -118,7 +122,8 @@ public final class PreKeyManager: @unchecked Sendable {
             oneTimePreKeyId:       otp?.key,
             username:              pub.username,
             timestamp:             Date(),
-            tcpAddress:            tcpAddress
+            tcpAddress:            tcpAddress,
+            avatarData:            identity.loadAvatar()
         )
     }
 

@@ -18,6 +18,7 @@ struct MessageBubbleView: View {
     var onDelete:  (() -> Void)? = nil
     var onReply:   (() -> Void)? = nil
     var onForward: (() -> Void)? = nil
+    var onEdit:    (() -> Void)? = nil
 
     @State private var attachmentData:    Data?    = nil
     @State private var showFullScreen:    Bool     = false
@@ -75,6 +76,13 @@ struct MessageBubbleView: View {
                                 Label("Forward", systemImage: "arrowshape.turn.up.right")
                             }
                         }
+                        if isSent && message.attachmentMimeType == nil
+                            && message.timestamp.timeIntervalSinceNow > -300,
+                           let onEdit {
+                            Button(action: onEdit) {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                        }
                         Divider()
                         Button {
                             UIPasteboard.general.string = message.body
@@ -99,6 +107,12 @@ struct MessageBubbleView: View {
                 // ── Reaction pills ────────────────────────────────────────────
                 if let reactions = message.reactions, !reactions.isEmpty {
                     reactionPillsView(reactions: reactions)
+                }
+
+                if message.isEdited {
+                    Text("edited")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
 
                 // ── Timestamp + relay hop + status ────────────────────────────
@@ -206,6 +220,8 @@ struct MessageBubbleView: View {
             imageBubble
         } else if message.attachmentMimeType?.hasPrefix("audio/") == true {
             audioBubble
+        } else if message.attachmentMimeType?.hasPrefix("video/") == true {
+            videoBubble
         } else {
             textBubble
         }
@@ -292,6 +308,28 @@ struct MessageBubbleView: View {
             .padding(.vertical, 10)
             .background(isSent ? Color.accentColor : Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 18))
+        }
+    }
+
+    // MARK: - Video bubble
+
+    @ViewBuilder
+    private var videoBubble: some View {
+        if let data = attachmentData {
+            VideoMessageView(data: data, isSent: isSent)
+        } else {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(.systemGray5))
+                .frame(width: 220, height: 160)
+                .overlay {
+                    if message.status == .sending {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "video")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
         }
     }
 

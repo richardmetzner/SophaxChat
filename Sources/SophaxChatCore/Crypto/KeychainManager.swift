@@ -160,6 +160,32 @@ public final class KeychainManager {
         return username
     }
 
+    // MARK: - Avatar
+
+    public func saveAvatar(_ data: Data) throws {
+        try save(data: data, account: "identity.avatar")
+    }
+
+    public func loadAvatar() -> Data? {
+        try? load(account: "identity.avatar")
+    }
+
+    public func deleteAvatar() {
+        try? delete(account: "identity.avatar")
+    }
+
+    // MARK: - App Lock (Keychain-backed, excluded from iCloud backup)
+
+    public func saveAppLockEnabled(_ enabled: Bool) throws {
+        let data = Data([enabled ? 1 : 0])
+        try save(data: data, account: "settings.applock")
+    }
+
+    public func loadAppLockEnabled() -> Bool {
+        guard let data = try? load(account: "settings.applock"), data.count == 1 else { return false }
+        return data[0] == 1
+    }
+
     // MARK: - Group Keys
 
     public func saveGroupKey(_ key: SymmetricKey, groupID: String) throws {
@@ -232,19 +258,6 @@ public final class KeychainManager {
             print("[Keychain] deleteAllSenderKeyStates(\(label)) failed: \(status)")
         }
         #endif
-    }
-
-    // MARK: - App Lock setting
-
-    /// Stores the app-lock-enabled flag in Keychain so it is excluded from iCloud/iTunes backups.
-    public func saveAppLockEnabled(_ enabled: Bool) throws {
-        let data = Data([enabled ? 1 : 0])
-        try save(data: data, account: "app.lock.enabled")
-    }
-
-    public func loadAppLockEnabled() -> Bool? {
-        guard let data = try? load(account: "app.lock.enabled") else { return nil }
-        return data.first == 1
     }
 
     // MARK: - Verified Peers (Safety Number pinning)

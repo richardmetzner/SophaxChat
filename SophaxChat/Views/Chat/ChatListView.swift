@@ -14,6 +14,7 @@ struct ChatListView: View {
     @State private var showingScanner     = false
     @State private var peerToBlock: KnownPeer? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
+    @State private var keyChangePeerID: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -198,6 +199,26 @@ struct ChatListView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: reconnectBannerPeer?.id)
+        .onChange(of: appState.keyChangeAlerts) { _, alerts in
+            if let peerID = alerts.last {
+                keyChangePeerID = peerID
+            }
+        }
+        .alert("Security Key Changed", isPresented: Binding(
+            get: { keyChangePeerID != nil },
+            set: { if !$0 { keyChangePeerID = nil } }
+        ), presenting: keyChangePeerID) { peerID in
+            Button("Verify Now") {
+                keyChangePeerID = nil
+            }
+            Button("Dismiss", role: .cancel) {
+                keyChangePeerID = nil
+                appState.keyChangeAlerts.removeAll { $0 == peerID }
+            }
+        } message: { peerID in
+            let name = appState.peers.first(where: { $0.id == peerID }).map { appState.displayName(for: $0) } ?? peerID
+            Text("\(name)'s identity key has changed. Open the conversation and verify their Safety Number to confirm this is expected.")
+        }
         .sheet(isPresented: $showingIdentity) {
             IdentityView()
         }
@@ -437,6 +458,7 @@ struct PeerRow: View {
 // MARK: - Peer Avatar
 
 struct PeerAvatar: View {
+    @EnvironmentObject var appState: AppState
     let peer: KnownPeer
     let size: CGFloat
 
@@ -452,13 +474,21 @@ struct PeerAvatar: View {
     }
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(avatarColor.opacity(0.2))
+        if let data = appState.peerAvatars[peer.id], let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
                 .frame(width: size, height: size)
-            Text(initials)
-                .font(.system(size: size * 0.4, weight: .semibold))
-                .foregroundStyle(avatarColor)
+                .clipShape(Circle())
+        } else {
+            ZStack {
+                Circle()
+                    .fill(avatarColor.opacity(0.2))
+                    .frame(width: size, height: size)
+                Text(initials)
+                    .font(.system(size: size * 0.4, weight: .semibold))
+                    .foregroundStyle(avatarColor)
+            }
         }
     }
 }

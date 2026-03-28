@@ -95,6 +95,20 @@ public final class IdentityManager: @unchecked Sendable {
 
     // MARK: - Public API
 
+    // MARK: - Avatar
+
+    public func setAvatar(_ data: Data) throws {
+        try keychain.saveAvatar(data)
+    }
+
+    public func loadAvatar() -> Data? {
+        keychain.loadAvatar()
+    }
+
+    public func deleteAvatar() {
+        keychain.deleteAvatar()
+    }
+
     public func setUsername(_ username: String) throws {
         let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 64 else {

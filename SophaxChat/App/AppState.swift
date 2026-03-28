@@ -8,6 +8,7 @@ import SwiftUI
 import UIKit
 import Network
 import AVFoundation
+import CryptoKit
 import LocalAuthentication
 import UserNotifications
 import ReplayKit
@@ -40,6 +41,13 @@ final class AppState: ObservableObject {
 
     /// peerID → true when their session was established without a one-time prekey (reduced entropy).
     @Published var noOPKSessions: Set<String> = []
+
+    /// peerID → JPEG avatar data received from that peer's PreKeyBundle.
+    @Published var peerAvatars: [String: Data] = [:]
+    /// JPEG data for the local user's own avatar. nil = no avatar set.
+    @Published var myAvatarData: Data? = nil
+    /// peerIDs whose identity key changed since last known state — shown as security alerts.
+    @Published var keyChangeAlerts: [String] = []
 
     // MARK: - TCP / internet mode
 
@@ -141,6 +149,7 @@ final class AppState: ObservableObject {
 
             self.chatManager     = manager
             self.isSetupComplete = true
+            self.myAvatarData    = identity.loadAvatar()
             requestNotificationPermission()
             startScreenSecurityMonitor()
 
@@ -312,6 +321,108 @@ final class AppState: ObservableObject {
             data, mimeType: "audio/m4a", audioDuration: duration,
             toPeerID: peerID, expiresAt: expiresAt
         )
+    }
+
+    /// Send an edit for a previously sent text message.
+    func sendEditMessage(messageID: String, newBody: String, toPeerID peerID: String) {
+        chatManager?.sendEditMessage(messageID: messageID, newBody: newBody, toPeerID: peerID)
+        // Update local in-memory state immediately for instant UI feedback
+        if let idx = messages[peerID]?.firstIndex(where: { $0.id == messageID }) {
+            messages[peerID]?[idx].body     = newBody
+            messages[peerID]?[idx].isEdited = true
+            messages[peerID]?[idx].editedAt = Date()
+        }
+    }
+
+    /// Send a video file as an encrypted attachment.
+    func sendVideo(_ url: URL, toPeerID peerID: String, expiresAt: Date? = nil) {
+        Task {
+            guard let data = await compressVideo(url) else { return }
+            await MainActor.run {
+                chatManager?.sendAttachment(data, mimeType: "video/mp4", toPeerID: peerID, expiresAt: expiresAt)
+            }
+        }
+    }
+
+    /// Send a video file as an encrypted group attachment.
+    func sendGroupVideo(_ url: URL, group: GroupInfo, expiresAt: Date? = nil) {
+        Task {
+            guard let data = await compressVideo(url) else { return }
+            await MainActor.run {
+                chatManager?.sendGroupAttachment(data, mimeType: "video/mp4",
+                                                 groupID: group.id, members: group.memberIDs,
+                                                 expiresAt: expiresAt)
+            }
+        }
+    }
+
+    private func compressVideo(_ url: URL) async -> Data? {
+        await withCheckedContinuation { continuation in
+            let asset = AVURLAsset(url: url)
+            guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetMediumQuality) else {
+                continuation.resume(returning: nil)
+                return
+            }
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString + ".mp4")
+            session.outputURL       = tmp
+            session.outputFileType  = .mp4
+            session.shouldOptimizeForNetworkUse = true
+            session.exportAsynchronously {
+                defer { try? FileManager.default.removeItem(at: tmp) }
+                guard session.status == .completed,
+                      let data = try? Data(contentsOf: tmp),
+                      data.count <= 30 * 1024 * 1024 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: data)
+            }
+        }
+    }
+
+    // MARK: - Avatar
+
+    /// Set the local user's avatar from a UIImage.
+    /// Resizes to 64×64 JPEG and broadcasts an updated Hello to all peers.
+    func setMyAvatar(_ image: UIImage) {
+        guard let data = resizedAvatarJPEG(image) else { return }
+        try? chatManager?.identity.setAvatar(data)
+        myAvatarData = data
+        chatManager?.broadcastHello()
+    }
+
+    func removeMyAvatar() {
+        chatManager?.identity.deleteAvatar()
+        myAvatarData = nil
+        chatManager?.broadcastHello()
+    }
+
+    private func resizedAvatarJPEG(_ image: UIImage) -> Data? {
+        let targetSize = CGSize(width: 64, height: 64)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resized.jpegData(compressionQuality: 0.8)
+    }
+
+    // MARK: - Invite link
+
+    /// Generate a `sophaxchat://meet?...` URL encoding this device's public identity.
+    /// The recipient can tap the link to pre-populate contact info without being in Bluetooth range.
+    func generateInviteLink() -> URL? {
+        guard let id = chatManager?.identity.publicIdentity else { return nil }
+        var components = URLComponents()
+        components.scheme = "sophaxchat"
+        components.host   = "meet"
+        components.queryItems = [
+            URLQueryItem(name: "pid",  value: id.peerID),
+            URLQueryItem(name: "name", value: Data(id.username.utf8).base64EncodedString()),
+            URLQueryItem(name: "sk",   value: id.signingKeyPublic.base64EncodedString()),
+            URLQueryItem(name: "dk",   value: id.dhKeyPublic.base64EncodedString())
+        ]
+        return components.url
     }
 
     /// Load attachment data from the local encrypted store (used by bubble views).
@@ -666,11 +777,63 @@ final class AppState: ObservableObject {
         let onionHost: String // display-only
     }
 
+    /// Handles `sophaxchat://meet?pid=...&name=...&sk=...&dk=...` mesh identity invite links.
+    /// Adds the contact to the known peers list without requiring a TCP connection.
+    private func handleMeetLink(_ url: URL) {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        guard let items = components?.queryItems,
+              let pid     = items.first(where: { $0.name == "pid" })?.value,
+              let nameB64 = items.first(where: { $0.name == "name" })?.value,
+              let skB64   = items.first(where: { $0.name == "sk" })?.value,
+              let dkB64   = items.first(where: { $0.name == "dk" })?.value,
+              !pid.isEmpty,
+              let nameData  = Data(base64Encoded: nameB64),
+              let username  = String(data: nameData, encoding: .utf8),
+              let signingKey = Data(base64Encoded: skB64),
+              let dhKey     = Data(base64Encoded: dkB64),
+              signingKey.count == 32, dhKey.count == 32
+        else { return }
+        // Don't add ourselves
+        guard pid != chatManager?.identity.publicIdentity.peerID else { return }
+        // If already known, just surface them
+        guard !peers.contains(where: { $0.id == pid }) else { return }
+        let combined = signingKey + dhKey
+        let hash = Data(CryptoKit.SHA512.hash(data: combined))
+        let groups = stride(from: 0, to: 30, by: 5).map { i -> String in
+            let chunk = hash[i..<(i + 5)]
+            let value = chunk.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) } % 100_000
+            return String(format: "%05d", value)
+        }
+        let safetyNumber = groups.joined(separator: " ")
+        var peer = KnownPeer(
+            id:               pid,
+            username:         username,
+            signingKeyPublic: signingKey,
+            dhKeyPublic:      dhKey,
+            safetyNumber:     safetyNumber,
+            lastSeen:         nil,
+            isOnline:         false,
+            isDirectlyConnected: false
+        )
+        peer.tcpAddress = nil
+        peers.append(peer)
+        savePeers()
+        lastAddedContactAddress = username
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if lastAddedContactAddress == username { lastAddedContactAddress = nil }
+        }
+    }
+
     /// Handles `sophaxchat://add?id=<peerID>&onion=<host>&port=<port>` contact card links.
     /// Parsing is immediate; connecting requires explicit user confirmation via `confirmDeepLink()`.
     func handleIncomingLink(_ url: URL) {
-        guard url.scheme?.lowercased() == "sophaxchat",
-              url.host?.lowercased() == "add" else { return }
+        guard url.scheme?.lowercased() == "sophaxchat" else { return }
+        if url.host?.lowercased() == "meet" {
+            handleMeetLink(url)
+            return
+        }
+        guard url.host?.lowercased() == "add" else { return }
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         guard let items = components?.queryItems,
               let peerID = items.first(where: { $0.name == "id" })?.value,
@@ -719,6 +882,10 @@ final class AppState: ObservableObject {
             p.isOnline = false
             p.isDirectlyConnected = false
             return p
+        }
+        // Restore avatar cache from persisted peers
+        for peer in peers {
+            if let avatar = peer.avatarData { peerAvatars[peer.id] = avatar }
         }
     }
 
@@ -873,6 +1040,8 @@ extension AppState: @preconcurrency ChatManagerDelegate {
 
     func chatManager(_ manager: ChatManager, didDiscoverPeer peer: KnownPeer) {
         guard !blockedPeers.contains(peer.id) else { return }
+        // Update avatar cache whenever a fresh Hello arrives
+        if let avatar = peer.avatarData { peerAvatars[peer.id] = avatar }
         if let idx = peers.firstIndex(where: { $0.id == peer.id }) {
             let existing = peers[idx]
             // TOFU key-change detection: if the signing key is different from what we knew,
@@ -886,6 +1055,7 @@ extension AppState: @preconcurrency ChatManagerDelegate {
                 savePeers()
             } else {
                 peers[idx].isOnline = true
+                if peer.avatarData != nil { peers[idx].avatarData = peer.avatarData }
             }
         } else {
             peers.append(peer)
@@ -1040,5 +1210,19 @@ extension AppState: @preconcurrency ChatManagerDelegate {
         set.append(peerID)
         msgs[idx].deliveredBy = set
         messages[convID] = msgs
+    }
+
+    func chatManager(_ manager: ChatManager, didReceiveEditedMessage messageID: String,
+                     newBody: String, editedAt: Date, peerID: String) {
+        if let idx = messages[peerID]?.firstIndex(where: { $0.id == messageID }) {
+            messages[peerID]?[idx].body     = newBody
+            messages[peerID]?[idx].isEdited = true
+            messages[peerID]?[idx].editedAt = editedAt
+        }
+    }
+
+    func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String) {
+        guard !keyChangeAlerts.contains(forPeerID) else { return }
+        keyChangeAlerts.append(forPeerID)
     }
 }

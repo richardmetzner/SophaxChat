@@ -59,6 +59,9 @@ struct ChatView: View {
     // Reply
     @State private var replyingTo: StoredMessage? = nil
 
+    // Edit
+    @State private var editingMessage: StoredMessage? = nil
+
     // Forward
     @State private var forwardingMessage: StoredMessage? = nil
 
@@ -154,6 +157,7 @@ struct ChatView: View {
             Divider()
             searchBar
             replyBar
+            editBar
             warningBanners
             inputBar
         }
@@ -256,7 +260,12 @@ struct ChatView: View {
                             message:   message,
                             onDelete:  { appState.deleteMessage(message) },
                             onReply:   { withAnimation { replyingTo = message } },
-                            onForward: { forwardingMessage = message }
+                            onForward: { forwardingMessage = message },
+                            onEdit:    {
+                                messageText = message.body
+                                withAnimation { editingMessage = message }
+                                isInputFocused = true
+                            }
                         )
                         .id(message.id)
                     }
@@ -339,6 +348,37 @@ struct ChatView: View {
         }
     }
 
+    @ViewBuilder private var editBar: some View {
+        if editingMessage != nil {
+            HStack(spacing: 10) {
+                Image(systemName: "pencil")
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Edit message")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.accentColor)
+                    Text(editingMessage?.body ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button {
+                    withAnimation {
+                        editingMessage = nil
+                        messageText = ""
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.bar)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     @ViewBuilder private var warningBanners: some View {
         if appState.hasKeyChanged(for: peer.id, currentSafetyNumber: peer.safetyNumber) {
             HStack(spacing: 6) {
@@ -391,7 +431,7 @@ struct ChatView: View {
 
     @ViewBuilder private var inputBar: some View {
         HStack(spacing: 10) {
-            PhotosPicker(selection: $photoPickerItem, matching: .images) {
+            PhotosPicker(selection: $photoPickerItem, matching: .any(of: [.images, .videos])) {
                 Image(systemName: "paperclip")
                     .font(.system(size: 22))
                     .foregroundStyle(.secondary)
@@ -399,10 +439,14 @@ struct ChatView: View {
             .onChange(of: photoPickerItem) { _, item in
                 guard let item else { return }
                 Task {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        appState.sendImage(image, toPeerID: peer.id,
-                                           expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+                    let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                    if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.identifier.contains("video") }) {
+                        if let url = try? await item.loadTransferable(type: URL.self) {
+                            await appState.sendVideo(url, toPeerID: peer.id, expiresAt: expiresAt)
+                        }
+                    } else if let data = try? await item.loadTransferable(type: Data.self),
+                              let image = UIImage(data: data) {
+                        appState.sendImage(image, toPeerID: peer.id, expiresAt: expiresAt)
                     }
                     photoPickerItem = nil
                 }
@@ -500,12 +544,17 @@ struct ChatView: View {
         typingTask?.cancel()
         typingTask = nil
         appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
-        let reply = replyingTo
         messageText = ""
         UserDefaults.standard.removeObject(forKey: draftKey)
-        withAnimation { replyingTo = nil }
-        let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
-        appState.sendMessage(text, toPeerID: peer.id, expiresAt: expiresAt, replyToID: reply?.id)
+        if let editing = editingMessage {
+            withAnimation { editingMessage = nil }
+            appState.sendEditMessage(messageID: editing.id, newBody: text, toPeerID: peer.id)
+        } else {
+            let reply = replyingTo
+            withAnimation { replyingTo = nil }
+            let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+            appState.sendMessage(text, toPeerID: peer.id, expiresAt: expiresAt, replyToID: reply?.id)
+        }
     }
 }
 

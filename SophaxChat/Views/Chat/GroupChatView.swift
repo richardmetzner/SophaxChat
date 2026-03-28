@@ -281,7 +281,7 @@ struct GroupChatView: View {
     private var inputBar: some View {
         let isTextNonEmpty = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return HStack(spacing: 10) {
-            PhotosPicker(selection: $photoPickerItem, matching: .images) {
+            PhotosPicker(selection: $photoPickerItem, matching: .any(of: [.images, .videos])) {
                 Image(systemName: "photo")
                     .font(.system(size: 22))
                     .foregroundStyle(.secondary)
@@ -289,9 +289,13 @@ struct GroupChatView: View {
             .onChange(of: photoPickerItem) { _, item in
                 guard let item else { return }
                 Task {
-                    if let data = try? await item.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                    let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                    if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.identifier.contains("video") }) {
+                        if let url = try? await item.loadTransferable(type: URL.self) {
+                            await appState.sendGroupVideo(url, group: group, expiresAt: expiresAt)
+                        }
+                    } else if let data = try? await item.loadTransferable(type: Data.self),
+                              let image = UIImage(data: data) {
                         appState.sendGroupImage(image, group: group, expiresAt: expiresAt, replyToID: replyingTo?.id)
                         replyingTo = nil
                     }
