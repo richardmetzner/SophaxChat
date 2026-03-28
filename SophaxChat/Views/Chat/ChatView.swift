@@ -596,8 +596,9 @@ struct SafetyNumberView: View {
     @EnvironmentObject var appState: AppState
     let peer: KnownPeer
 
-    @State private var showingMyQR   = false
-    @State private var showingPeerQR = false
+    @State private var showingMyQR      = false
+    @State private var showingPeerQR    = false
+    @State private var showingKeyHistory = false
 
     private var mySafetyNumber: String? {
         appState.chatManager?.identity.publicIdentity.safetyNumber
@@ -640,6 +641,9 @@ struct SafetyNumberView: View {
                             QRSheet(title: "Your Safety Number", safetyNumber: mine)
                         }
                     }
+
+                    // Key History — collapsible section
+                    KeyHistorySection(peerID: peer.id, isExpanded: $showingKeyHistory)
 
                     Text("If either number doesn't match, someone may be intercepting your messages. Do not continue.")
                         .font(.caption)
@@ -802,6 +806,105 @@ struct ForwardPickerView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Key History Section
+
+private struct KeyHistorySection: View {
+    @EnvironmentObject var appState: AppState
+    let peerID: String
+    @Binding var isExpanded: Bool
+
+    private var history: [KeyLogEntry] { appState.keyHistory(for: peerID) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Label("Key History", systemImage: "key.horizontal")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if history.count <= 1 {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    } else {
+                        Text("\(history.count) keys")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                Divider().padding(.horizontal, 16)
+                if history.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.badge.questionmark")
+                            .foregroundStyle(.tertiary)
+                        Text("No history recorded yet.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                } else if history.count == 1 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundStyle(.green)
+                        Text("Key has never changed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(history.enumerated().reversed()), id: \.offset) { idx, entry in
+                            let isCurrent = idx == history.indices.last
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(entry.signingKeyPublic.prefix(4)
+                                            .map { String(format: "%02x", $0) }.joined())
+                                            .font(.system(.caption, design: .monospaced).bold())
+                                        Text(isCurrent ? "Current" : "Previous")
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(isCurrent ? Color.green.opacity(0.12) : Color.secondary.opacity(0.1))
+                                            .foregroundStyle(isCurrent ? .green : .secondary)
+                                            .clipShape(Capsule())
+                                    }
+                                    Text(entry.firstSeen.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            if idx != history.startIndex {
+                                Divider().padding(.leading, 16)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
     }
 }
 

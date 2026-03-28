@@ -583,6 +583,11 @@ final class AppState: ObservableObject {
         return pinned != currentSafetyNumber
     }
 
+    /// Returns the full key-change history for a peer from KeyTransparencyLog.
+    func keyHistory(for peerID: String) -> [KeyLogEntry] {
+        chatManager?.keyLog.history(for: peerID) ?? []
+    }
+
     // MARK: - TCP internet mode
 
     /// Initiate an outbound TCP connection to a peer at "host:port" or "host.onion:port".
