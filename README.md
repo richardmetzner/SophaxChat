@@ -34,6 +34,19 @@
 
 ---
 
+<div align="center">
+
+| | |
+|:---:|:---:|
+| <img src="screenshots/s1.png" width="280" /> | <img src="screenshots/s2.png" width="280" /> |
+| <img src="screenshots/s3.png" width="280" /> | <img src="screenshots/s4.png" width="280" /> |
+
+<sub>Running on macOS via Xcode — "My Mac (Designed for iPad)"</sub>
+
+</div>
+
+---
+
 ## What is SophaxChat?
 
 SophaxChat is an **open-source, infrastructure-free, end-to-end encrypted** messenger for iOS, macOS, and Android. It works over Bluetooth LE and WiFi Direct by default — no internet required, no servers, no phone number, no account.
