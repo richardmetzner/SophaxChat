@@ -668,6 +668,20 @@ final class AppState: ObservableObject {
         guard appLockEnabled else { return }
         chatManager?.stop()
         chatManager = nil          // release all session state and key material from RAM
+
+        // Clear sensitive @Published properties so an attacker with physical device
+        // access (or a memory-reading exploit) cannot read plaintext messages or peer
+        // metadata while the app is locked. Data is reloaded from encrypted storage
+        // by setupChatManager() after the user authenticates successfully.
+        peers        = []
+        messages     = [:]
+        groups       = []
+        peerAvatars  = [:]
+        onlinePeers  = []
+        unreadCounts = [:]
+        typingPeers  = []
+        keyChangeAlerts = []
+
         isAppLocked = true
         pendingDeepLink = nil      // dismiss any pending deep-link alert before locking
         // Remove delivered notifications from Notification Center — they remain readable on the

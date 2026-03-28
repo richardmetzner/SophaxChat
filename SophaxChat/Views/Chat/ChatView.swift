@@ -295,7 +295,14 @@ struct ChatView: View {
                 messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
             }
             .onDisappear {
-                UserDefaults.standard.set(messageText, forKey: draftKey)
+                // Never persist drafts when app lock is enabled — UserDefaults is
+                // unencrypted and included in device backups.  When lock is off the
+                // device is already considered accessible, so drafts are safe to keep.
+                if appState.appLockEnabled {
+                    UserDefaults.standard.removeObject(forKey: draftKey)
+                } else {
+                    UserDefaults.standard.set(messageText, forKey: draftKey)
+                }
             }
         }
     }
