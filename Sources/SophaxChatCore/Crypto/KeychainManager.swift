@@ -242,6 +242,38 @@ public final class KeychainManager {
         return state
     }
 
+    // MARK: - Skipped group message keys (out-of-order persistence)
+
+    /// A single cached message key together with when it was stored.
+    /// Used to evict old entries on load without tracking timestamps in memory.
+    public struct SkippedKeyEntry: Codable, Sendable {
+        public let keyData:   Data
+        public let storedAt:  Date
+    }
+
+    /// Persist the full skipped-message-key cache to Keychain.
+    /// `entries` maps cacheKey ("groupID/senderPeerID") → (iteration → entry).
+    /// Iteration keys are stored as strings because JSON requires string keys.
+    public func saveSkippedGroupKeys(_ entries: [String: [String: SkippedKeyEntry]]) throws {
+        if entries.isEmpty {
+            try? delete(account: "skd.skipped.all")
+            return
+        }
+        let data = try JSONEncoder().encode(entries)
+        try save(data: data, account: "skd.skipped.all")
+    }
+
+    /// Load the skipped-message-key cache, discarding entries older than 7 days.
+    public func loadSkippedGroupKeys() -> [String: [String: SkippedKeyEntry]] {
+        guard let data    = try? load(account: "skd.skipped.all"),
+              let decoded = try? JSONDecoder().decode([String: [String: SkippedKeyEntry]].self, from: data)
+        else { return [:] }
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        return decoded.mapValues { inner in
+            inner.filter { $0.value.storedAt > cutoff }
+        }.filter { !$0.value.isEmpty }
+    }
+
     /// Delete all sender key material for a group (called on leave).
     public func deleteAllSenderKeyStates(groupID: String) {
         let q1: [CFString: Any] = [kSecClass: kSecClassGenericPassword,

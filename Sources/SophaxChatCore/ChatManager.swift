@@ -164,6 +164,8 @@ public final class ChatManager: @unchecked Sendable {
     /// Key: "groupID/senderPeerID" → (senderKeyIteration → messageKey)
     /// Bounded to `maxSkippedKeysCacheSize` entries per sender; oldest are evicted first.
     private var skippedGroupMessageKeys: [String: [UInt32: SymmetricKey]] = [:]
+    /// Parallel timestamp map for Keychain persistence (entry age → eviction after 7 days).
+    private var skippedGroupMessageKeyDates: [String: [UInt32: Date]] = [:]
     private static let maxSkippedKeysCacheSize = 200
 
     /// Known group membership keyed by groupID. Populated on create/join, cleared on leave.
@@ -245,6 +247,7 @@ public final class ChatManager: @unchecked Sendable {
         try? preKeys.rotateIfNeeded()
         scheduleExpiryTimer()
         loadPersistedQueue()
+        loadSkippedGroupKeyCache()
     }
 
     /// Stop the mesh and TCP transport (call on app background / termination).
@@ -794,6 +797,13 @@ public final class ChatManager: @unchecked Sendable {
         joinedGroups.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)               // v1 cleanup
         keychain.deleteAllSenderKeyStates(groupID: group.id)     // v2 cleanup
+        // Remove this group's entries from the skipped-key cache
+        let prefix = group.id + "/"
+        skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
+            skippedGroupMessageKeys.removeValue(forKey: $0)
+            skippedGroupMessageKeyDates.removeValue(forKey: $0)
+        }
+        persistSkippedGroupKeyCache()
         try? messageStore.deleteConversation(peerID: group.conversationID)
     }
 
@@ -1678,9 +1688,12 @@ public final class ChatManager: @unchecked Sendable {
                 attachDecryptKey = cachedKey
                 // Consume the cached key so it cannot be replayed
                 skippedGroupMessageKeys[cacheKey]?.removeValue(forKey: iteration)
+                skippedGroupMessageKeyDates[cacheKey]?.removeValue(forKey: iteration)
                 if skippedGroupMessageKeys[cacheKey]?.isEmpty == true {
                     skippedGroupMessageKeys.removeValue(forKey: cacheKey)
+                    skippedGroupMessageKeyDates.removeValue(forKey: cacheKey)
                 }
+                persistSkippedGroupKeyCache()
             } else {
                 // ── Normal path: advance the chain ───────────────────────────
                 var states = keychain.loadPeerSenderKeyStates(groupID: payload.groupID)
@@ -1692,19 +1705,23 @@ public final class ChatManager: @unchecked Sendable {
 
                 // Fast-forward to the target iteration, caching skipped message keys
                 // so out-of-order messages that arrive later can still be decrypted.
-                var cached = skippedGroupMessageKeys[cacheKey] ?? [:]
+                var cached      = skippedGroupMessageKeys[cacheKey] ?? [:]
+                var cachedDates = skippedGroupMessageKeyDates[cacheKey] ?? [:]
+                let now = Date()
                 while senderState.iteration < iteration {
                     let (msgKey, nextCK) = senderKeyRatchetStep(senderState.chainKey)
-                    cached[senderState.iteration] = msgKey
+                    cached[senderState.iteration]      = msgKey
+                    cachedDates[senderState.iteration] = now
                     senderState = SenderKeyState(chainKey: nextCK, iteration: senderState.iteration + 1)
                 }
                 // Evict oldest entries if the cache grows too large
                 if cached.count > Self.maxSkippedKeysCacheSize {
-                    cached.keys.sorted()
-                        .prefix(cached.count - Self.maxSkippedKeysCacheSize)
-                        .forEach { cached.removeValue(forKey: $0) }
+                    let toEvict = cached.keys.sorted().prefix(cached.count - Self.maxSkippedKeysCacheSize)
+                    toEvict.forEach { cached.removeValue(forKey: $0); cachedDates.removeValue(forKey: $0) }
                 }
-                skippedGroupMessageKeys[cacheKey] = cached.isEmpty ? nil : cached
+                skippedGroupMessageKeys[cacheKey]     = cached.isEmpty ? nil : cached
+                skippedGroupMessageKeyDates[cacheKey] = cachedDates.isEmpty ? nil : cachedDates
+                if !cached.isEmpty { persistSkippedGroupKeyCache() }
 
                 let (messageKey, nextCK) = senderKeyRatchetStep(senderState.chainKey)
                 guard let sealedBox = try? ChaChaPoly.SealedBox(combined: payload.ciphertext),
@@ -1943,6 +1960,38 @@ public final class ChatManager: @unchecked Sendable {
         pendingQueue = decoded.mapValues { items in
             items.map { (wire: $0.wire, messageID: $0.messageID) }
         }
+    }
+
+    /// Load persisted skipped-message-key cache from Keychain into memory.
+    /// Called once during `start()`.
+    private func loadSkippedGroupKeyCache() {
+        let saved = keychain.loadSkippedGroupKeys()
+        for (cacheKey, entries) in saved {
+            var keys:  [UInt32: SymmetricKey] = [:]
+            var dates: [UInt32: Date]         = [:]
+            for (iterStr, entry) in entries {
+                guard let iter = UInt32(iterStr) else { continue }
+                keys[iter]  = SymmetricKey(data: entry.keyData)
+                dates[iter] = entry.storedAt
+            }
+            if !keys.isEmpty {
+                skippedGroupMessageKeys[cacheKey]     = keys
+                skippedGroupMessageKeyDates[cacheKey] = dates
+            }
+        }
+    }
+
+    /// Persist the current in-memory skipped-key cache to Keychain.
+    private func persistSkippedGroupKeyCache() {
+        var entries: [String: [String: KeychainManager.SkippedKeyEntry]] = [:]
+        for (cacheKey, keys) in skippedGroupMessageKeys {
+            entries[cacheKey] = Dictionary(uniqueKeysWithValues: keys.map { iter, key in
+                let keyData  = key.withUnsafeBytes { Data($0) }
+                let storedAt = skippedGroupMessageKeyDates[cacheKey]?[iter] ?? Date()
+                return (String(iter), KeychainManager.SkippedKeyEntry(keyData: keyData, storedAt: storedAt))
+            })
+        }
+        keychainSave("skippedGroupKeyCache") { try self.keychain.saveSkippedGroupKeys(entries) }
     }
 
     // MARK: - Private: Helpers
