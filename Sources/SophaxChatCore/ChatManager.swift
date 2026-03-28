@@ -2226,8 +2226,31 @@ extension ChatManager: MeshManagerDelegate {
         // An attacker who replays an old SKD or sends iteration=0 would reset the chain
         // and break decryption for all subsequent group messages (DoS).
         if let existing = states[peerID], skd.iteration < existing.iteration { return }
+
+        // Bidirectional exchange: if this is the first time we see this sender in this
+        // group, send back our own SKD so they can decrypt our messages immediately.
+        // This ensures a newly joined member converges to having all members' keys
+        // without requiring a separate Welcome message flow.
+        let isNewSender = states[peerID] == nil
         states[peerID] = SenderKeyState(chainKey: skd.chainKey, iteration: skd.iteration)
         keychainSave("peerSenderKeys:\(skd.groupID)") { try keychain.savePeerSenderKeyStates(states, groupID: skd.groupID) }
+
+        if isNewSender, sessions[peerID] != nil,
+           let myState = keychain.loadMySenderKeyState(groupID: skd.groupID) {
+            let reply = SenderKeyDistributionMessage(
+                groupID:   skd.groupID,
+                chainKey:  myState.chainKey,
+                iteration: myState.iteration
+            )
+            if let replyData = try? JSONEncoder().encode(reply) {
+                let replyContent = MessageContent(body: "", type: .senderKeyDistribution, senderKeyData: replyData)
+                if let wire = try? buildOutboundWire(content: replyContent,
+                                                      messageID: UUID().uuidString,
+                                                      toPeerID: peerID) {
+                    try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+                }
+            }
+        }
     }
 
     // MARK: - Private: TCP helpers
