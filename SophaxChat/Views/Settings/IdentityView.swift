@@ -76,27 +76,24 @@ struct IdentityView: View {
                             }
 
                             VStack(spacing: 4) {
-                                Text(id.username)
-                                    .font(.title3.bold())
+                                Button {
+                                    renameText = id.username
+                                    showingRenameAlert = true
+                                } label: {
+                                    Text(id.username)
+                                        .font(.title3.bold())
+                                        .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
                                 Text("Peer ID: \(id.peerID.prefix(16))…")
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
-                                HStack(spacing: 8) {
-                                    Button("Change Username") {
-                                        renameText = id.username
-                                        showingRenameAlert = true
+                                if appState.myAvatarData != nil {
+                                    Button("Remove Photo", role: .destructive) {
+                                        appState.removeMyAvatar()
                                     }
                                     .font(.caption)
                                     .buttonStyle(.bordered)
-                                    .tint(.accentColor)
-
-                                    if appState.myAvatarData != nil {
-                                        Button("Remove Photo", role: .destructive) {
-                                            appState.removeMyAvatar()
-                                        }
-                                        .font(.caption)
-                                        .buttonStyle(.bordered)
-                                    }
                                 }
                             }
                         }
@@ -268,25 +265,6 @@ struct IdentityView: View {
                     Text("Security")
                 }
 
-                // Open source link
-                Section {
-                    Link(destination: URL(string: "https://github.com/SophaxTechnologies/SophaxChat")!) {
-                        HStack {
-                            Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Text("GitHub")
-                                .foregroundStyle(.secondary)
-                            Image(systemName: "arrow.up.right")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } header: {
-                    Text("Open Source")
-                } footer: {
-                    Text("SophaxChat is fully open-source. Audit the code at github.com/SophaxTechnologies/SophaxChat")
-                }
             }
             .navigationTitle("My Identity")
             .navigationBarTitleDisplayMode(.inline)

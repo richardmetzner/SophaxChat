@@ -13,18 +13,22 @@ struct ContactCardView: View {
     #endif
 
     private var contactURL: URL? {
-        guard let peerID = appState.chatManager?.identity.publicIdentity.peerID,
-              let onion  = appState.derivedOnionHostname else { return nil }
-        let port = appState.tcpPort.isEmpty ? "25519" : appState.tcpPort
-        var comps = URLComponents()
-        comps.scheme = "sophaxchat"
-        comps.host   = "add"
-        comps.queryItems = [
-            URLQueryItem(name: "id",    value: peerID),
-            URLQueryItem(name: "onion", value: onion),
-            URLQueryItem(name: "port",  value: port),
-        ]
-        return comps.url
+        // Full URL with Tor onion address
+        if let peerID = appState.chatManager?.identity.publicIdentity.peerID,
+           let onion  = appState.derivedOnionHostname {
+            let port = appState.tcpPort.isEmpty ? "25519" : appState.tcpPort
+            var comps = URLComponents()
+            comps.scheme = "sophaxchat"
+            comps.host   = "add"
+            comps.queryItems = [
+                URLQueryItem(name: "id",    value: peerID),
+                URLQueryItem(name: "onion", value: onion),
+                URLQueryItem(name: "port",  value: port),
+            ]
+            return comps.url
+        }
+        // Fallback: local meet link (no Tor required)
+        return appState.generateInviteLink()
     }
 
     private var qrImage: Image? {
