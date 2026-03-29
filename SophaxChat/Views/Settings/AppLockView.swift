@@ -8,6 +8,15 @@ import SwiftUI
 
 struct AppLockView: View {
     @EnvironmentObject var appState: AppState
+    @State private var now = Date()
+
+    /// Refresh the countdown every second when locked out.
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var isLockedOut: Bool {
+        if let until = appState.unlockLockedUntil { return now < until }
+        return false
+    }
 
     var body: some View {
         ZStack {
@@ -27,13 +36,20 @@ struct AppLockView: View {
                 }
 
                 Button(action: { appState.tryUnlock() }) {
-                    Label("Unlock", systemImage: "faceid")
-                        .font(.headline)
-                        .padding(.horizontal, 36)
-                        .padding(.vertical, 14)
+                    if appState.isUnlocking {
+                        ProgressView().frame(width: 24, height: 24)
+                            .padding(.horizontal, 36)
+                            .padding(.vertical, 14)
+                    } else {
+                        Label("Unlock", systemImage: "faceid")
+                            .font(.headline)
+                            .padding(.horizontal, 36)
+                            .padding(.vertical, 14)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .disabled(appState.isUnlocking || isLockedOut)
 
                 if let err = appState.unlockError {
                     Text(err)
@@ -44,10 +60,8 @@ struct AppLockView: View {
                 }
             }
         }
-        .onAppear {
-            // Attempt auto-unlock as soon as the lock screen appears
-            appState.tryUnlock()
-        }
+        .onAppear { appState.tryUnlock() }
+        .onReceive(timer) { now = $0 }
     }
 }
 

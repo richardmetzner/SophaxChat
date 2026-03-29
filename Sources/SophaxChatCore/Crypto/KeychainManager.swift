@@ -188,6 +188,30 @@ public final class KeychainManager {
         return data[0] == 1
     }
 
+    // MARK: - Unlock Attempt Tracking (rate-limiting brute force)
+    // Format: UInt32 attempts (4B) || Double lockoutTimestamp (8B, 0.0 = no lockout)
+
+    public func saveUnlockAttempts(_ count: Int, lockedUntil: Date?) {
+        var buf = Data(count: 12)
+        let c = UInt32(min(count, Int(UInt32.max)))
+        let t = lockedUntil?.timeIntervalSince1970 ?? 0.0
+        buf.withUnsafeMutableBytes { ptr in
+            ptr.storeBytes(of: c.bigEndian, toByteOffset: 0, as: UInt32.self)
+            ptr.storeBytes(of: t,           toByteOffset: 4, as: Double.self)
+        }
+        try? save(data: buf, account: "settings.unlock_attempts")
+    }
+
+    public func loadUnlockAttempts() -> (count: Int, lockedUntil: Date?) {
+        guard let buf = try? load(account: "settings.unlock_attempts"), buf.count == 12 else {
+            return (0, nil)
+        }
+        let c = buf.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self).bigEndian }
+        let t = buf.withUnsafeBytes { $0.load(fromByteOffset: 4, as: Double.self) }
+        let locked: Date? = t > 0 ? Date(timeIntervalSince1970: t) : nil
+        return (Int(c), locked)
+    }
+
     // MARK: - Group Keys
 
     public func saveGroupKey(_ key: SymmetricKey, groupID: String) throws {

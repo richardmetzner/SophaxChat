@@ -50,6 +50,12 @@ final class AppState: ObservableObject {
     @Published var keyChangeAlerts: [String] = []
     /// Set when biometric/passcode evaluation is unavailable during unlock — shown in AppLockView.
     @Published var unlockError: String? = nil
+    /// True while a biometric/passcode prompt is in progress — prevents multiple simultaneous prompts.
+    @Published var isUnlocking: Bool = false
+    /// Non-nil when unlock is rate-limited after too many failures. UI shows a countdown.
+    @Published var unlockLockedUntil: Date? = nil
+
+    private var failedUnlockAttempts: Int = 0
 
     // MARK: - TCP / internet mode
 
@@ -102,6 +108,11 @@ final class AppState: ObservableObject {
     // MARK: - Init
 
     init() {
+        // Load unlock rate-limit state (persisted in Keychain, survives app restarts)
+        let (attempts, lockedUntil) = keychain.loadUnlockAttempts()
+        self.failedUnlockAttempts = attempts
+        self.unlockLockedUntil    = (lockedUntil.map { $0 > Date() } ?? false) ? lockedUntil : nil
+
         loadSavedPeers()
         loadBlockedPeers()
         loadAliases()
@@ -692,6 +703,18 @@ final class AppState: ObservableObject {
     }
 
     func tryUnlock() {
+        // Rate-limit: check lockout before allowing another attempt
+        if let until = unlockLockedUntil, Date() < until {
+            let remaining = Int(until.timeIntervalSinceNow.rounded(.up))
+            let mins = remaining / 60, secs = remaining % 60
+            unlockError = mins > 0
+                ? "Too many failed attempts. Try again in \(mins)m \(secs)s."
+                : "Too many failed attempts. Try again in \(secs)s."
+            return
+        }
+
+        guard !isUnlocking else { return }  // prevent multiple simultaneous prompts
+
         let ctx = LAContext()
         var error: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
@@ -700,13 +723,29 @@ final class AppState: ObservableObject {
             unlockError = "Device authentication unavailable. Set a passcode in iOS Settings."
             return
         }
-        unlockError = nil
+        unlockError  = nil
+        isUnlocking  = true
         ctx.evaluatePolicy(.deviceOwnerAuthentication,
                            localizedReason: "Unlock SophaxChat") { success, _ in
             DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isUnlocking = false
                 if success {
-                    self?.isAppLocked = false
-                    self?.setupChatManager(username: nil)
+                    // Reset rate-limit on successful unlock
+                    self.failedUnlockAttempts = 0
+                    self.unlockLockedUntil    = nil
+                    self.keychain.saveUnlockAttempts(0, lockedUntil: nil)
+                    self.unlockError  = nil
+                    self.isAppLocked  = false
+                    self.setupChatManager(username: nil)
+                } else {
+                    // Increment failure counter; apply exponential lockout after 6 failures
+                    self.failedUnlockAttempts += 1
+                    let delays: [TimeInterval] = [0, 0, 0, 0, 0, 0, 300, 900, 3600]
+                    let delay = delays[min(self.failedUnlockAttempts, delays.count - 1)]
+                    self.unlockLockedUntil = delay > 0 ? Date().addingTimeInterval(delay) : nil
+                    self.keychain.saveUnlockAttempts(
+                        self.failedUnlockAttempts, lockedUntil: self.unlockLockedUntil)
                 }
             }
         }
