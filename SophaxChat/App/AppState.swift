@@ -710,6 +710,12 @@ final class AppState: ObservableObject {
         try? chatManager?.wipeAllData()
         chatManager = nil
 
+        // Delete Tor data directory — contains the hidden service private key.
+        // Without this, the old .onion address could be reconstructed after a wipe.
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: appSupport.appendingPathComponent("tor_data"))
+        }
+
         let ud = UserDefaults.standard
         for key in ud.dictionaryRepresentation().keys where key.hasPrefix("com.sophax.") || key.hasPrefix("sophax.") {
             ud.removeObject(forKey: key)
