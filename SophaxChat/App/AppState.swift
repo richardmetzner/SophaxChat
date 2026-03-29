@@ -572,9 +572,13 @@ final class AppState: ObservableObject {
     /// Common notification posting logic. `threadKey` is hashed before use so raw
     /// peer/group IDs are not exposed in Notification Centre grouping on the lock screen.
     private func postNotification(id: String, title: String, body: String, threadKey: String) {
+        // Strip ASCII control characters and truncate to prevent lock-screen injection
+        let safeBody = String(body.filter { c in
+            !c.isASCII || (c.asciiValue.map { $0 >= 0x20 && $0 != 0x7F } ?? true)
+        }.prefix(200))
         let content = UNMutableNotificationContent()
         content.title              = title
-        content.body               = body
+        content.body               = safeBody
         content.sound              = .default
         content.badge              = (totalUnreadCount + 1) as NSNumber
         content.threadIdentifier   = Data(SHA256.hash(data: Data(threadKey.utf8))).prefix(8).hexString

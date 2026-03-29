@@ -1109,6 +1109,12 @@ public final class ChatManager: @unchecked Sendable {
     private func handleHello(_ payload: HelloMessage) throws {
         let bundle = payload.bundle
 
+        // Reject oversized fields to prevent memory exhaustion from malicious peers
+        guard bundle.username.count <= 64 else { return }
+        if let avatar = bundle.avatarData {
+            guard avatar.count <= 512_000 else { return }  // 512 KB max
+        }
+
         guard try bundle.verifySignedPreKey() else {
             throw SophaxError.invalidSignature
         }

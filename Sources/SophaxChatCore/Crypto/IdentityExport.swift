@@ -186,7 +186,8 @@ public final class IdentityExportManager: Sendable {
     // MARK: - Private: Key derivation
 
     private static func deriveKey(passphrase: String, salt: Data, iterations: Int, derivedBytes: inout Data) throws -> SymmetricKey {
-        let passData = Data(passphrase.utf8)
+        var passData = Data(passphrase.utf8)
+        defer { passData.resetBytes(in: 0..<passData.count) }
 
         let status = derivedBytes.withUnsafeMutableBytes { derivedPtr in
             salt.withUnsafeBytes { saltPtr in
