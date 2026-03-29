@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var tcpConnectError: String?   = nil
     @State private var showingContactCard: Bool   = false
     @State private var showingBackup: Bool        = false
+    @State private var showingIdentity: Bool      = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -31,11 +32,12 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                blockedSection
+                identitySection
                 securitySection
                 globalSection
                 backupSection
-                aboutSection
+                helpSection
+                blockedSection
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -55,10 +57,45 @@ struct SettingsView: View {
             .sheet(isPresented: $showingBackup) {
                 BackupView().environmentObject(appState)
             }
+            .sheet(isPresented: $showingIdentity) {
+                IdentityView().environmentObject(appState)
+            }
         }
     }
 
     // MARK: - Sections
+
+    @ViewBuilder
+    private var identitySection: some View {
+        Section {
+            Button { showingIdentity = true } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 40, height: 40)
+                        Text(String(appState.myUsername?.prefix(1) ?? "?").uppercased())
+                            .font(.headline.bold())
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(appState.myUsername ?? "My Profile")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("Identity, safety number, backup")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+        } header: {
+            Text("Profile")
+        }
+    }
 
     @ViewBuilder
     private var blockedSection: some View {
@@ -330,8 +367,18 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var aboutSection: some View {
+    private var helpSection: some View {
         Section {
+            Link(destination: URL(string: "https://github.com/SophaxTechnologies/SophaxChat")!) {
+                HStack {
+                    Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text("GitHub")
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary)
+                }
+            }
             HStack {
                 Text("Version")
                 Spacer()
@@ -352,7 +399,7 @@ struct SettingsView: View {
                     .font(.caption)
             }
         } header: {
-            Text("About")
+            Text("Help & About")
         }
     }
 

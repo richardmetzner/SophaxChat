@@ -267,6 +267,8 @@ final class AppState: ObservableObject {
 
     // MARK: - Username change
 
+    var myUsername: String? { chatManager?.identity.publicIdentity.username }
+
     func changeUsername(_ newUsername: String) {
         let trimmed = newUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 64 else { return }
