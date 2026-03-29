@@ -96,7 +96,7 @@ struct MessageBubbleView: View {
                             // A's timer unable to clear (B is now in clipboard) so A lingers forever.
                             // Reduced to 10 s for tighter sensitive-data exposure window.
                             MessageBubbleView.clipboardClearTask?.cancel()
-                            let task = DispatchWorkItem { UIPasteboard.general.string = "" }
+                            let task = DispatchWorkItem { UIPasteboard.general.items = [] }
                             MessageBubbleView.clipboardClearTask = task
                             DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: task)
                         } label: {

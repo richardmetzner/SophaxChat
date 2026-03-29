@@ -476,12 +476,10 @@ private struct GroupMessageBubble: View {
                     }
                     Button {
                         UIPasteboard.general.string = message.body
-                        let copied = message.body
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
-                            if UIPasteboard.general.string == copied {
-                                UIPasteboard.general.string = ""
-                            }
-                        }
+                        MessageBubbleView.clipboardClearTask?.cancel()
+                        let task = DispatchWorkItem { UIPasteboard.general.items = [] }
+                        MessageBubbleView.clipboardClearTask = task
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: task)
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
                     }

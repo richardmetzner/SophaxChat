@@ -860,7 +860,9 @@ final class AppState: ObservableObject {
               let username  = String(data: nameData, encoding: .utf8),
               let signingKey = Data(base64Encoded: skB64),
               let dhKey     = Data(base64Encoded: dkB64),
-              signingKey.count == 32, dhKey.count == 32
+              signingKey.count == 32, dhKey.count == 32,
+              (try? Curve25519.Signing.PublicKey(rawRepresentation: signingKey)) != nil,
+              (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: dhKey)) != nil
         else { return }
         // Don't add ourselves
         guard pid != chatManager?.identity.publicIdentity.peerID else { return }
@@ -906,10 +908,13 @@ final class AppState: ObservableObject {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         guard let items = components?.queryItems,
               let peerID = items.first(where: { $0.name == "id" })?.value,
-              let onionHost = items.first(where: { $0.name == "onion" })?.value,
-              !peerID.isEmpty, onionHost.hasSuffix(".onion") else { return }
+              let rawOnionHost = items.first(where: { $0.name == "onion" })?.value,
+              !peerID.isEmpty else { return }
+        let onionHost = rawOnionHost.lowercased()
+        guard onionHost.hasSuffix(".onion") else { return }
         let portStr = items.first(where: { $0.name == "port" })?.value ?? "25519"
-        let address = "\(onionHost):\(portStr)"
+        guard let port = UInt16(portStr), port > 1023 else { return }
+        let address = "\(onionHost):\(port)"
         guard Self.isValidTCPAddress(address) else { return }
         // Ask the user before making any TCP connection — prevents IP disclosure to attacker-
         // controlled addresses embedded in crafted sophaxchat:// links.
