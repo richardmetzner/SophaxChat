@@ -8,6 +8,7 @@ import SophaxChatCore
 
 struct ChatListView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.horizontalSizeClass) private var hSizeClass
     @AppStorage("com.sophax.gettingStartedDismissed") private var gettingStartedDismissed = false
     @State private var showingIdentity    = false
     @State private var showingSettings    = false
@@ -24,166 +25,222 @@ struct ChatListView: View {
     }
 
     var body: some View {
+        Group {
+            if hSizeClass == .regular {
+                splitBody
+            } else {
+                stackBody
+            }
+        }
+
+    // MARK: - iPad split view
+
+    private var splitBody: some View {
+        NavigationSplitView {
+            conversationList
+                .navigationDestination(for: KnownPeer.self) { peer in
+                    ChatView(peer: peer)
+                }
+                .navigationDestination(for: GroupInfo.self) { group in
+                    GroupChatView(group: group)
+                }
+                .navigationDestination(for: String.self) { key in
+                    if key == "ai" { AIAssistantView() }
+                }
+        } detail: {
+            emptyDetailView
+        }
+    }
+
+    private var emptyDetailView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 52))
+                .foregroundStyle(.tertiary)
+            Text("Select a conversation")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - iPhone stack
+
+    private var stackBody: some View {
         NavigationStack {
-            List {
-                // Local AI assistant — always at the top
-                NavigationLink(destination: AIAssistantView()) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.purple.opacity(0.12))
-                                .frame(width: 48, height: 48)
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.purple)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Assistant")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Local · Private · On-device")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, 4)
+            conversationList
+                .navigationDestination(for: KnownPeer.self) { peer in
+                    ChatView(peer: peer)
                 }
+                .navigationDestination(for: GroupInfo.self) { group in
+                    GroupChatView(group: group)
+                }
+                .navigationDestination(for: String.self) { key in
+                    if key == "ai" { AIAssistantView() }
+                }
+        }
+    }
 
-                // Active conversations (peers with messages, not blocked)
-                let conversationPeers = appState.peers.filter {
-                    appState.messages[$0.id] != nil && !appState.isBlocked($0.id)
-                }
-                if !conversationPeers.isEmpty {
-                    Section("Conversations") {
-                        ForEach(conversationPeers) { peer in
-                            NavigationLink(destination: ChatView(peer: peer)) {
-                                ConversationRow(
-                                    peer: peer,
-                                    messages: appState.messages[peer.id] ?? [],
-                                    unreadCount: appState.unreadCounts[peer.id] ?? 0
-                                )
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    appState.deleteConversation(peerID: peer.id)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                Button {
-                                    peerToBlock = peer
-                                } label: {
-                                    Label("Block", systemImage: "nosign")
-                                }
-                                .tint(.orange)
-                            }
-                        }
-                    }
-                }
+    // MARK: - Shared list content
 
-                if !appState.groups.isEmpty {
-                    Section("Groups") {
-                        ForEach(appState.groups) { group in
-                            NavigationLink(destination: GroupChatView(group: group)) {
-                                GroupConversationRow(group: group)
-                            }
-                        }
+    private var conversationList: some View {
+        List {
+            // Local AI assistant — always at the top
+            NavigationLink(value: "ai") {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.purple.opacity(0.12))
+                            .frame(width: 48, height: 48)
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.purple)
                     }
-                }
-
-                // Nearby channels — groups announced by peers the local user hasn't joined
-                let nearbyChannels = Array(appState.discoveredChannels.values)
-                    .sorted { $0.groupName < $1.groupName }
-                if !nearbyChannels.isEmpty {
-                    Section {
-                        ForEach(nearbyChannels, id: \.groupID) { channel in
-                            NearbyChannelRow(channel: channel)
-                        }
-                    } header: {
-                        Text("Nearby Channels")
-                    } footer: {
-                        Text("Groups advertised by nearby peers. Contact the creator to request an invite.")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Assistant")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Local · Private · On-device")
                             .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
+                    Spacer()
                 }
+                .padding(.vertical, 4)
+            }
 
-                // Online peers without conversations yet
-                let newPeers = appState.peers.filter {
-                    appState.messages[$0.id] == nil
-                    && appState.onlinePeers.contains($0.id)
-                    && !appState.isBlocked($0.id)
-                }
-                if !newPeers.isEmpty {
-                    Section("Nearby") {
-                        ForEach(newPeers) { peer in
-                            NavigationLink(destination: ChatView(peer: peer)) {
-                                PeerRow(peer: peer, isOnline: true)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button {
-                                    peerToBlock = peer
-                                } label: {
-                                    Label("Block", systemImage: "nosign")
-                                }
-                                .tint(.orange)
-                            }
+            // Active conversations (peers with messages, not blocked)
+            let conversationPeers = appState.peers.filter {
+                appState.messages[$0.id] != nil && !appState.isBlocked($0.id)
+            }
+            if !conversationPeers.isEmpty {
+                Section("Conversations") {
+                    ForEach(conversationPeers) { peer in
+                        NavigationLink(value: peer) {
+                            ConversationRow(
+                                peer: peer,
+                                messages: appState.messages[peer.id] ?? [],
+                                unreadCount: appState.unreadCounts[peer.id] ?? 0
+                            )
                         }
-                    }
-                }
-
-                if showGettingStartedCard {
-                    Section {
-                        GettingStartedCard(dismiss: { gettingStartedDismissed = true })
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets())
-                    }
-                } else if appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty {
-                    Section {
-                        VStack(spacing: 12) {
-                            Image(systemName: "bubble.left.and.bubble.right")
-                                .font(.system(size: 40))
-                                .foregroundStyle(.tertiary)
-                            Text("No conversations yet")
-                                .font(.subheadline.weight(.medium))
-                            Button {
-                                showingIdentity = true
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                appState.deleteConversation(peerID: peer.id)
                             } label: {
-                                Label("Share My Contact", systemImage: "square.and.arrow.up")
+                                Label("Delete", systemImage: "trash")
                             }
-                            .buttonStyle(.bordered)
-                            .tint(.accentColor)
+                            Button {
+                                peerToBlock = peer
+                            } label: {
+                                Label("Block", systemImage: "nosign")
+                            }
+                            .tint(.orange)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
-                        .listRowBackground(Color.clear)
                     }
                 }
             }
-            .navigationTitle("SophaxChat")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        showingScanner = true
-                    } label: {
-                        Image(systemName: "qrcode.viewfinder")
+
+            if !appState.groups.isEmpty {
+                Section("Groups") {
+                    ForEach(appState.groups) { group in
+                        NavigationLink(value: group) {
+                            GroupConversationRow(group: group)
+                        }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        Button {
-                            showingCreateGroup = true
-                        } label: {
-                            Image(systemName: "person.2.badge.plus")
+            }
+
+            // Nearby channels — groups announced by peers the local user hasn't joined
+            let nearbyChannels = Array(appState.discoveredChannels.values)
+                .sorted { $0.groupName < $1.groupName }
+            if !nearbyChannels.isEmpty {
+                Section {
+                    ForEach(nearbyChannels, id: \.groupID) { channel in
+                        NearbyChannelRow(channel: channel)
+                    }
+                } header: {
+                    Text("Nearby Channels")
+                } footer: {
+                    Text("Groups advertised by nearby peers. Contact the creator to request an invite.")
+                        .font(.caption2)
+                }
+            }
+
+            // Online peers without conversations yet
+            let newPeers = appState.peers.filter {
+                appState.messages[$0.id] == nil
+                && appState.onlinePeers.contains($0.id)
+                && !appState.isBlocked($0.id)
+            }
+            if !newPeers.isEmpty {
+                Section("Nearby") {
+                    ForEach(newPeers) { peer in
+                        NavigationLink(value: peer) {
+                            PeerRow(peer: peer, isOnline: true)
                         }
-                        Button {
-                            showingSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                peerToBlock = peer
+                            } label: {
+                                Label("Block", systemImage: "nosign")
+                            }
+                            .tint(.orange)
                         }
+                    }
+                }
+            }
+
+            if showGettingStartedCard {
+                Section {
+                    GettingStartedCard(dismiss: { gettingStartedDismissed = true })
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+            } else if appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty {
+                Section {
+                    VStack(spacing: 12) {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.tertiary)
+                        Text("No conversations yet")
+                            .font(.subheadline.weight(.medium))
                         Button {
                             showingIdentity = true
                         } label: {
-                            Image(systemName: "person.crop.circle")
+                            Label("Share My Contact", systemImage: "square.and.arrow.up")
                         }
+                        .buttonStyle(.bordered)
+                        .tint(.accentColor)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    .listRowBackground(Color.clear)
+                }
+            }
+        }
+        .navigationTitle("SophaxChat")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    showingScanner = true
+                } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 4) {
+                    Button {
+                        showingCreateGroup = true
+                    } label: {
+                        Image(systemName: "person.2.badge.plus")
+                    }
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    Button {
+                        showingIdentity = true
+                    } label: {
+                        Image(systemName: "person.crop.circle")
                     }
                 }
             }
@@ -506,6 +563,18 @@ struct PeerAvatar: View {
             }
         }
     }
+}
+
+// MARK: - Hashable conformances for NavigationLink(value:)
+
+extension KnownPeer: @retroactive Hashable {
+    public static func == (lhs: KnownPeer, rhs: KnownPeer) -> Bool { lhs.id == rhs.id }
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+extension GroupInfo: @retroactive Hashable {
+    public static func == (lhs: GroupInfo, rhs: GroupInfo) -> Bool { lhs.id == rhs.id }
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 // MARK: - Getting Started Card
