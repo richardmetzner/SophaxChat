@@ -14,11 +14,11 @@
 //   • Prekeys (regenerated on restore)
 //   • Messages and contacts (use BackupManager for those)
 //
-// File format:
-//   "SXID" (4B) | 0x01 (version, 1B) | salt (32B) | nonce+ciphertext+tag (AES-256-GCM)
+// File format (version 2):
+//   "SXID" (4B) | 0x02 (version, 1B) | iterations (4B big-endian UInt32) | salt (32B) | nonce+ciphertext+tag (AES-256-GCM)
 //
-// KDF: PBKDF2-HMAC-SHA256, 600 000 iterations (same as BackupManager).
-// Minimum passphrase: 12 characters (enforced in UI).
+// KDF: PBKDF2-HMAC-SHA256, 600 000 iterations stored in file (minimum 100 000 on import).
+// Minimum passphrase: 16 characters (enforced here and in UI).
 //
 // Security note:
 //   Importing an identity backup replaces current Keychain keys.
@@ -58,18 +58,23 @@ public enum IdentityExportError: Error, LocalizedError {
 
 public final class IdentityExportManager: Sendable {
 
-    private static let magic:          [UInt8] = [0x53, 0x58, 0x49, 0x44]  // "SXID"
-    private static let fileVersion:    UInt8   = 1
-    private static let pbkdf2Iterations        = 600_000
+    private static let magic:              [UInt8] = [0x53, 0x58, 0x49, 0x44]  // "SXID"
+    private static let fileVersion:        UInt8   = 2
+    private static let pbkdf2Iterations            = 600_000
+    private static let minPassphraseLength         = 16
 
     // MARK: - Export
 
     /// Serialize and encrypt the local identity keys + username.
     /// - Parameters:
     ///   - identity: The local `IdentityManager` holding keypair and username.
-    ///   - passphrase: User-supplied passphrase (min 12 chars — enforced in UI).
+    ///   - passphrase: User-supplied passphrase (min 16 chars, enforced here).
     /// - Returns: Raw encrypted blob suitable for file export / share sheet.
     public static func export(identity: IdentityManager, passphrase: String) throws -> Data {
+        guard passphrase.count >= minPassphraseLength else {
+            throw IdentityExportError.exportFailed("Passphrase must be at least \(minPassphraseLength) characters")
+        }
+
         let sigKey = try identity.signingPrivateKeyData()
         let dhKey  = try identity.dhPrivateKeyData()
         let uname  = identity.publicIdentity.username
@@ -80,10 +85,18 @@ public final class IdentityExportManager: Sendable {
             username:          uname,
             exportedAt:        Date()
         )
-        let json   = try JSONEncoder().encode(payload)
-        let salt   = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
-        let key    = try deriveKey(passphrase: passphrase, salt: salt)
-        let sealed = try AES.GCM.seal(json, using: key)
+
+        let salt  = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+        let iters = pbkdf2Iterations
+
+        var jsonData = try JSONEncoder().encode(payload)
+        defer { jsonData.resetBytes(in: jsonData.startIndex..<jsonData.endIndex) }
+
+        var derivedBytes = Data(repeating: 0, count: 32)
+        defer { derivedBytes.resetBytes(in: derivedBytes.startIndex..<derivedBytes.endIndex) }
+        let key = try deriveKey(passphrase: passphrase, salt: salt, iterations: iters, derivedBytes: &derivedBytes)
+
+        let sealed = try AES.GCM.seal(jsonData, using: key)
         guard let combined = sealed.combined else {
             throw IdentityExportError.exportFailed("AES-GCM combined output unavailable")
         }
@@ -91,6 +104,9 @@ public final class IdentityExportManager: Sendable {
         var out = Data()
         out.append(contentsOf: magic)
         out.append(fileVersion)
+        // Store iteration count (big-endian UInt32) so future imports can adapt without
+        // breaking existing backups when the constant is increased.
+        withUnsafeBytes(of: UInt32(iters).bigEndian) { out.append(contentsOf: $0) }
         out.append(salt)
         out.append(combined)   // 12B nonce + ciphertext + 16B GCM tag
         return out
@@ -111,44 +127,52 @@ public final class IdentityExportManager: Sendable {
         passphrase: String,
         keychain:   KeychainManager
     ) throws -> String {
-        let minSize = 4 + 1 + 32 + 12 + 16   // magic + version + salt + nonce + tag
+        // magic(4) + version(1) + iterations(4) + salt(32) + nonce(12) + tag(16) = 69 min
+        let minSize = 4 + 1 + 4 + 32 + 12 + 16
         guard data.count > minSize else { throw IdentityExportError.corruptFile }
         let fileMagic = [UInt8](data[0..<4])
         guard fileMagic == magic else { throw IdentityExportError.corruptFile }
-        // version byte at index 4 — reserved for future migration
-        let salt     = data[5..<37]
-        let combined = data[37...]
+        guard data[4] == fileVersion else { throw IdentityExportError.corruptFile }
 
-        let key = try deriveKey(passphrase: passphrase, salt: Data(salt))
-        let json: Data
-        do {
-            let box = try AES.GCM.SealedBox(combined: Data(combined))
-            json = try AES.GCM.open(box, using: key)
-        } catch {
-            throw IdentityExportError.wrongPassphrase
+        // Read PBKDF2 iteration count from bytes 5–8 (big-endian UInt32)
+        let iterBytes  = data[5..<9]
+        let iterations = iterBytes.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        // Reject suspiciously low iteration counts — protects against downgrade attacks
+        guard iterations >= 100_000 else { throw IdentityExportError.corruptFile }
+
+        let salt     = data[9..<41]
+        let combined = data[41...]
+
+        return try autoreleasepool {
+            var derivedBytes = Data(repeating: 0, count: 32)
+            defer { derivedBytes.resetBytes(in: derivedBytes.startIndex..<derivedBytes.endIndex) }
+            let key = try deriveKey(passphrase: passphrase, salt: Data(salt), iterations: Int(iterations), derivedBytes: &derivedBytes)
+
+            var jsonData: Data
+            do {
+                let box = try AES.GCM.SealedBox(combined: Data(combined))
+                jsonData = try AES.GCM.open(box, using: key)
+            } catch {
+                throw IdentityExportError.wrongPassphrase
+            }
+            defer { jsonData.resetBytes(in: jsonData.startIndex..<jsonData.endIndex) }
+
+            let payload: IdentityPayload
+            do {
+                payload = try JSONDecoder().decode(IdentityPayload.self, from: jsonData)
+            } catch {
+                throw IdentityExportError.corruptFile
+            }
+
+            // Write private keys into Keychain (overwrites existing identity)
+            let signingKey = try Curve25519.Signing.PrivateKey(rawRepresentation: payload.signingKeyPrivate)
+            let dhKey      = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: payload.dhKeyPrivate)
+            try keychain.saveSigningKey(signingKey)
+            try keychain.saveDHIdentityKey(dhKey)
+            try keychain.saveUsername(payload.username)
+
+            return payload.username
         }
-
-        let payload: IdentityPayload
-        do {
-            payload = try JSONDecoder().decode(IdentityPayload.self, from: json)
-        } catch {
-            throw IdentityExportError.corruptFile
-        }
-
-        // Write private keys into Keychain (overwrites existing identity)
-        let signingKey = try Curve25519.Signing.PrivateKey(rawRepresentation: payload.signingKeyPrivate)
-        let dhKey      = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: payload.dhKeyPrivate)
-        try keychain.saveSigningKey(signingKey)
-        try keychain.saveDHIdentityKey(dhKey)
-        try keychain.saveUsername(payload.username)
-
-        // Zero-out sensitive data from memory
-        var mutableSigning = payload.signingKeyPrivate
-        var mutableDH      = payload.dhKeyPrivate
-        mutableSigning.resetBytes(in: mutableSigning.startIndex..<mutableSigning.endIndex)
-        mutableDH.resetBytes(in: mutableDH.startIndex..<mutableDH.endIndex)
-
-        return payload.username
     }
 
     // MARK: - Suggested filename
@@ -161,11 +185,10 @@ public final class IdentityExportManager: Sendable {
 
     // MARK: - Private: Key derivation
 
-    private static func deriveKey(passphrase: String, salt: Data) throws -> SymmetricKey {
+    private static func deriveKey(passphrase: String, salt: Data, iterations: Int, derivedBytes: inout Data) throws -> SymmetricKey {
         let passData = Data(passphrase.utf8)
-        var derived  = Data(repeating: 0, count: 32)
 
-        let status = derived.withUnsafeMutableBytes { derivedPtr in
+        let status = derivedBytes.withUnsafeMutableBytes { derivedPtr in
             salt.withUnsafeBytes { saltPtr in
                 passData.withUnsafeBytes { passPtr in
                     CCKeyDerivationPBKDF(
@@ -173,7 +196,7 @@ public final class IdentityExportManager: Sendable {
                         passPtr.baseAddress, passData.count,
                         saltPtr.baseAddress, salt.count,
                         CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-                        UInt32(pbkdf2Iterations),
+                        UInt32(iterations),
                         derivedPtr.baseAddress, 32
                     )
                 }
@@ -183,6 +206,6 @@ public final class IdentityExportManager: Sendable {
         guard status == kCCSuccess else {
             throw IdentityExportError.exportFailed("PBKDF2 derivation failed (\(status))")
         }
-        return SymmetricKey(data: derived)
+        return SymmetricKey(data: derivedBytes)
     }
 }

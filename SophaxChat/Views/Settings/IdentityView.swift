@@ -158,7 +158,7 @@ struct IdentityView: View {
                         Text("Save your encryption keys so you can restore your identity on a new device.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        SecureField("Passphrase (min 12 chars)", text: $exportPassphrase)
+                        SecureField("Passphrase (min 16 chars)", text: $exportPassphrase)
                             .textContentType(.newPassword)
                             .autocorrectionDisabled()
                         if let err = exportError {
@@ -185,8 +185,8 @@ struct IdentityView: View {
                             Button {
                                 exportError = nil
                                 let trimmed = exportPassphrase.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard trimmed.count >= 12 else {
-                                    exportError = "Passphrase must be at least 12 characters."
+                                guard trimmed.count >= 16 else {
+                                    exportError = "Passphrase must be at least 16 characters."
                                     return
                                 }
                                 do {
@@ -200,7 +200,7 @@ struct IdentityView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
-                            .disabled(exportPassphrase.trimmingCharacters(in: .whitespacesAndNewlines).count < 12)
+                            .disabled(exportPassphrase.trimmingCharacters(in: .whitespacesAndNewlines).count < 16)
                         }
                     }
                     .padding(.vertical, 4)
