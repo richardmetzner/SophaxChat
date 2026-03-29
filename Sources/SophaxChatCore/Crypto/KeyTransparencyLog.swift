@@ -4,9 +4,13 @@
 // Persistent log of observed peer identity keys.
 // Lets the user audit when (and how many times) a contact's keys have changed.
 //
-// Storage: UserDefaults "sophax.keylog" — contains only public keys (no secrets).
+// Storage: UserDefaults "sophax.keylog" + HMAC tag in "sophax.keylog.mac"
+// The HMAC key lives in Keychain (kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+// so an attacker with filesystem access cannot silently delete entries or add
+// fake ones without invalidating the tag — the app clears and re-flags on mismatch.
 
 import Foundation
+import CryptoKit
 
 // MARK: - Entry
 
@@ -30,12 +34,20 @@ public struct KeyLogEntry: Codable, Sendable {
 /// Thread-safety: all mutations must happen on the main thread (owned by ChatManager → AppState).
 public final class KeyTransparencyLog: @unchecked Sendable {
 
-    private static let defaultsKey = "sophax.keylog"
+    private static let defaultsKey    = "sophax.keylog"
+    private static let defaultsMACKey = "sophax.keylog.mac"
 
     /// In-memory cache: peerID → [KeyLogEntry] (chronological).
     private var log: [String: [KeyLogEntry]] = [:]
 
-    public init() {
+    private let macKey: SymmetricKey
+
+    /// Set to true if the stored log failed HMAC verification on last load.
+    /// ChatManager exposes this to AppState so the UI can warn the user.
+    public private(set) var wasLogTampered: Bool = false
+
+    public init(keychain: KeychainManager) {
+        self.macKey = keychain.loadOrCreateLogMACKey()
         load()
     }
 
@@ -85,14 +97,26 @@ public final class KeyTransparencyLog: @unchecked Sendable {
     // MARK: - Persistence
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(log) else { return }
-        UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        guard let jsonData = try? JSONEncoder().encode(log) else { return }
+        // Compute HMAC over the JSON and store tag separately
+        let mac = HMAC<SHA256>.authenticationCode(for: jsonData, using: macKey)
+        UserDefaults.standard.set(jsonData,  forKey: Self.defaultsKey)
+        UserDefaults.standard.set(Data(mac), forKey: Self.defaultsMACKey)
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.defaultsKey),
-              let decoded = try? JSONDecoder().decode([String: [KeyLogEntry]].self, from: data)
-        else { return }
-        log = decoded
+        guard let jsonData = UserDefaults.standard.data(forKey: Self.defaultsKey) else { return }
+
+        // Verify HMAC before accepting any data from UserDefaults
+        if let storedMAC = UserDefaults.standard.data(forKey: Self.defaultsMACKey),
+           HMAC<SHA256>.isValidAuthenticationCode(storedMAC, authenticating: jsonData, using: macKey),
+           let decoded = try? JSONDecoder().decode([String: [KeyLogEntry]].self, from: jsonData) {
+            log = decoded
+        } else {
+            // MAC missing or invalid — treat as tampered; wipe and flag for UI alert
+            UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+            UserDefaults.standard.removeObject(forKey: Self.defaultsMACKey)
+            wasLogTampered = true
+        }
     }
 }

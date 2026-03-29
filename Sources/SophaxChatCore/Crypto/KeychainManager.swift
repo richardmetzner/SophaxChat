@@ -371,6 +371,20 @@ public final class KeychainManager {
         return (Set(ids), names)
     }
 
+    // MARK: - Key Transparency Log MAC Key
+
+    /// Load or create a stable 256-bit HMAC key used to authenticate the key transparency log.
+    /// Stored in Keychain so it is device-local and inaccessible while locked.
+    public func loadOrCreateLogMACKey() -> SymmetricKey {
+        if let data = try? load(account: "keylog.mac"),
+           data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        let key = SymmetricKey(size: .bits256)
+        _ = try? key.withUnsafeBytes { try save(data: Data($0), account: "keylog.mac") }
+        return key
+    }
+
     // MARK: - Existence Check
 
     public func hasIdentity() -> Bool {

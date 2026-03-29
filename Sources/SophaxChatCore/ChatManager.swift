@@ -131,7 +131,7 @@ public final class ChatManager: @unchecked Sendable {
     private let relayRouter:    RelayRouter
 
     /// Persistent log of observed peer identity keys for auditability.
-    public let keyLog = KeyTransparencyLog()
+    public let keyLog: KeyTransparencyLog
 
     // MARK: - State
 
@@ -226,6 +226,7 @@ public final class ChatManager: @unchecked Sendable {
         self.messageStore    = messageStore
         self.attachmentStore = attachmentStore
         self.keychain        = keychain
+        self.keyLog          = KeyTransparencyLog(keychain: keychain)
         self.wireBuilder     = WireMessageBuilder(identity: identity)
         self.relayRouter     = RelayRouter()
         mesh.delegate        = self
