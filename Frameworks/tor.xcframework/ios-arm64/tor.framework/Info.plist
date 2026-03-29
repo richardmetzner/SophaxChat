@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleIdentifier</key>
     <string>org.torproject.tor</string>
+    <key>CFBundleExecutable</key>
+    <string>tor</string>
     <key>CFBundleName</key>
     <string>tor</string>
     <key>CFBundlePackageType</key>

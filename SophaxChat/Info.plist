@@ -40,8 +40,6 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>NFCReaderUsageDescription</key>
-	<string>SophaxChat uses NFC to exchange contact cards — tap phones to add a contact without internet.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_sophax-chat._tcp</string>

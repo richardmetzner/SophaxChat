@@ -44,9 +44,7 @@ struct ChatListView: View {
                 .navigationDestination(for: GroupInfo.self) { group in
                     GroupChatView(group: group)
                 }
-                .navigationDestination(for: String.self) { key in
-                    if key == "ai" { AIAssistantView() }
-                }
+                .navigationDestination(for: AIDestination.self) { _ in AIAssistantView() }
         } detail: {
             emptyDetailView
         }
@@ -74,9 +72,7 @@ struct ChatListView: View {
                 .navigationDestination(for: GroupInfo.self) { group in
                     GroupChatView(group: group)
                 }
-                .navigationDestination(for: String.self) { key in
-                    if key == "ai" { AIAssistantView() }
-                }
+                .navigationDestination(for: AIDestination.self) { _ in AIAssistantView() }
         }
     }
 
@@ -85,7 +81,7 @@ struct ChatListView: View {
     private var conversationList: some View {
         List {
             // Local AI assistant — always at the top
-            NavigationLink(value: "ai") {
+            NavigationLink(value: AIDestination.assistant) {
                 HStack(spacing: 12) {
                     ZStack {
                         Circle()
@@ -564,6 +560,11 @@ struct PeerAvatar: View {
         }
     }
 }
+
+// MARK: - Navigation
+
+/// Type-safe navigation destination for the AI assistant row.
+private enum AIDestination: Hashable { case assistant }
 
 // MARK: - Hashable conformances for NavigationLink(value:)
 

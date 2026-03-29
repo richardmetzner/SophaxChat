@@ -297,7 +297,12 @@ final class AppState: ObservableObject {
     }
 
     func markGroupAsRead(group: GroupInfo) {
-        unreadCounts[group.conversationID] = 0
+        let convID = group.conversationID
+        unreadCounts[convID] = 0
+        let ids = messages[convID]?.map(\.id) ?? []
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+        UIApplication.shared.applicationIconBadgeNumber = totalUnreadCount
     }
 
     func displayName(forPeerID peerID: String) -> String {
@@ -549,43 +554,34 @@ final class AppState: ObservableObject {
     private var totalUnreadCount: Int { unreadCounts.values.reduce(0, +) }
 
     private func scheduleNotification(for message: StoredMessage, fromPeer peerID: String) {
-        let content = UNMutableNotificationContent()
-        if notifShowSender, let peer = peers.first(where: { $0.id == peerID }) {
-            // User opted in to showing sender metadata — use actual name + body.
-            content.title = displayName(for: peer)
-            content.body  = message.body.isEmpty ? "Attachment" : message.body
-        } else {
-            // Default: no metadata visible on lock screen.
-            content.title = "SophaxChat"
-            content.body  = "New message"
-        }
-        content.sound              = .default
-        content.badge              = (totalUnreadCount + 1) as NSNumber
-        // Hash the peerID so the raw hex fingerprint is not exposed in the Notification
-        // Centre grouping — observable on the lock screen without authentication.
-        content.threadIdentifier   = Data(SHA256.hash(data: Data(peerID.utf8))).prefix(8).hexString
-        content.categoryIdentifier = "SOPHAX_MSG"
-        let request = UNNotificationRequest(identifier: message.id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        let (title, body): (String, String) = notifShowSender
+            ? (peers.first(where: { $0.id == peerID }).map { displayName(for: $0) } ?? "SophaxChat",
+               message.body.isEmpty ? "Attachment" : message.body)
+            : ("SophaxChat", "New message")
+        postNotification(id: message.id, title: title, body: body, threadKey: peerID)
     }
 
     private func scheduleGroupNotification(for message: StoredMessage, groupID: String) {
         guard let group = groups.first(where: { $0.id == groupID }) else { return }
+        let (title, body): (String, String) = notifShowSender
+            ? (group.name, message.body.isEmpty ? "Attachment" : message.body)
+            : ("SophaxChat", "New group message")
+        postNotification(id: message.id, title: title, body: body, threadKey: groupID)
+    }
+
+    /// Common notification posting logic. `threadKey` is hashed before use so raw
+    /// peer/group IDs are not exposed in Notification Centre grouping on the lock screen.
+    private func postNotification(id: String, title: String, body: String, threadKey: String) {
         let content = UNMutableNotificationContent()
-        if notifShowSender {
-            content.title = group.name
-            content.body  = message.body.isEmpty ? "Attachment" : message.body
-        } else {
-            // Do NOT include group name, sender name, or message body — lock screen privacy.
-            content.title = "SophaxChat"
-            content.body  = "New group message"
-        }
+        content.title              = title
+        content.body               = body
         content.sound              = .default
         content.badge              = (totalUnreadCount + 1) as NSNumber
-        content.threadIdentifier   = Data(SHA256.hash(data: Data(groupID.utf8))).prefix(8).hexString
+        content.threadIdentifier   = Data(SHA256.hash(data: Data(threadKey.utf8))).prefix(8).hexString
         content.categoryIdentifier = "SOPHAX_MSG"
-        let request = UNNotificationRequest(identifier: message.id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        )
     }
 
     // MARK: - Contact aliases
@@ -707,36 +703,24 @@ final class AppState: ObservableObject {
     /// Permanently delete all identity keys, messages, attachments, and settings.
     /// The app returns to OnboardingView because `isSetupComplete` is reset to false.
     func wipeAccount() {
-        // 1. Wipe all persistent data via ChatManager
         try? chatManager?.wipeAllData()
         chatManager = nil
 
-        // 2. All com.sophax.* UserDefaults keys (TCP settings, peers, groups, key log, etc.)
         let ud = UserDefaults.standard
         for key in ud.dictionaryRepresentation().keys where key.hasPrefix("com.sophax.") || key.hasPrefix("sophax.") {
             ud.removeObject(forKey: key)
         }
 
-        // 3. Clear in-memory published state
-        peers           = []
-        messages        = [:]
-        groups          = []
-        peerAvatars     = [:]
-        onlinePeers     = []
-        unreadCounts    = [:]
-        typingPeers     = []
-        keyChangeAlerts = []
-        myAvatarData    = nil
-        blockedPeers    = []
+        clearInMemoryState()
+        blockedPeers     = []
         blockedPeerNames = [:]
-        peerAliases     = [:]
+        peerAliases      = [:]
+        myAvatarData     = nil
 
-        // 4. Clear all notifications and app badge
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         UIApplication.shared.applicationIconBadgeNumber = 0
 
-        // 5. Return to onboarding
         isSetupComplete = false
     }
 
@@ -745,24 +729,25 @@ final class AppState: ObservableObject {
         chatManager?.stop()
         chatManager = nil          // release all session state and key material from RAM
 
-        // Clear sensitive @Published properties so an attacker with physical device
-        // access (or a memory-reading exploit) cannot read plaintext messages or peer
-        // metadata while the app is locked. Data is reloaded from encrypted storage
-        // by setupChatManager() after the user authenticates successfully.
-        peers        = []
-        messages     = [:]
-        groups       = []
-        peerAvatars  = [:]
-        onlinePeers  = []
-        unreadCounts = [:]
-        typingPeers  = []
-        keyChangeAlerts = []
+        // Clear sensitive published state so plaintext is not readable from RAM while locked.
+        // Data is reloaded from encrypted storage after successful authentication.
+        clearInMemoryState()
 
         isAppLocked = true
-        pendingDeepLink = nil      // dismiss any pending deep-link alert before locking
-        // Remove delivered notifications from Notification Center — they remain readable on the
-        // lock screen / notification shade even when the app is locked.
+        pendingDeepLink = nil
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+    }
+
+    /// Zero out all in-memory conversation/peer state. Called on both lock and wipe.
+    private func clearInMemoryState() {
+        peers           = []
+        messages        = [:]
+        groups          = []
+        peerAvatars     = [:]
+        onlinePeers     = []
+        unreadCounts    = [:]
+        typingPeers     = []
+        keyChangeAlerts = []
     }
 
     func tryUnlock() {

@@ -58,7 +58,6 @@ targets:
         NSMicrophoneUsageDescription: "SophaxChat uses the microphone to record encrypted voice messages."
         NSPhotoLibraryUsageDescription: "SophaxChat accesses your photo library to send images in encrypted messages."
         NSLocalNetworkUsageDescription: "SophaxChat uses the local network to discover nearby users and send encrypted messages without internet."
-        NFCReaderUsageDescription: "SophaxChat uses NFC to exchange contact cards — tap phones to add a contact without internet."
         NSBonjourServices:
           - "_sophax-chat._tcp"
         UIBackgroundModes:
