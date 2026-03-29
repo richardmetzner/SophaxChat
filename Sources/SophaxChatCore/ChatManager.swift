@@ -274,6 +274,17 @@ public final class ChatManager: @unchecked Sendable {
         persistQueue()
     }
 
+    /// Permanently wipe all data — keys, messages, attachments.
+    /// Call `stop()` before this. After returning, the caller should release this instance.
+    public func wipeAllData() throws {
+        stop()
+        try keychain.wipeAll()
+        try messageStore.wipeAll()
+        try attachmentStore.wipeAll()
+        // KeyTransparencyLog is stored in UserDefaults — cleared by the caller (AppState)
+        // along with all other com.sophax.* UserDefaults keys.
+    }
+
     /// Attach a TCP transport at runtime and start it immediately.
     public func startTCP(_ transport: TCPTransport) {
         tcpTransport?.stop()
@@ -2075,10 +2086,11 @@ extension ChatManager: MeshManagerDelegate {
 
     public func meshManager(_ manager: MeshManager, didConnectToPeer mcPeerID: String) {
         // Send our PreKeyBundle immediately so the peer can initiate X3DH.
+        // Include tcpAddress so the peer can also reach us over Tor/TCP.
         // Called on the main thread by MeshManager — all operations here are synchronous
         // and non-blocking (pure in-memory crypto + MCSession.send which is thread-safe).
         do {
-            let bundle = try preKeys.generateBundle()
+            let bundle = try preKeys.generateBundle(tcpAddress: myTCPAddress)
             let hello  = HelloMessage(bundle: bundle)
             let wire   = try wireBuilder.build(.hello, payload: hello)
             try mesh.send(wire, toPeerID: mcPeerID)
@@ -2438,6 +2450,12 @@ extension ChatManager: TCPTransportDelegate {
         knownPeers[peerID]?.tcpAddress       = address
         knownPeers[peerID]?.isOnline          = true
         knownPeers[peerID]?.isDirectlyConnected = true
+        // Send our Hello so the remote peer gets our current bundle (incl. avatar).
+        // TCP connections do not go through the mesh Hello exchange, so we do it here.
+        if let bundle = try? preKeys.generateBundle(tcpAddress: myTCPAddress),
+           let wire   = try? wireBuilder.build(.hello, payload: HelloMessage(bundle: bundle)) {
+            try? transport.send(wire, toPeerID: peerID)
+        }
         drainQueue(forPeerID: peerID)
         if let peer = knownPeers[peerID] {
             let p = peer
