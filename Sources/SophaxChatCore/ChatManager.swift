@@ -574,38 +574,24 @@ public final class ChatManager: @unchecked Sendable {
             self.delegate?.chatManager(self, didReceiveGroupMessage: stored, inGroup: groupID)
         }
 
-        // Encrypt — prefer v2 (Sender Key ratchet), fall back to v1 (shared key)
-        let ciphertext:         Data
-        let senderKeyIteration: UInt32?
-
-        if var myState = keychain.loadMySenderKeyState(groupID: groupID) {
-            // ── v2: Sender Key ratchet ────────────────────────────────────────
-            let (messageKey, nextCK) = senderKeyRatchetStep(myState.chainKey)
-            let iteration            = myState.iteration
-            myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1)
-            keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
-            guard let bodyData = body.data(using: .utf8),
-                  let sealed   = try? ChaChaPoly.seal(bodyData, using: messageKey) else {
-                fail(SophaxError.encryptionFailed("Group message body encryption failed"))
-                return
-            }
-            ciphertext         = sealed.combined
-            senderKeyIteration = iteration
-
-        } else if let groupKey = try? keychain.loadGroupKey(groupID: groupID) {
-            // ── v1: shared key fallback ───────────────────────────────────────
-            guard let bodyData = body.data(using: .utf8),
-                  let sealed   = try? ChaChaPoly.seal(bodyData, using: groupKey) else {
-                fail(SophaxError.encryptionFailed("Group message body encryption failed"))
-                return
-            }
-            ciphertext         = sealed.combined
-            senderKeyIteration = nil
-
-        } else {
-            fail(SophaxError.encryptionFailed("No group key found — group may have been left or key material deleted"))
+        // Encrypt with v2 Sender Key ratchet
+        guard var myState = keychain.loadMySenderKeyState(groupID: groupID) else {
+            fail(SophaxError.encryptionFailed("No sender key found — group may have been left or key material deleted"))
             return
         }
+        let (messageKey, nextCK) = senderKeyRatchetStep(myState.chainKey)
+        let iteration            = myState.iteration
+        let newCount             = (myState.messageCount ?? 0) + 1
+        myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
+                                 messageCount: newCount, createdAt: myState.createdAt ?? Date())
+        keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+        guard let bodyData = body.data(using: .utf8),
+              let sealed   = try? ChaChaPoly.seal(bodyData, using: messageKey) else {
+            fail(SophaxError.encryptionFailed("Group message body encryption failed"))
+            return
+        }
+        let ciphertext         = sealed.combined
+        let senderKeyIteration = iteration
 
         let wireMsg = GroupWireMessage(
             groupID:            groupID,
@@ -700,44 +686,27 @@ public final class ChatManager: @unchecked Sendable {
             self.delegate?.chatManager(self, didReceiveGroupMessage: stored, inGroup: groupID)
         }
 
-        // Encrypt body + attachment — prefer v2 (Sender Keys), fall back to v1 (shared key)
-        // Both body and attachment use the SAME message key (one chain step = one message).
-        let bodyCiphertext:     Data
-        let attCiphertext:      Data
-        let senderKeyIteration: UInt32?
-
-        if var myState = keychain.loadMySenderKeyState(groupID: groupID) {
-            // ── v2: Sender Key ratchet ────────────────────────────────────────
-            let (messageKey, nextCK) = senderKeyRatchetStep(myState.chainKey)
-            let iteration            = myState.iteration
-            myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1)
-            keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
-            guard let bodyData   = displayBody.data(using: .utf8),
-                  let sealedBody = try? ChaChaPoly.seal(bodyData, using: messageKey),
-                  let sealedAtt  = try? ChaChaPoly.seal(data,     using: messageKey) else {
-                fail(SophaxError.encryptionFailed("Group attachment encryption failed"))
-                return
-            }
-            bodyCiphertext     = sealedBody.combined
-            attCiphertext      = sealedAtt.combined
-            senderKeyIteration = iteration
-
-        } else if let groupKey = try? keychain.loadGroupKey(groupID: groupID) {
-            // ── v1: shared key fallback ───────────────────────────────────────
-            guard let bodyData   = displayBody.data(using: .utf8),
-                  let sealedBody = try? ChaChaPoly.seal(bodyData, using: groupKey),
-                  let sealedAtt  = try? ChaChaPoly.seal(data,     using: groupKey) else {
-                fail(SophaxError.encryptionFailed("Group attachment encryption failed"))
-                return
-            }
-            bodyCiphertext     = sealedBody.combined
-            attCiphertext      = sealedAtt.combined
-            senderKeyIteration = nil
-
-        } else {
-            fail(SophaxError.encryptionFailed("No group key found — group may have been left or key material deleted"))
+        // Encrypt body + attachment with v2 Sender Key ratchet.
+        // Both use the SAME message key (one chain step = one message).
+        guard var myState = keychain.loadMySenderKeyState(groupID: groupID) else {
+            fail(SophaxError.encryptionFailed("No sender key found — group may have been left or key material deleted"))
             return
         }
+        let (messageKey, nextCK) = senderKeyRatchetStep(myState.chainKey)
+        let iteration            = myState.iteration
+        let newCount             = (myState.messageCount ?? 0) + 1
+        myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
+                                 messageCount: newCount, createdAt: myState.createdAt ?? Date())
+        keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+        guard let bodyData   = displayBody.data(using: .utf8),
+              let sealedBody = try? ChaChaPoly.seal(bodyData, using: messageKey),
+              let sealedAtt  = try? ChaChaPoly.seal(data,     using: messageKey) else {
+            fail(SophaxError.encryptionFailed("Group attachment encryption failed"))
+            return
+        }
+        let bodyCiphertext     = sealedBody.combined
+        let attCiphertext      = sealedAtt.combined
+        let senderKeyIteration = iteration
 
         let wireMsg = GroupWireMessage(
             groupID:              groupID,
@@ -1653,40 +1622,34 @@ public final class ChatManager: @unchecked Sendable {
               invite.memberIDs.allSatisfy({ $0.count <= 64 }) else { return }
         let myID = identity.publicIdentity.peerID
 
-        if let senderChainKey = invite.senderChainKey {
-            // ── v2: Sender Keys ───────────────────────────────────────────────
-            // Store creator's sender key state
-            var states = keychain.loadPeerSenderKeyStates(groupID: invite.groupID)
-            states[invite.creatorID] = SenderKeyState(
-                chainKey:  senderChainKey,
-                iteration: invite.senderIteration ?? 0
-            )
-            keychainSave("peerSenderKeys:\(invite.groupID)") { try keychain.savePeerSenderKeyStates(states, groupID: invite.groupID) }
+        // Store creator's sender key state
+        var states = keychain.loadPeerSenderKeyStates(groupID: invite.groupID)
+        states[invite.creatorID] = SenderKeyState(
+            chainKey:   invite.senderChainKey,
+            iteration:  invite.senderIteration,
+            receivedAt: Date()
+        )
+        keychainSave("peerSenderKeys:\(invite.groupID)") { try keychain.savePeerSenderKeyStates(states, groupID: invite.groupID) }
 
-            // Generate my own sender key and store it
-            let tmpKey       = SymmetricKey(size: .bits256)
-            let chainKeyData = tmpKey.withUnsafeBytes { Data($0) }
-            let myState      = SenderKeyState(chainKey: chainKeyData, iteration: 0)
-            keychainSave("mySenderKey:\(invite.groupID)") { try keychain.saveMySenderKeyState(myState, groupID: invite.groupID) }
+        // Generate my own sender key and store it
+        let tmpKey       = SymmetricKey(size: .bits256)
+        let chainKeyData = tmpKey.withUnsafeBytes { Data($0) }
+        let myState      = SenderKeyState(chainKey: chainKeyData, iteration: 0,
+                                          messageCount: 0, createdAt: Date())
+        keychainSave("mySenderKey:\(invite.groupID)") { try keychain.saveMySenderKeyState(myState, groupID: invite.groupID) }
 
-            // Distribute my sender key to all other members via DR
-            let skd = SenderKeyDistributionMessage(groupID: invite.groupID, chainKey: chainKeyData)
-            if let skdData = try? JSONEncoder().encode(skd) {
-                for memberID in invite.memberIDs where memberID != myID {
-                    let content = MessageContent(body: "", type: .senderKeyDistribution,
-                                                 senderKeyData: skdData)
-                    if let wire = try? buildOutboundWire(content: content,
-                                                         messageID: UUID().uuidString,
-                                                         toPeerID: memberID) {
-                        try? sendOrQueue(wire, toPeerID: memberID, messageID: UUID().uuidString)
-                    }
+        // Distribute my sender key to all other members via DR
+        let skd = SenderKeyDistributionMessage(groupID: invite.groupID, chainKey: chainKeyData)
+        if let skdData = try? JSONEncoder().encode(skd) {
+            for memberID in invite.memberIDs where memberID != myID {
+                let content = MessageContent(body: "", type: .senderKeyDistribution,
+                                             senderKeyData: skdData)
+                if let wire = try? buildOutboundWire(content: content,
+                                                     messageID: UUID().uuidString,
+                                                     toPeerID: memberID) {
+                    try? sendOrQueue(wire, toPeerID: memberID, messageID: UUID().uuidString)
                 }
             }
-
-        } else if let keyData = invite.groupKeyData {
-            // ── v1: shared key fallback ───────────────────────────────────────
-            let groupKey = SymmetricKey(data: keyData)
-            keychainSave("groupKey:\(invite.groupID)") { try keychain.saveGroupKey(groupKey, groupID: invite.groupID) }
         }
 
         let dedupedMembers = Array(Set(invite.memberIDs))
@@ -1724,10 +1687,11 @@ public final class ChatManager: @unchecked Sendable {
         let body:            String
         var attachDecryptKey: SymmetricKey? = nil
 
-        if let iteration = payload.senderKeyIteration {
-            // ── v2: Sender Key ratchet ────────────────────────────────────────
-            let MAX_SKIP: UInt32 = 100
-            let cacheKey = "\(payload.groupID)/\(payload.senderPeerID)"
+        guard let iteration = payload.senderKeyIteration else { return }
+
+        // ── Sender Key ratchet ────────────────────────────────────────────
+        let MAX_SKIP: UInt32 = 100
+        let cacheKey = "\(payload.groupID)/\(payload.senderPeerID)"
 
             // ── Fast path: out-of-order delivery via skipped-key cache ─────────
             if let cachedKey = skippedGroupMessageKeys[cacheKey]?[iteration] {
@@ -1780,19 +1744,10 @@ public final class ChatManager: @unchecked Sendable {
                 body             = decoded
                 attachDecryptKey = messageKey
 
-                states[payload.senderPeerID] = SenderKeyState(chainKey: nextCK, iteration: iteration + 1)
+                states[payload.senderPeerID] = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
+                                                              receivedAt: states[payload.senderPeerID]?.receivedAt)
                 keychainSave("peerSenderKeys:\(payload.groupID)") { try keychain.savePeerSenderKeyStates(states, groupID: payload.groupID) }
             }
-
-        } else {
-            // ── v1: shared key fallback ───────────────────────────────────────
-            guard let groupKey  = try? keychain.loadGroupKey(groupID: payload.groupID) else { return }
-            guard let sealedBox = try? ChaChaPoly.SealedBox(combined: payload.ciphertext),
-                  let bodyData  = try? ChaChaPoly.open(sealedBox, using: groupKey),
-                  let decoded   = String(data: bodyData, encoding: .utf8) else { return }
-            body             = decoded
-            attachDecryptKey = groupKey
-        }
 
         // Decrypt attachment if present
         var attachmentID: String? = nil
@@ -2331,7 +2286,8 @@ extension ChatManager: MeshManagerDelegate {
         // This ensures a newly joined member converges to having all members' keys
         // without requiring a separate Welcome message flow.
         let isNewSender = states[peerID] == nil
-        states[peerID] = SenderKeyState(chainKey: skd.chainKey, iteration: skd.iteration)
+        states[peerID] = SenderKeyState(chainKey: skd.chainKey, iteration: skd.iteration,
+                                        receivedAt: Date())
         keychainSave("peerSenderKeys:\(skd.groupID)") { try keychain.savePeerSenderKeyStates(states, groupID: skd.groupID) }
 
         if isNewSender, sessions[peerID] != nil,

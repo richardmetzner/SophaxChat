@@ -3,10 +3,9 @@
 //
 // Types for end-to-end encrypted group messaging.
 //
-// Crypto evolution:
-//   v1 (legacy): shared ChaChaPoly symmetric key, distributed via DR channel.
-//   v2 (current): Signal-style Sender Keys — each member has their own KDF chain,
-//                 providing per-message forward secrecy and break-in recovery.
+// Crypto: Signal-style Sender Keys — each member has their own KDF chain,
+//         providing per-message forward secrecy and break-in recovery.
+//         (v1 shared-key path removed; all groups use v2 only.)
 
 import Foundation
 
@@ -43,39 +42,17 @@ public struct GroupInfo: Codable, Identifiable, Sendable {
 /// Embedded in a Double Ratchet–encrypted MessageContent (type = .groupInvite)
 /// so only the intended recipient can read the group credentials.
 ///
-/// v1 (legacy): groupKeyData contains a raw 32-byte ChaChaPoly shared key.
-/// v2 (current): senderChainKey + senderIteration carry the creator's Sender Key state;
-///               groupKeyData is nil.
+/// v2 (only): senderChainKey + senderIteration carry the creator's Sender Key state.
 public struct GroupInvitePayload: Codable, Sendable {
     public let groupID:         String
     public let groupName:       String
     public let memberIDs:       [String]
     public let creatorID:       String
-    /// v1 shared key — nil when using v2 Sender Keys.
-    public let groupKeyData:    Data?
-    /// v2: creator's KDF chain key seed (32 bytes, HMAC-SHA256 based).
-    public let senderChainKey:  Data?
-    /// v2: chain iteration at time of invite (0 for a fresh group key).
-    public let senderIteration: UInt32?
+    /// Creator's KDF chain key seed (32 bytes, HMAC-SHA256 based).
+    public let senderChainKey:  Data
+    /// Chain iteration at time of invite (0 for a fresh group).
+    public let senderIteration: UInt32
 
-    /// v1 initialiser (backward compat — used when receiving old-format invites).
-    public init(
-        groupID:      String,
-        groupName:    String,
-        memberIDs:    [String],
-        creatorID:    String,
-        groupKeyData: Data
-    ) {
-        self.groupID         = groupID
-        self.groupName       = groupName
-        self.memberIDs       = memberIDs
-        self.creatorID       = creatorID
-        self.groupKeyData    = groupKeyData
-        self.senderChainKey  = nil
-        self.senderIteration = nil
-    }
-
-    /// v2 initialiser — Sender Keys.
     public init(
         groupID:         String,
         groupName:       String,
@@ -88,7 +65,6 @@ public struct GroupInvitePayload: Codable, Sendable {
         self.groupName       = groupName
         self.memberIDs       = memberIDs
         self.creatorID       = creatorID
-        self.groupKeyData    = nil
         self.senderChainKey  = senderChainKey
         self.senderIteration = senderIteration
     }
@@ -108,13 +84,28 @@ public struct GroupInvitePayload: Codable, Sendable {
 /// skipped message keys are discarded (those messages become unrecoverable).
 public struct SenderKeyState: Codable, Sendable {
     /// Current 32-byte KDF chain key.
-    public let chainKey:  Data
+    public let chainKey:     Data
     /// Number of steps already consumed from this chain.
-    public let iteration: UInt32
+    public let iteration:    UInt32
+    /// Messages sent since the last rotation (own state only; nil = not yet tracked).
+    public let messageCount: UInt32?
+    /// Wall-clock time this chain was first generated (own state only).
+    public let createdAt:    Date?
+    /// When we stored this peer's key (peer state only; nil on own state).
+    public let receivedAt:   Date?
 
-    public init(chainKey: Data, iteration: UInt32 = 0) {
-        self.chainKey  = chainKey
-        self.iteration = iteration
+    public init(
+        chainKey:     Data,
+        iteration:    UInt32 = 0,
+        messageCount: UInt32? = nil,
+        createdAt:    Date?   = nil,
+        receivedAt:   Date?   = nil
+    ) {
+        self.chainKey     = chainKey
+        self.iteration    = iteration
+        self.messageCount = messageCount
+        self.createdAt    = createdAt
+        self.receivedAt   = receivedAt
     }
 }
 

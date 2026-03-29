@@ -212,7 +212,7 @@ public final class KeychainManager {
         return (Int(c), locked)
     }
 
-    // MARK: - Group Keys
+    // MARK: - Group Keys (v1 legacy — only used for cleanup during leave/wipe)
 
     public func saveGroupKey(_ key: SymmetricKey, groupID: String) throws {
         let data = key.withUnsafeBytes { Data($0) }
