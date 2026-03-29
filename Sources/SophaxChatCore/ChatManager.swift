@@ -1645,8 +1645,12 @@ public final class ChatManager: @unchecked Sendable {
         // The creatorID inside the payload must match the verified DR sender — prevents a peer
         // with an established session from forwarding a fabricated invite on someone else's behalf.
         guard invite.creatorID == peerID else { return }
-        // Cap member list to prevent memory DoS from a malformed or malicious invite
-        guard invite.memberIDs.count <= 100 else { return }
+        // Cap member list to prevent memory DoS from a malformed or malicious invite;
+        // also validate individual ID lengths to prevent oversized string allocations.
+        guard invite.memberIDs.count <= 100,
+              invite.groupID.count   <= 64,
+              invite.creatorID.count <= 64,
+              invite.memberIDs.allSatisfy({ $0.count <= 64 }) else { return }
         let myID = identity.publicIdentity.peerID
 
         if let senderChainKey = invite.senderChainKey {
@@ -1700,6 +1704,12 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     private func handleGroupMessage(_ payload: GroupWireMessage) {
+        // Validate field lengths before any further processing to prevent large
+        // in-memory allocations from malicious peers (e.g. 10 MB senderUsername).
+        guard payload.senderPeerID.count  <= 64,
+              payload.senderUsername.count <= 64,
+              payload.groupID.count        <= 64 else { return }
+
         // Reject messages from peers who are not in this group.
         // Guard (not if-let) so that an unknown groupID is also rejected — prevents
         // injection into a group whose member list hasn't been cached yet.

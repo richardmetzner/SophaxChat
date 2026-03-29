@@ -305,6 +305,17 @@ public final class TCPTransport: @unchecked Sendable {
     private func didReceive(data: Data, from connection: NWConnection) {
         let oid = ObjectIdentifier(connection)
         lock.lock()
+        // Reject data that would push the buffer past the frame size cap before appending.
+        // Without this check a slow sender can fill 4 MiB in memory byte-by-byte without
+        // ever triggering the frame-size guard inside the parsing loop.
+        if (receiveBuffers[oid]?.count ?? 0) + data.count > TCPTransport.maxFrameSize {
+            lock.unlock()
+            connection.cancel()
+            lock.lock()
+            receiveBuffers.removeValue(forKey: oid)
+            lock.unlock()
+            return
+        }
         receiveBuffers[oid, default: Data()].append(data)
         var buf = receiveBuffers[oid] ?? Data()
         var frames: [Data] = []
