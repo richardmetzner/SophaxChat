@@ -85,6 +85,16 @@ public final class AttachmentStore: @unchecked Sendable {
         try? FileManager.default.removeItem(at: fileURL(for: id))
     }
 
+    /// Delete every attachment file in the store. Used for full account wipe.
+    public func wipeAll() throws {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: baseURL, includingPropertiesForKeys: nil
+        )) ?? []
+        for file in files {
+            try FileManager.default.removeItem(at: file)
+        }
+    }
+
     public func exists(id: String) -> Bool {
         FileManager.default.fileExists(atPath: fileURL(for: id).path)
     }

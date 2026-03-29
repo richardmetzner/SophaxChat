@@ -679,6 +679,44 @@ final class AppState: ObservableObject {
         set { try? keychain.saveAppLockEnabled(newValue) }
     }
 
+    // MARK: - Account wipe
+
+    /// Permanently delete all identity keys, messages, attachments, and settings.
+    /// The app returns to OnboardingView because `isSetupComplete` is reset to false.
+    func wipeAccount() {
+        // 1. Wipe all persistent data via ChatManager
+        try? chatManager?.wipeAllData()
+        chatManager = nil
+
+        // 2. All com.sophax.* UserDefaults keys (TCP settings, peers, groups, key log, etc.)
+        let ud = UserDefaults.standard
+        for key in ud.dictionaryRepresentation().keys where key.hasPrefix("com.sophax.") || key.hasPrefix("sophax.") {
+            ud.removeObject(forKey: key)
+        }
+
+        // 3. Clear in-memory published state
+        peers           = []
+        messages        = [:]
+        groups          = []
+        peerAvatars     = [:]
+        onlinePeers     = []
+        unreadCounts    = [:]
+        typingPeers     = []
+        keyChangeAlerts = []
+        myAvatarData    = nil
+        blockedPeers    = []
+        blockedPeerNames = [:]
+        peerAliases     = [:]
+
+        // 4. Clear all notifications and app badge
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        UIApplication.shared.applicationIconBadgeNumber = 0
+
+        // 5. Return to onboarding
+        isSetupComplete = false
+    }
+
     func lockApp() {
         guard appLockEnabled else { return }
         chatManager?.stop()

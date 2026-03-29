@@ -17,6 +17,8 @@ struct SettingsView: View {
     @State private var showingContactCard: Bool   = false
     @State private var showingBackup: Bool        = false
     @State private var showingIdentity: Bool      = false
+    @State private var showingWipeConfirm: Bool   = false
+    @State private var showingWipeConfirm2: Bool  = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -38,6 +40,7 @@ struct SettingsView: View {
                 backupSection
                 helpSection
                 blockedSection
+                dangerSection
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -59,6 +62,31 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingIdentity) {
                 IdentityView().environmentObject(appState)
+            }
+            .confirmationDialog(
+                "Delete account and all data?",
+                isPresented: $showingWipeConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Yes, delete everything", role: .destructive) {
+                    showingWipeConfirm2 = true
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will permanently erase your identity, all messages, and all attachments. There is no undo.")
+            }
+            .confirmationDialog(
+                "Are you absolutely sure?",
+                isPresented: $showingWipeConfirm2,
+                titleVisibility: .visible
+            ) {
+                Button("Delete everything now", role: .destructive) {
+                    dismiss()
+                    appState.wipeAccount()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your identity keys will be destroyed. You cannot recover your account after this.")
             }
         }
     }
@@ -400,6 +428,21 @@ struct SettingsView: View {
             }
         } header: {
             Text("Help & About")
+        }
+    }
+
+    @ViewBuilder
+    private var dangerSection: some View {
+        Section {
+            Button(role: .destructive) {
+                showingWipeConfirm = true
+            } label: {
+                Label("Delete Account & All Data", systemImage: "trash.fill")
+            }
+        } header: {
+            Text("Danger Zone")
+        } footer: {
+            Text("Permanently deletes your identity keys, all messages, and attachments. This cannot be undone.")
         }
     }
 
