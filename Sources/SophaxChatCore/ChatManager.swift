@@ -168,9 +168,17 @@ public final class ChatManager: @unchecked Sendable {
     private var skippedGroupMessageKeys: [String: [UInt32: SymmetricKey]] = [:]
     /// Parallel timestamp map for Keychain persistence (entry age → eviction after 7 days).
     private var skippedGroupMessageKeyDates: [String: [UInt32: Date]] = [:]
-    private static let maxSkippedKeysCacheSize          = 200
-    private static let senderKeyRotationMessageLimit: UInt32     = 500
-    private static let senderKeyRotationAgeLimit: TimeInterval   = 7 * 24 * 3600
+    private static let maxSkippedKeysCacheSize               = 200
+    private static let senderKeyRotationMessageLimit: UInt32 = 500
+    private static let senderKeyRotationAgeLimit: TimeInterval = 7 * 24 * 3600
+    private static let senderKeyRequestCooldown: TimeInterval  = 60
+    private static let senderKeyStaleThreshold: TimeInterval   = 30 * 24 * 3600
+
+    /// Last time we sent a senderKeyRequest for a given "groupID/peerID".
+    /// Prevents request spam from peers who repeatedly send undecryptable messages.
+    private var lastSenderKeyRequestSent: [String: Date] = [:]
+    /// Last time we responded to a senderKeyRequest from a given "groupID/peerID".
+    private var lastSenderKeyRequestResponded: [String: Date] = [:]
 
     /// Known group membership keyed by groupID. Populated on create/join, cleared on leave.
     /// Used to reject messages from peers not in the group.
@@ -1717,7 +1725,16 @@ public final class ChatManager: @unchecked Sendable {
                 // ── Normal path: advance the chain ───────────────────────────
                 var states = keychain.loadPeerSenderKeyStates(groupID: payload.groupID)
                 guard var senderState = states[payload.senderPeerID] else {
-                    return   // No sender key yet — distribution may arrive later
+                    // No key yet — request one and drop; it may arrive shortly after
+                    sendSenderKeyRequest(groupID: payload.groupID, fromPeer: payload.senderPeerID)
+                    return
+                }
+
+                // If the stored key is stale (>30 days old), request a fresh one.
+                // Still attempt decryption in case it works — dropping is worse than trying.
+                if let received = senderState.receivedAt,
+                   Date().timeIntervalSince(received) > Self.senderKeyStaleThreshold {
+                    sendSenderKeyRequest(groupID: payload.groupID, fromPeer: payload.senderPeerID)
                 }
                 guard iteration >= senderState.iteration,
                       iteration - senderState.iteration <= MAX_SKIP else { return }
@@ -1937,6 +1954,11 @@ public final class ChatManager: @unchecked Sendable {
         case .groupReadReceipt:
             let payload = try wireBuilder.decodePayload(GroupReadReceiptMessage.self, from: message)
             handleGroupReadReceipt(payload, fromPeer: message.senderID)
+
+        case .senderKeyRequest:
+            if let payload = try? wireBuilder.decodePayload(SenderKeyRequestMessage.self, from: message) {
+                handleSenderKeyRequest(payload, fromPeer: message.senderID)
+            }
 
         case .storeAndForward, .storeAndForwardDelivery:
             break   // S&F is direct-only; relay nodes must not forward these
@@ -2185,6 +2207,11 @@ extension ChatManager: MeshManagerDelegate {
                 let payload = try wireBuilder.decodePayload(GroupReadReceiptMessage.self, from: message)
                 handleGroupReadReceipt(payload, fromPeer: message.senderID)
 
+            case .senderKeyRequest:
+                if let payload = try? wireBuilder.decodePayload(SenderKeyRequestMessage.self, from: message) {
+                    handleSenderKeyRequest(payload, fromPeer: message.senderID)
+                }
+
             case .storeAndForward:
                 let payload = try wireBuilder.decodePayload(StoreAndForwardRequest.self, from: message)
                 handleStoreAndForward(payload)
@@ -2310,6 +2337,50 @@ extension ChatManager: MeshManagerDelegate {
                     try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
                 }
             }
+        }
+    }
+
+    // MARK: - Private: Sender key request
+
+    /// Request a peer to re-send their SenderKeyDistributionMessage.
+    /// Rate-limited to once per 60 s per (group, peer) pair.
+    private func sendSenderKeyRequest(groupID: String, fromPeer peerID: String) {
+        let key = "\(groupID)/\(peerID)"
+        if let last = lastSenderKeyRequestSent[key],
+           Date().timeIntervalSince(last) < Self.senderKeyRequestCooldown { return }
+        lastSenderKeyRequestSent[key] = Date()
+
+        let req = SenderKeyRequestMessage(groupID: groupID, targetPeerID: peerID)
+        guard let wire = try? wireBuilder.build(.senderKeyRequest, payload: req) else { return }
+        try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+    }
+
+    /// Handle an incoming senderKeyRequest — respond by re-sending our current SKD.
+    /// Rate-limited to once per 60 s per (group, requester) pair.
+    private func handleSenderKeyRequest(_ payload: SenderKeyRequestMessage, fromPeer peerID: String) {
+        guard payload.groupID.count      <= 64,
+              payload.targetPeerID.count <= 64 else { return }
+        // Only respond if: (a) we are in this group, (b) sender is a member,
+        // (c) they are asking for OUR key (not spoofing another member's peerID).
+        guard let members = joinedGroups[payload.groupID],
+              members.contains(peerID),
+              payload.targetPeerID == identity.publicIdentity.peerID else { return }
+
+        let key = "\(payload.groupID)/\(peerID)"
+        if let last = lastSenderKeyRequestResponded[key],
+           Date().timeIntervalSince(last) < Self.senderKeyRequestCooldown { return }
+        lastSenderKeyRequestResponded[key] = Date()
+
+        guard let myState = keychain.loadMySenderKeyState(groupID: payload.groupID) else { return }
+        let skd = SenderKeyDistributionMessage(groupID: payload.groupID,
+                                               chainKey: myState.chainKey,
+                                               iteration: myState.iteration)
+        guard let skdData = try? JSONEncoder().encode(skd) else { return }
+        let content = MessageContent(body: "", type: .senderKeyDistribution, senderKeyData: skdData)
+        if let wire = try? buildOutboundWire(content: content,
+                                              messageID: UUID().uuidString,
+                                              toPeerID: peerID) {
+            try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
         }
     }
 

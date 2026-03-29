@@ -117,6 +117,25 @@ public enum WireMessageType: String, Codable, Sendable {
     case deadDrop
     /// Edit a previously sent message — replaces the body text in-place.
     case editMessage
+    /// Request a peer to re-send their SenderKeyDistributionMessage for a specific group.
+    /// Sent when the receiver has no key for that sender or the stored key is stale.
+    case senderKeyRequest
+}
+
+// MARK: - Sender Key Request
+
+/// Sent to a group member whose sender key is missing or stale.
+/// The recipient responds by re-sending their current SenderKeyDistributionMessage.
+public struct SenderKeyRequestMessage: Codable, Sendable {
+    /// The group for which the sender key is needed.
+    public let groupID:      String
+    /// PeerID of the member being asked to re-send their SKD (always == recipient).
+    public let targetPeerID: String
+
+    public init(groupID: String, targetPeerID: String) {
+        self.groupID      = groupID
+        self.targetPeerID = targetPeerID
+    }
 }
 
 // MARK: - Edit Message
