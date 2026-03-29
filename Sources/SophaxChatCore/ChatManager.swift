@@ -1908,6 +1908,8 @@ public final class ChatManager: @unchecked Sendable {
             guard try WireMessageBuilder.verify(
                 message, signingKeyPublic: payload.bundle.signingKeyPublic
             ) else { throw SophaxError.invalidSignature }
+            // Reject if the claimed senderID doesn't match the bundle-derived peerID
+            guard message.senderID == payload.bundle.peerID else { throw SophaxError.invalidSignature }
             try handleHello(payload)
 
         case .initiateSession:
@@ -2177,6 +2179,8 @@ extension ChatManager: MeshManagerDelegate {
                 guard try WireMessageBuilder.verify(
                     message, signingKeyPublic: payload.bundle.signingKeyPublic
                 ) else { throw SophaxError.invalidSignature }
+                // Reject if the claimed senderID doesn't match the bundle-derived peerID
+                guard message.senderID == payload.bundle.peerID else { throw SophaxError.invalidSignature }
                 try handleHello(payload)
 
             case .initiateSession:

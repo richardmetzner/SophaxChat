@@ -917,6 +917,7 @@ final class AppState: ObservableObject {
               !pid.isEmpty,
               let nameData  = Data(base64Encoded: nameB64),
               let username  = String(data: nameData, encoding: .utf8),
+              username.count <= 64,
               let signingKey = Data(base64Encoded: skB64),
               let dhKey     = Data(base64Encoded: dkB64),
               signingKey.count == 32, dhKey.count == 32,
