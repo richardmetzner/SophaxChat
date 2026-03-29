@@ -168,7 +168,9 @@ public final class ChatManager: @unchecked Sendable {
     private var skippedGroupMessageKeys: [String: [UInt32: SymmetricKey]] = [:]
     /// Parallel timestamp map for Keychain persistence (entry age → eviction after 7 days).
     private var skippedGroupMessageKeyDates: [String: [UInt32: Date]] = [:]
-    private static let maxSkippedKeysCacheSize = 200
+    private static let maxSkippedKeysCacheSize          = 200
+    private static let senderKeyRotationMessageLimit: UInt32     = 500
+    private static let senderKeyRotationAgeLimit: TimeInterval   = 7 * 24 * 3600
 
     /// Known group membership keyed by groupID. Populated on create/join, cleared on leave.
     /// Used to reject messages from peers not in the group.
@@ -625,6 +627,8 @@ public final class ChatManager: @unchecked Sendable {
         if let err = sendError {
             delegate?.chatManager(self, didEncounterError: err)
         }
+        // Check rotation threshold after broadcast — rotates chain for next message
+        performSenderKeyRotationIfNeeded(groupID: groupID, members: members)
     }
 
     /// Send a binary attachment (image or audio) to all members of a group.
@@ -742,6 +746,7 @@ public final class ChatManager: @unchecked Sendable {
         if let err = sendError {
             delegate?.chatManager(self, didEncounterError: err)
         }
+        performSenderKeyRotationIfNeeded(groupID: groupID, members: members)
     }
 
     /// Remove the local user from a group.
@@ -2304,6 +2309,38 @@ extension ChatManager: MeshManagerDelegate {
                                                       toPeerID: peerID) {
                     try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
                 }
+            }
+        }
+    }
+
+    // MARK: - Private: Sender key rotation
+
+    /// Rotate own sender key if message count OR age threshold is exceeded.
+    /// Generates a fresh random chain, saves it, and broadcasts a new
+    /// SenderKeyDistributionMessage to all current group members.
+    private func performSenderKeyRotationIfNeeded(groupID: String, members: [String]) {
+        guard var myState = keychain.loadMySenderKeyState(groupID: groupID) else { return }
+        let count     = myState.messageCount ?? 0
+        let createdAt = myState.createdAt ?? Date()
+        let age       = Date().timeIntervalSince(createdAt)
+
+        guard count >= Self.senderKeyRotationMessageLimit ||
+              age   >= Self.senderKeyRotationAgeLimit else { return }
+
+        let newChainKey = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+        myState = SenderKeyState(chainKey: newChainKey, iteration: 0,
+                                 messageCount: 0, createdAt: Date())
+        keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+
+        let skd = SenderKeyDistributionMessage(groupID: groupID, chainKey: newChainKey, iteration: 0)
+        guard let skdData = try? JSONEncoder().encode(skd) else { return }
+        let myID = identity.publicIdentity.peerID
+        for memberID in members where memberID != myID {
+            let content = MessageContent(body: "", type: .senderKeyDistribution, senderKeyData: skdData)
+            if let wire = try? buildOutboundWire(content: content,
+                                                  messageID: UUID().uuidString,
+                                                  toPeerID: memberID) {
+                try? sendOrQueue(wire, toPeerID: memberID, messageID: UUID().uuidString)
             }
         }
     }
