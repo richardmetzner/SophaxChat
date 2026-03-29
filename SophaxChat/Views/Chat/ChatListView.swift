@@ -8,6 +8,7 @@ import SophaxChatCore
 
 struct ChatListView: View {
     @EnvironmentObject var appState: AppState
+    @AppStorage("com.sophax.gettingStartedDismissed") private var gettingStartedDismissed = false
     @State private var showingIdentity    = false
     @State private var showingSettings    = false
     @State private var showingCreateGroup = false
@@ -15,6 +16,12 @@ struct ChatListView: View {
     @State private var peerToBlock: KnownPeer? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
     @State private var keyChangePeerID: String? = nil
+
+    private var showGettingStartedCard: Bool {
+        appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty
+        && appState.groups.isEmpty
+        && !gettingStartedDismissed
+    }
 
     var body: some View {
         NavigationStack {
@@ -123,19 +130,27 @@ struct ChatListView: View {
                     }
                 }
 
-                if appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty {
+                if showGettingStartedCard {
                     Section {
-                        VStack(spacing: 16) {
-                            Image(systemName: "antenna.radiowaves.left.and.right")
+                        GettingStartedCard(dismiss: { gettingStartedDismissed = true })
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets())
+                    }
+                } else if appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty {
+                    Section {
+                        VStack(spacing: 12) {
+                            Image(systemName: "bubble.left.and.bubble.right")
                                 .font(.system(size: 40))
                                 .foregroundStyle(.tertiary)
-                            Text("Looking for nearby devices…")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text("Make sure both devices have the app open and are within Bluetooth/WiFi range.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .multilineTextAlignment(.center)
+                            Text("No conversations yet")
+                                .font(.subheadline.weight(.medium))
+                            Button {
+                                showingIdentity = true
+                            } label: {
+                                Label("Share My Contact", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.accentColor)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 32)
@@ -490,6 +505,114 @@ struct PeerAvatar: View {
                     .foregroundStyle(avatarColor)
             }
         }
+    }
+}
+
+// MARK: - Getting Started Card
+
+private struct GettingStartedCard: View {
+    @EnvironmentObject var appState: AppState
+    let dismiss: () -> Void
+    @State private var showingIdentity = false
+    @State private var showingScanner  = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Get started")
+                        .font(.headline)
+                    Text("Connect with people nearby or anywhere in the world.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            CardActionRow(
+                icon: "square.and.arrow.up",
+                iconColor: .accentColor,
+                title: "Share my contact",
+                subtitle: "Let others add you by scanning a QR code"
+            ) { showingIdentity = true }
+
+            Divider().padding(.leading, 56)
+
+            CardActionRow(
+                icon: "qrcode.viewfinder",
+                iconColor: .green,
+                title: "Scan a QR code",
+                subtitle: "Add someone who's nearby"
+            ) { showingScanner = true }
+
+            Divider().padding(.leading, 56)
+
+            CardActionRow(
+                icon: "globe",
+                iconColor: .orange,
+                title: "Enable Global Reach",
+                subtitle: "Chat with anyone, anywhere in the world"
+            ) {
+                NotificationCenter.default.post(name: .sophaxShowSettings, object: nil)
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .sheet(isPresented: $showingIdentity) {
+            IdentityView().environmentObject(appState)
+        }
+        .sheet(isPresented: $showingScanner) {
+            ContactScannerView().environmentObject(appState)
+        }
+    }
+}
+
+private struct CardActionRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(iconColor.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundStyle(iconColor)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
     }
 }
 
