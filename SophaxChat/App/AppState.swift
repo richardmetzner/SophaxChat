@@ -966,39 +966,62 @@ final class AppState: ObservableObject {
 
     // MARK: - Alias persistence
 
-    private let aliasesKey = "com.sophax.peerAliases"
-
     private func loadAliases() {
-        guard let data = UserDefaults.standard.data(forKey: aliasesKey),
-              let saved = try? JSONDecoder().decode([String: String].self, from: data) else { return }
-        peerAliases = saved
+        // Primary: Keychain
+        let fromKeychain = keychain.loadPeerAliases()
+        if !fromKeychain.isEmpty {
+            peerAliases = fromKeychain
+            return
+        }
+        // One-time migration from UserDefaults → Keychain
+        let legacyKey = "com.sophax.peerAliases"
+        if let data  = UserDefaults.standard.data(forKey: legacyKey),
+           let saved = try? JSONDecoder().decode([String: String].self, from: data),
+           !saved.isEmpty {
+            peerAliases = saved
+            keychainSave("peerAliases") {
+                try keychain.savePeerAliases(saved)
+                UserDefaults.standard.removeObject(forKey: legacyKey)
+            }
+        }
     }
 
     private func saveAliases() {
-        if let data = try? JSONEncoder().encode(peerAliases) {
-            UserDefaults.standard.set(data, forKey: aliasesKey)
-        }
+        keychainSave("peerAliases") { try keychain.savePeerAliases(peerAliases) }
     }
 
     // MARK: - Blocked peers persistence
 
-    private let blockedDefaultsKey = "com.sophax.blockedPeers"
-    private let blockedNamesKey    = "com.sophax.blockedPeerNames"
-
     private func loadBlockedPeers() {
-        let saved = UserDefaults.standard.stringArray(forKey: blockedDefaultsKey) ?? []
-        blockedPeers = Set(saved)
-        if let data  = UserDefaults.standard.data(forKey: blockedNamesKey),
-           let names = try? JSONDecoder().decode([String: String].self, from: data) {
+        // Primary: Keychain
+        let (ids, names) = keychain.loadBlockedPeers()
+        if !ids.isEmpty || !names.isEmpty {
+            blockedPeers = ids
             blockedPeerNames = names
+            return
+        }
+        // One-time migration from UserDefaults → Keychain
+        let legacyIDsKey   = "com.sophax.blockedPeers"
+        let legacyNamesKey = "com.sophax.blockedPeerNames"
+        let savedIDs   = Set(UserDefaults.standard.stringArray(forKey: legacyIDsKey) ?? [])
+        var savedNames = [String: String]()
+        if let data  = UserDefaults.standard.data(forKey: legacyNamesKey),
+           let names = try? JSONDecoder().decode([String: String].self, from: data) {
+            savedNames = names
+        }
+        if !savedIDs.isEmpty || !savedNames.isEmpty {
+            blockedPeers     = savedIDs
+            blockedPeerNames = savedNames
+            keychainSave("blockedPeers") {
+                try keychain.saveBlockedPeers(savedIDs, names: savedNames)
+                UserDefaults.standard.removeObject(forKey: legacyIDsKey)
+                UserDefaults.standard.removeObject(forKey: legacyNamesKey)
+            }
         }
     }
 
     private func saveBlockedPeers() {
-        UserDefaults.standard.set(Array(blockedPeers), forKey: blockedDefaultsKey)
-        if let data = try? JSONEncoder().encode(blockedPeerNames) {
-            UserDefaults.standard.set(data, forKey: blockedNamesKey)
-        }
+        keychainSave("blockedPeers") { try keychain.saveBlockedPeers(blockedPeers, names: blockedPeerNames) }
     }
 
     // MARK: - Keychain helpers

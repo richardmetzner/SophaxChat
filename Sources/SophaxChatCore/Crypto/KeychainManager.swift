@@ -335,6 +335,42 @@ public final class KeychainManager {
         return peers
     }
 
+    // MARK: - Peer Aliases (user-assigned contact nicknames)
+    // Moved from UserDefaults to Keychain to exclude from iCloud/iTunes backups.
+
+    public func savePeerAliases(_ aliases: [String: String]) throws {
+        let data = try JSONEncoder().encode(aliases)
+        try save(data: data, account: "peer.aliases")
+    }
+
+    public func loadPeerAliases() -> [String: String] {
+        guard let data    = try? load(account: "peer.aliases"),
+              let aliases = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return [:] }
+        return aliases
+    }
+
+    // MARK: - Blocked Peers
+    // Moved from UserDefaults to Keychain to exclude from iCloud/iTunes backups.
+
+    public func saveBlockedPeers(_ ids: Set<String>, names: [String: String]) throws {
+        let payload = ["ids": Array(ids), "names_keys": Array(names.keys), "names_vals": Array(names.values)]
+        let data = try JSONEncoder().encode(payload)
+        try save(data: data, account: "blocked.peers")
+    }
+
+    public func loadBlockedPeers() -> (ids: Set<String>, names: [String: String]) {
+        guard let data    = try? load(account: "blocked.peers"),
+              let payload = try? JSONDecoder().decode([String: [String]].self, from: data),
+              let ids     = payload["ids"],
+              let keys    = payload["names_keys"],
+              let vals    = payload["names_vals"],
+              keys.count == vals.count
+        else { return ([], [:]) }
+        let names = Dictionary(uniqueKeysWithValues: zip(keys, vals))
+        return (Set(ids), names)
+    }
+
     // MARK: - Existence Check
 
     public func hasIdentity() -> Bool {

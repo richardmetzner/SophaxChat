@@ -58,6 +58,16 @@ public final class MessageStore: @unchecked Sendable {
         resourceValues.isExcludedFromBackup = true
         var mutableURL = baseURL
         try? mutableURL.setResourceValues(resourceValues)
+
+        // Set strongest file protection on the directory — .complete means the file is
+        // inaccessible while the device is locked (not just after first unlock).
+        // The iOS default (.completeUntilFirstUserAuthentication) would allow reading
+        // encrypted files in the locked state, which is unnecessary given we have our
+        // own AES-256-GCM layer. Defense-in-depth: double-encrypt with OS protection too.
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: baseURL.path
+        )
     }
 
     // MARK: - Public API
@@ -229,6 +239,12 @@ public final class MessageStore: @unchecked Sendable {
         let encryptedData = try encrypt(plaintext)
         let url           = fileURL(for: peerID)
         try encryptedData.write(to: url, options: .atomic)
+        // Ensure each written file also carries .complete protection (the directory
+        // attribute is inherited by new files, but setting explicitly is more reliable).
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
     }
 
     // MARK: - Private: Encryption helpers

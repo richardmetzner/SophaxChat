@@ -44,6 +44,13 @@ public final class AttachmentStore: @unchecked Sendable {
         resourceValues.isExcludedFromBackup = true
         var mutableURL = baseURL
         try? mutableURL.setResourceValues(resourceValues)
+
+        // .complete = file inaccessible while device is locked (strongest protection level).
+        // Defence-in-depth on top of AES-256-GCM application-level encryption.
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: baseURL.path
+        )
     }
 
     // MARK: - Public API
@@ -54,7 +61,12 @@ public final class AttachmentStore: @unchecked Sendable {
         guard let combined = sealed.combined else {
             throw SophaxError.encryptionFailed("AES-GCM combined output unavailable")
         }
-        try combined.write(to: fileURL(for: id), options: .atomic)
+        let url = fileURL(for: id)
+        try combined.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
     }
 
     /// Decrypt and return attachment data for the given ID.
