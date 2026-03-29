@@ -84,6 +84,13 @@ final class AppState: ObservableObject {
     private let tcpSocksProxyKey = "com.sophax.tcp.socksProxy"
     private let tcpAddressKey    = "com.sophax.tcp.address"
 
+    /// When true, sender name and message body are included in local notifications.
+    /// Off by default: protects conversation metadata on the lock screen / Notification Centre.
+    @Published var notifShowSender: Bool = false {
+        didSet { UserDefaults.standard.set(notifShowSender, forKey: notifShowSenderKey) }
+    }
+    private let notifShowSenderKey = "com.sophax.notif.showSender"
+
     /// Set to a peer that just came back online; triggers reconnect banner in UI.
     @Published var reconnectedPeer: KnownPeer? = nil
 
@@ -499,6 +506,8 @@ final class AppState: ObservableObject {
         let ids = messages[peerID]?.map(\.id) ?? []
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+        // Update app badge to reflect remaining unread count
+        UIApplication.shared.applicationIconBadgeNumber = totalUnreadCount
         // Send read receipts for received messages still showing as .delivered
         let unread = messages[peerID]?.filter { $0.direction == .received && $0.status == .delivered } ?? []
         if !unread.isEmpty {
@@ -537,13 +546,21 @@ final class AppState: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
+    private var totalUnreadCount: Int { unreadCounts.values.reduce(0, +) }
+
     private func scheduleNotification(for message: StoredMessage, fromPeer peerID: String) {
-        let content  = UNMutableNotificationContent()
-        // Do NOT include message body or sender name — these appear on the lock screen
-        // even when the device is locked, leaking conversation metadata to bystanders.
-        content.title              = "SophaxChat"
-        content.body               = "New message"
+        let content = UNMutableNotificationContent()
+        if notifShowSender, let peer = peers.first(where: { $0.id == peerID }) {
+            // User opted in to showing sender metadata — use actual name + body.
+            content.title = displayName(for: peer)
+            content.body  = message.body.isEmpty ? "Attachment" : message.body
+        } else {
+            // Default: no metadata visible on lock screen.
+            content.title = "SophaxChat"
+            content.body  = "New message"
+        }
         content.sound              = .default
+        content.badge              = (totalUnreadCount + 1) as NSNumber
         // Hash the peerID so the raw hex fingerprint is not exposed in the Notification
         // Centre grouping — observable on the lock screen without authentication.
         content.threadIdentifier   = Data(SHA256.hash(data: Data(peerID.utf8))).prefix(8).hexString
@@ -553,12 +570,18 @@ final class AppState: ObservableObject {
     }
 
     private func scheduleGroupNotification(for message: StoredMessage, groupID: String) {
-        guard groups.first(where: { $0.id == groupID }) != nil else { return }
-        let content  = UNMutableNotificationContent()
-        // Do NOT include group name, sender name, or message body — lock screen privacy.
-        content.title              = "SophaxChat"
-        content.body               = "New group message"
+        guard let group = groups.first(where: { $0.id == groupID }) else { return }
+        let content = UNMutableNotificationContent()
+        if notifShowSender {
+            content.title = group.name
+            content.body  = message.body.isEmpty ? "Attachment" : message.body
+        } else {
+            // Do NOT include group name, sender name, or message body — lock screen privacy.
+            content.title = "SophaxChat"
+            content.body  = "New group message"
+        }
         content.sound              = .default
+        content.badge              = (totalUnreadCount + 1) as NSNumber
         content.threadIdentifier   = Data(SHA256.hash(data: Data(groupID.utf8))).prefix(8).hexString
         content.categoryIdentifier = "SOPHAX_MSG"
         let request = UNNotificationRequest(identifier: message.id, content: content, trigger: nil)
@@ -825,10 +848,11 @@ final class AppState: ObservableObject {
 
     private func loadTCPSettings() {
         let ud = UserDefaults.standard
-        tcpEnabled    = ud.bool(forKey: tcpEnabledKey)
-        tcpPort       = ud.string(forKey: tcpPortKey)       ?? "25519"
-        tcpSocksProxy = ud.string(forKey: tcpSocksProxyKey) ?? ""
-        myTCPAddress  = ud.string(forKey: tcpAddressKey)    ?? ""
+        tcpEnabled      = ud.bool(forKey: tcpEnabledKey)
+        tcpPort         = ud.string(forKey: tcpPortKey)       ?? "25519"
+        tcpSocksProxy   = ud.string(forKey: tcpSocksProxyKey) ?? ""
+        myTCPAddress    = ud.string(forKey: tcpAddressKey)    ?? ""
+        notifShowSender = ud.bool(forKey: notifShowSenderKey)
     }
 
     private func makeTCPConfig() -> TCPTransport.Config {

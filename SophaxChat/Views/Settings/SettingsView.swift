@@ -165,10 +165,18 @@ struct SettingsView: View {
                     if !enabled { appState.isAppLocked = false }
                 }
             ))
+            Toggle(isOn: $appState.notifShowSender) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show sender in notifications")
+                    Text("Displays name and message preview on the lock screen")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         } header: {
             Text("Security")
         } footer: {
-            Text("Require Face ID, Touch ID, or passcode to open SophaxChat.")
+            Text("When "Show sender" is off, notifications only say "New message" — no name or content visible on the lock screen.")
         }
     }
 
