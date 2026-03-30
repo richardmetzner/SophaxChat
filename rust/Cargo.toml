@@ -1,0 +1,25 @@
+[package]
+name = "sophax-mls"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sophax_mls"
+crate-type = ["staticlib"]
+
+[dependencies]
+# MLS — pure-Rust crypto, no OpenSSL (iOS compatible)
+mls-rs = { version = "0.54", default-features = false, features = ["std", "rfc_compliant"] }
+mls-rs-crypto-rustcrypto = { version = "0.21", default-features = false, features = ["std"] }
+mls-rs-core = { version = "0.26", default-features = false, features = ["std"] }
+# UniFFI Swift bindings
+uniffi = { version = "0.31", features = ["build", "cli"] }
+# Error handling
+thiserror = "2"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "bindgen/main.rs"
+
+[build-dependencies]
+uniffi = { version = "0.31", features = ["build"] }
