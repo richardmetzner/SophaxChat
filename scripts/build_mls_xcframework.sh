@@ -10,6 +10,11 @@
 
 set -euo pipefail
 
+# Use full Xcode if available (required for xcodebuild -create-xcframework).
+if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
+    export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+fi
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUST_DIR="$REPO_ROOT/rust"
 FRAMEWORKS_DIR="$REPO_ROOT/Frameworks"
@@ -25,11 +30,12 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 
 # ── Add targets ──────────────────────────────────────────────────────────────
 
-echo "▶ Adding iOS Rust targets…"
+echo "▶ Adding Rust targets…"
 rustup target add \
     aarch64-apple-ios \
     aarch64-apple-ios-sim \
-    x86_64-apple-ios
+    x86_64-apple-ios \
+    aarch64-apple-darwin
 
 cd "$RUST_DIR"
 
@@ -41,17 +47,20 @@ MACOS_SDK="$(xcrun --sdk macosx --show-sdk-path)"
 echo "▶ Building aarch64-apple-ios (device)…"
 SDKROOT="$MACOS_SDK" \
     IPHONEOS_DEPLOYMENT_TARGET=17.0 \
-    cargo build --release --target aarch64-apple-ios
+    cargo build --release --lib --target aarch64-apple-ios
 
 echo "▶ Building aarch64-apple-ios-sim (Apple Silicon simulator)…"
 SDKROOT="$MACOS_SDK" \
     IPHONEOS_DEPLOYMENT_TARGET=17.0 \
-    cargo build --release --target aarch64-apple-ios-sim
+    cargo build --release --lib --target aarch64-apple-ios-sim
 
 echo "▶ Building x86_64-apple-ios (Intel simulator)…"
 SDKROOT="$MACOS_SDK" \
     IPHONEOS_DEPLOYMENT_TARGET=17.0 \
-    cargo build --release --target x86_64-apple-ios
+    cargo build --release --lib --target x86_64-apple-ios
+
+echo "▶ Building aarch64-apple-darwin (macOS arm64 — needed for swift build / SPM)…"
+cargo build --release --lib --target aarch64-apple-darwin
 
 # ── Fat simulator lib (lipo) ──────────────────────────────────────────────────
 
@@ -68,6 +77,8 @@ lipo -create \
 
 echo "▶ Generating UniFFI Swift bindings…"
 mkdir -p "$GENERATED_DIR"
+# Build uniffi-bindgen for host only (no --target flag), then run it
+cargo build --bin uniffi-bindgen
 cargo run --bin uniffi-bindgen -- generate \
     --library "target/aarch64-apple-ios/release/$LIB_NAME" \
     --language swift \
@@ -79,12 +90,14 @@ echo "  Generated: $(ls "$GENERATED_DIR")"
 
 HEADERS_DEVICE="$RUST_DIR/target/headers-device"
 HEADERS_SIM="$RUST_DIR/target/headers-sim"
-mkdir -p "$HEADERS_DEVICE" "$HEADERS_SIM"
+HEADERS_MACOS="$RUST_DIR/target/headers-macos"
+mkdir -p "$HEADERS_DEVICE" "$HEADERS_SIM" "$HEADERS_MACOS"
 
-cp "$GENERATED_DIR/${MODULE_NAME}FFI.h"          "$HEADERS_DEVICE/"
-cp "$GENERATED_DIR/${MODULE_NAME}FFI.modulemap"  "$HEADERS_DEVICE/"
-cp "$GENERATED_DIR/${MODULE_NAME}FFI.h"          "$HEADERS_SIM/"
-cp "$GENERATED_DIR/${MODULE_NAME}FFI.modulemap"  "$HEADERS_SIM/"
+for DIR in "$HEADERS_DEVICE" "$HEADERS_SIM" "$HEADERS_MACOS"; do
+    cp "$GENERATED_DIR/${MODULE_NAME}FFI.h"         "$DIR/"
+    # Xcode/SPM require the modulemap to be named "module.modulemap" to find it automatically.
+    cp "$GENERATED_DIR/${MODULE_NAME}FFI.modulemap" "$DIR/module.modulemap"
+done
 
 # ── Assemble XCFramework ──────────────────────────────────────────────────────
 
@@ -97,6 +110,8 @@ xcodebuild -create-xcframework \
     -headers "$HEADERS_DEVICE" \
     -library "$SIM_FAT_DIR/$LIB_NAME" \
     -headers "$HEADERS_SIM" \
+    -library "$RUST_DIR/target/aarch64-apple-darwin/release/$LIB_NAME" \
+    -headers "$HEADERS_MACOS" \
     -output "$XCFRAMEWORK"
 
 echo ""
