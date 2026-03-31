@@ -371,6 +371,24 @@ public final class KeychainManager {
         return (Set(ids), names)
     }
 
+    // MARK: - MLS Group State (Phase 2 — raw binary blob from mls-rs)
+
+    /// Persist serialised MLS group state for a group.
+    /// State is a raw binary blob produced by mls-rs — stored as-is (no JSON wrapper).
+    public func saveMlsGroupState(_ state: Data, groupID: String) throws {
+        try save(data: state, account: "mls.state.\(groupID)")
+    }
+
+    /// Returns the stored MLS group state, or nil if the group has never been joined.
+    public func loadMlsGroupState(groupID: String) -> Data? {
+        try? load(account: "mls.state.\(groupID)")
+    }
+
+    /// Remove the MLS group state for a group (called on leave or wipe).
+    public func deleteMlsGroupState(groupID: String) throws {
+        try delete(account: "mls.state.\(groupID)")
+    }
+
     // MARK: - Key Transparency Log MAC Key
 
     /// Load or create a stable 256-bit HMAC key used to authenticate the key transparency log.
