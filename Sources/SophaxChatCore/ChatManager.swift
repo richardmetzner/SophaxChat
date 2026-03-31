@@ -130,6 +130,10 @@ public final class ChatManager: @unchecked Sendable {
     private let wireBuilder:    WireMessageBuilder
     private let relayRouter:    RelayRouter
 
+    /// MLS group manager (Group v3). Nil until first use — initialised lazily on first
+    /// MLS group create/join so non-MLS builds don't pay the Rust init cost.
+    private var mlsManager: MLSGroupManager?
+
     /// Persistent log of observed peer identity keys for auditability.
     public let keyLog: KeyTransparencyLog
 
@@ -240,6 +244,22 @@ public final class ChatManager: @unchecked Sendable {
         self.wireBuilder     = WireMessageBuilder(identity: identity)
         self.relayRouter     = RelayRouter()
         mesh.delegate        = self
+    }
+
+    // MARK: - MLS lazy init
+
+    /// Returns the shared MLSGroupManager, creating it on first call.
+    /// Throws if the signing key is unavailable (should never happen post-onboarding).
+    private func requireMLSManager() throws -> MLSGroupManager {
+        if let m = mlsManager { return m }
+        let signingKeyBytes = try identity.signingPrivateKeyData()
+        let m = try MLSGroupManager(
+            peerID: identity.publicIdentity.peerID,
+            signingKeyBytes: signingKeyBytes,
+            keychain: keychain
+        )
+        mlsManager = m
+        return m
     }
 
     // MARK: - Public API
