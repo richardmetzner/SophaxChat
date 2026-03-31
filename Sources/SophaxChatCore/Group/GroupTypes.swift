@@ -9,28 +9,55 @@
 
 import Foundation
 
+// MARK: - GroupCryptoVersion
+
+/// Identifies which group crypto protocol a GroupInfo uses.
+/// Stored as a raw String in JSON so existing records decode without a key present
+/// (Swift synthesised Codable decoding uses the init default).
+public enum GroupCryptoVersion: String, Codable, Sendable {
+    /// Signal-style Sender Keys v2 — original SophaxChat protocol.
+    case senderKeysV2 = "skv2"
+    /// RFC 9420 MLS — Group v3, post-compromise security per epoch.
+    case mls = "mls"
+}
+
 // MARK: - GroupInfo
 
 /// A persisted group conversation.
 public struct GroupInfo: Codable, Identifiable, Sendable {
     /// Stable UUID assigned by the creator.
-    public let id:        String
-    public let name:      String
+    public let id:            String
+    public let name:          String
     /// All member peerIDs including the creator.
-    public let memberIDs: [String]
+    public let memberIDs:     [String]
     /// PeerID of the group creator.
-    public let creatorID: String
+    public let creatorID:     String
+    /// Which crypto protocol this group uses. Absent in legacy JSON → decoded as .senderKeysV2.
+    public let cryptoVersion: GroupCryptoVersion
 
     public init(
-        id:        String   = UUID().uuidString,
-        name:      String,
-        memberIDs: [String],
-        creatorID: String
+        id:            String             = UUID().uuidString,
+        name:          String,
+        memberIDs:     [String],
+        creatorID:     String,
+        cryptoVersion: GroupCryptoVersion = .senderKeysV2
     ) {
-        self.id        = id
-        self.name      = name
-        self.memberIDs = memberIDs
-        self.creatorID = creatorID
+        self.id            = id
+        self.name          = name
+        self.memberIDs     = memberIDs
+        self.creatorID     = creatorID
+        self.cryptoVersion = cryptoVersion
+    }
+
+    // Custom decode to default cryptoVersion to .senderKeysV2 when the key is absent
+    // (preserves backward compatibility with persisted groups that pre-date Phase 2).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id            = try c.decode(String.self, forKey: .id)
+        name          = try c.decode(String.self, forKey: .name)
+        memberIDs     = try c.decode([String].self, forKey: .memberIDs)
+        creatorID     = try c.decode(String.self, forKey: .creatorID)
+        cryptoVersion = try c.decodeIfPresent(GroupCryptoVersion.self, forKey: .cryptoVersion) ?? .senderKeysV2
     }
 
     /// The key used in MessageStore for this group's conversation.

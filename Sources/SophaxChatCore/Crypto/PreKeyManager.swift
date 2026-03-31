@@ -47,6 +47,38 @@ public struct PreKeyBundle: Codable, Sendable {
     /// Propagated in Hello messages so contacts see the sender's photo.
     public let avatarData: Data?
 
+    /// MLS KeyPackage for this peer (serialised mls-rs bytes). nil = peer does not support MLS.
+    /// Group coordinators use this to add the peer to an MLS group via Welcome.
+    public let mlsKeyPackage: Data?
+
+    public init(
+        signingKeyPublic:      Data,
+        dhIdentityKeyPublic:   Data,
+        signedPreKeyPublic:    Data,
+        signedPreKeySignature: Data,
+        signedPreKeyId:        UInt32,
+        oneTimePreKeyPublic:   Data?   = nil,
+        oneTimePreKeyId:       UInt32? = nil,
+        username:              String,
+        timestamp:             Date,
+        tcpAddress:            String? = nil,
+        avatarData:            Data?   = nil,
+        mlsKeyPackage:         Data?   = nil
+    ) {
+        self.signingKeyPublic      = signingKeyPublic
+        self.dhIdentityKeyPublic   = dhIdentityKeyPublic
+        self.signedPreKeyPublic    = signedPreKeyPublic
+        self.signedPreKeySignature = signedPreKeySignature
+        self.signedPreKeyId        = signedPreKeyId
+        self.oneTimePreKeyPublic   = oneTimePreKeyPublic
+        self.oneTimePreKeyId       = oneTimePreKeyId
+        self.username              = username
+        self.timestamp             = timestamp
+        self.tcpAddress            = tcpAddress
+        self.avatarData            = avatarData
+        self.mlsKeyPackage         = mlsKeyPackage
+    }
+
     /// Verifies the signed prekey signature against the identity key.
     /// MUST be called before using the bundle.
     public func verifySignedPreKey() throws -> Bool {
