@@ -120,6 +120,90 @@ public enum WireMessageType: String, Codable, Sendable {
     /// Request a peer to re-send their SenderKeyDistributionMessage for a specific group.
     /// Sent when the receiver has no key for that sender or the stored key is stale.
     case senderKeyRequest
+
+    // MARK: MLS (Group v3 — RFC 9420)
+
+    /// MLS Welcome for a new group member — unicast, DR-encrypted.
+    case mlsWelcome
+    /// MLS Commit broadcast from the group coordinator.
+    case mlsCommit
+    /// MLS application message (replaces groupMessage for MLS groups).
+    case mlsMessage
+    /// Non-coordinator member requesting the coordinator to issue a Commit — DR-encrypted unicast.
+    case mlsCommitRequest
+}
+
+// MARK: - MLS Wire Messages
+
+/// Sent to a new MLS group member via DR-encrypted unicast (.mlsWelcome).
+public struct MLSWelcomeMessage: Codable, Sendable {
+    public let groupID:           String
+    public let groupName:         String
+    /// All member peerIDs at time of creation.
+    public let memberIDs:         [String]
+    /// PeerID of the group creator (= MLS coordinator).
+    public let creatorID:         String
+    /// Raw mls-rs Welcome bytes — pass directly to MLSGroupManager.processWelcome.
+    public let welcomeBytes:      Data
+    /// Ratchet tree bytes — required to join without the ratchet_tree extension.
+    public let ratchetTreeBytes:  Data
+    /// Always .mls — carried so the receiver can dispatch correctly.
+    public let cryptoVersion:     GroupCryptoVersion
+
+    public init(
+        groupID: String, groupName: String, memberIDs: [String], creatorID: String,
+        welcomeBytes: Data, ratchetTreeBytes: Data
+    ) {
+        self.groupID          = groupID
+        self.groupName        = groupName
+        self.memberIDs        = memberIDs
+        self.creatorID        = creatorID
+        self.welcomeBytes     = welcomeBytes
+        self.ratchetTreeBytes = ratchetTreeBytes
+        self.cryptoVersion    = .mls
+    }
+}
+
+/// Broadcast by the MLS coordinator after every Commit (.mlsCommit).
+/// Recipients MUST verify senderID == group.creatorID before processing.
+public struct MLSCommitMessage: Codable, Sendable {
+    public let groupID:       String
+    /// MLS epoch after this commit — used for ordering / dedup.
+    public let epoch:         UInt64
+    /// Raw mls-rs Commit bytes — pass to MLSGroupManager.processCommit.
+    public let commitBytes:   Data
+    /// peerID of the coordinator — receivers drop the message if this != group.creatorID.
+    public let coordinatorID: String
+}
+
+/// Encrypted group message for MLS groups (.mlsMessage).
+/// The `ciphertext` is the output of MLSGroupManager.encrypt — an opaque mls-rs blob.
+public struct MLSApplicationMessage: Codable, Sendable {
+    public let groupID:       String
+    public let messageID:     String
+    public let senderPeerID:  String
+    public let senderUsername: String
+    public let timestamp:     Date
+    /// mls-rs application-message ciphertext.
+    public let ciphertext:    Data
+    /// Auto-delete deadline (nil = persistent).
+    public let expiresAt:     Date?
+    /// MessageID of the message being replied to.
+    public let replyToID:     String?
+}
+
+/// Sent by a non-coordinator member requesting the coordinator to add or remove a peer.
+/// Carried inside a DR-encrypted .mlsCommitRequest message.
+public struct MLSCommitRequestMessage: Codable, Sendable {
+    public enum Action: String, Codable, Sendable {
+        case add, remove
+    }
+    public let groupID:       String
+    public let action:        Action
+    /// For .add: the new member's MLS KeyPackage bytes.
+    public let keyPackage:    Data?
+    /// For .remove: the peerID to remove.
+    public let targetPeerID:  String?
 }
 
 // MARK: - Sender Key Request
@@ -220,6 +304,9 @@ public struct MessageContent: Codable, Sendable {
         case groupInvite
         /// Sender key distribution (v2 groups) — senderKeyData carries SenderKeyDistributionMessage JSON.
         case senderKeyDistribution
+        /// MLS commit request — non-coordinator asks coordinator to add/remove a peer.
+        /// Body is empty; mlsCommitRequestData carries MLSCommitRequestMessage JSON.
+        case mlsCommitRequest
     }
 
     /// JSON-encoded SenderKeyDistributionMessage — only set when type == .senderKeyDistribution.
@@ -227,6 +314,9 @@ public struct MessageContent: Codable, Sendable {
 
     /// Populated when type == .edit — carries the edit payload.
     public let editPayload: EditMessagePayload?
+
+    /// JSON-encoded MLSCommitRequestMessage — only set when type == .mlsCommitRequest.
+    public let mlsCommitRequestData: Data?
 
     public init(
         body:               String,
@@ -236,21 +326,23 @@ public struct MessageContent: Codable, Sendable {
         attachmentData:     Data?       = nil,
         attachmentMimeType: String?     = nil,
         audioDuration:      Double?     = nil,
-        groupInviteData:    Data?       = nil,
-        senderKeyData:      Data?       = nil,
-        editPayload:        EditMessagePayload? = nil
+        groupInviteData:         Data?       = nil,
+        senderKeyData:           Data?       = nil,
+        editPayload:             EditMessagePayload? = nil,
+        mlsCommitRequestData:    Data?       = nil
     ) {
-        self.body               = body
-        self.type               = type
-        self.replyToID          = replyToID
-        self.timestamp          = Date()
-        self.expiresAt          = expiresAt
-        self.attachmentData     = attachmentData
-        self.attachmentMimeType = attachmentMimeType
-        self.audioDuration      = audioDuration
-        self.groupInviteData    = groupInviteData
-        self.senderKeyData      = senderKeyData
-        self.editPayload        = editPayload
+        self.body                 = body
+        self.type                 = type
+        self.replyToID            = replyToID
+        self.timestamp            = Date()
+        self.expiresAt            = expiresAt
+        self.attachmentData       = attachmentData
+        self.attachmentMimeType   = attachmentMimeType
+        self.audioDuration        = audioDuration
+        self.groupInviteData      = groupInviteData
+        self.senderKeyData        = senderKeyData
+        self.editPayload          = editPayload
+        self.mlsCommitRequestData = mlsCommitRequestData
     }
 }
 

@@ -1246,6 +1246,7 @@ public final class ChatManager: @unchecked Sendable {
         case .audio:                 displayBody = content.body.isEmpty ? "🎤 Voice message" : content.body
         case .groupInvite:           return                               // dead code; handled above
         case .senderKeyDistribution: return                               // dead code; handled above
+        case .mlsCommitRequest:      return                               // Phase 4 — not yet handled
         }
 
         try storeNewSession(ratchet, peerID: peerID)
@@ -1335,6 +1336,7 @@ public final class ChatManager: @unchecked Sendable {
         case .audio: displayBody = content.body.isEmpty ? "🎤 Voice message" : content.body
         case .groupInvite:            return  // already handled above; belt-and-suspenders guard
         case .senderKeyDistribution:  return  // already handled above; belt-and-suspenders guard
+        case .mlsCommitRequest:       return  // Phase 4 — not yet handled
         }
 
         let stored = StoredMessage(
@@ -1992,6 +1994,9 @@ public final class ChatManager: @unchecked Sendable {
             if let drop = try? wireBuilder.decodePayload(DeadDropEnvelope.self, from: message) {
                 handleDeadDrop(drop)
             }
+
+        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest:
+            break   // Phase 4 — MLS relay forwarding not yet implemented
         }
     }
 
@@ -2276,6 +2281,10 @@ extension ChatManager: MeshManagerDelegate {
             case .deadDrop:
                 let payload = try wireBuilder.decodePayload(DeadDropEnvelope.self, from: message)
                 handleDeadDrop(payload)
+
+            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest:
+                // Phase 4 — MLS integration not yet wired. Drop silently for now.
+                break
             }
         } catch SophaxError.sessionStateCorrupted {
             // The persisted DR session blob was malformed (e.g. crashed mid-write).
