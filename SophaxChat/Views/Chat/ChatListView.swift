@@ -15,6 +15,7 @@ struct ChatListView: View {
     @State private var showingCreateGroup = false
     @State private var showingScanner     = false
     @State private var peerToBlock: KnownPeer? = nil
+    @State private var groupToLeave: GroupInfo? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
     @State private var keyChangePeerID: String? = nil
 
@@ -139,6 +140,13 @@ struct ChatListView: View {
                     ForEach(appState.groups) { group in
                         NavigationLink(value: group) {
                             GroupConversationRow(group: group)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                groupToLeave = group
+                            } label: {
+                                Label("Leave", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
                         }
                     }
                 }
@@ -325,6 +333,19 @@ struct ChatListView: View {
         } message: {
             Text("You won't receive messages from this person. This can be undone in Settings.")
         }
+        .confirmationDialog(
+            "Leave \"\(groupToLeave?.name ?? "")\"?",
+            isPresented: Binding(get: { groupToLeave != nil }, set: { if !$0 { groupToLeave = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Leave Group", role: .destructive) {
+                if let g = groupToLeave { appState.leaveGroup(g) }
+                groupToLeave = nil
+            }
+            Button("Cancel", role: .cancel) { groupToLeave = nil }
+        } message: {
+            Text("You will no longer receive messages from this group. This cannot be undone.")
+        }
     }
 }
 
@@ -356,6 +377,15 @@ struct GroupConversationRow: View {
                 HStack {
                     Text(group.name)
                         .font(.subheadline.weight(unreadCount > 0 ? .bold : .semibold))
+                    if group.cryptoVersion == .mls {
+                        Text("MLS")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.purple.opacity(0.85))
+                            .clipShape(Capsule())
+                    }
                     Spacer()
                     if let last = lastMessage {
                         Text(last.timestamp, style: .relative)
