@@ -127,7 +127,7 @@ public final class ChatManager: @unchecked Sendable {
     public let attachmentStore: AttachmentStore
 
     private let keychain:       KeychainManager
-    private let wireBuilder:    WireMessageBuilder
+    let wireBuilder:    WireMessageBuilder
     private let relayRouter:    RelayRouter
 
     /// MLS group manager (Group v3). Nil until first use — initialised lazily on first
@@ -152,7 +152,7 @@ public final class ChatManager: @unchecked Sendable {
     private var knownPeers: [String: KnownPeer] = [:]
 
     /// PreKeyBundles keyed by peerID — populated on Hello, used for X3DH initiation.
-    private var peerBundles: [String: PreKeyBundle] = [:]
+    var peerBundles: [String: PreKeyBundle] = [:]
 
     /// Outbound messages queued for peers not currently reachable.
     /// Drained as soon as a path (direct or relay) becomes available.
@@ -186,7 +186,7 @@ public final class ChatManager: @unchecked Sendable {
 
     /// Known group membership keyed by groupID. Populated on create/join, cleared on leave.
     /// Used to reject messages from peers not in the group.
-    private var joinedGroups: [String: Set<String>] = [:]
+    var joinedGroups: [String: Set<String>] = [:]
 
     /// Messages stored on behalf of offline peers (relay-store role).
     private struct StoredForwardItem {
@@ -250,7 +250,7 @@ public final class ChatManager: @unchecked Sendable {
 
     /// Returns the shared MLSGroupManager, creating it on first call.
     /// Throws if the signing key is unavailable (should never happen post-onboarding).
-    private func requireMLSManager() throws -> MLSGroupManager {
+    func requireMLSManager() throws -> MLSGroupManager {
         if let m = mlsManager { return m }
         let signingKeyBytes = try identity.signingPrivateKeyData()
         let m = try MLSGroupManager(
@@ -987,7 +987,7 @@ public final class ChatManager: @unchecked Sendable {
     // MARK: - Private: Routing
 
     /// Send a wire message: direct → relay → offline queue (in priority order).
-    private func sendOrQueue(
+    func sendOrQueue(
         _ wire: WireMessage,
         toPeerID peerID: String,
         messageID: String
@@ -2016,7 +2016,7 @@ public final class ChatManager: @unchecked Sendable {
             }
 
         case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest:
-            break   // Phase 4 — MLS relay forwarding not yet implemented
+            dispatchMLSMessage(message)
         }
     }
 
@@ -2303,8 +2303,7 @@ extension ChatManager: MeshManagerDelegate {
                 handleDeadDrop(payload)
 
             case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest:
-                // Phase 4 — MLS integration not yet wired. Drop silently for now.
-                break
+                dispatchMLSMessage(message)
             }
         } catch SophaxError.sessionStateCorrupted {
             // The persisted DR session blob was malformed (e.g. crashed mid-write).
