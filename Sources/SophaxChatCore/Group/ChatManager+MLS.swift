@@ -100,18 +100,30 @@ extension ChatManager {
             guard let self else { return }
             do {
                 let mls = try self.requireMLSManager()
-                let plaintext = try await mls.decrypt(groupID: msg.groupID, ciphertext: msg.ciphertext)
-                guard let body = String(data: plaintext, encoding: .utf8) else { return }
+                let captionPlain = try await mls.decrypt(groupID: msg.groupID, ciphertext: msg.ciphertext)
+                let body = String(data: captionPlain, encoding: .utf8) ?? ""
+
+                // Decrypt attachment if present and save to AttachmentStore
+                var attachmentID: String? = nil
+                if let ac = msg.attachmentCiphertext, msg.mimeType != nil {
+                    let attachData = try await mls.decrypt(groupID: msg.groupID, ciphertext: ac)
+                    let aid = UUID().uuidString
+                    try? self.attachmentStore.save(attachData, id: aid)
+                    attachmentID = aid
+                }
 
                 let stored = StoredMessage(
-                    id:        messageID,
-                    peerID:    convID,
-                    direction: .received,
-                    body:      body,
-                    status:    .delivered,
-                    replyToID: msg.replyToID,
-                    expiresAt: msg.expiresAt,
-                    senderID:  msg.senderPeerID
+                    id:                 messageID,
+                    peerID:             convID,
+                    direction:          .received,
+                    body:               body,
+                    status:             .delivered,
+                    replyToID:          msg.replyToID,
+                    expiresAt:          msg.expiresAt,
+                    attachmentID:       attachmentID,
+                    attachmentMimeType: msg.mimeType,
+                    audioDuration:      msg.audioDuration,
+                    senderID:           msg.senderPeerID
                 )
                 try self.messageStore.append(message: stored)
 
@@ -318,6 +330,94 @@ extension ChatManager {
 
                 let members = group.memberIDs
                 for peerID in members where peerID != myID {
+                    try? self.sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
+                }
+            } catch {
+                fail(error)
+            }
+        }
+    }
+
+    /// Send a binary attachment (image or audio) to an MLS group.
+    public func sendMLSGroupAttachment(
+        _ data: Data,
+        mimeType: String,
+        caption: String = "",
+        audioDuration: Double? = nil,
+        group: GroupInfo,
+        expiresAt: Date? = nil,
+        replyToID: String? = nil
+    ) {
+        guard data.count <= 512_000 else {
+            delegate?.chatManager(self, didEncounterError:
+                SophaxError.invalidMessageFormat("Attachment exceeds 512 KB limit"))
+            return
+        }
+
+        let myID         = identity.publicIdentity.peerID
+        let messageID    = UUID().uuidString
+        let attachmentID = UUID().uuidString
+        let convID       = "group.\(group.id)"
+        let msgType      = mimeType.hasPrefix("image/") ? "image" : "audio"
+        let displayBody  = caption.isEmpty
+            ? (msgType == "image" ? "📷 Photo" : "🎤 Voice message")
+            : caption
+
+        func fail(_ error: Error) {
+            try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: convID)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.delegate?.chatManager(self, didEncounterError: error)
+            }
+        }
+
+        // Save attachment locally for sender's own bubble
+        try? attachmentStore.save(data, id: attachmentID)
+
+        let stored = StoredMessage(
+            id: messageID, peerID: convID,
+            direction: .sent, body: displayBody, status: .sending,
+            replyToID: replyToID, expiresAt: expiresAt,
+            attachmentID: attachmentID, attachmentMimeType: mimeType,
+            audioDuration: audioDuration, senderID: myID
+        )
+        do { try messageStore.append(message: stored) } catch { fail(error); return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didReceiveGroupMessage: stored, inGroup: group.id)
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let mls = try self.requireMLSManager()
+
+                // Encrypt caption (may be empty)
+                let captionPlain  = caption.data(using: .utf8) ?? Data()
+                let bodyCipher    = try await mls.encrypt(groupID: group.id, plaintext: captionPlain)
+                // Encrypt attachment bytes
+                let attachCipher  = try await mls.encrypt(groupID: group.id, plaintext: data)
+
+                let appMsg = MLSApplicationMessage(
+                    groupID:              group.id,
+                    messageID:            messageID,
+                    senderPeerID:         myID,
+                    senderUsername:       self.identity.publicIdentity.username,
+                    timestamp:            Date(),
+                    ciphertext:           bodyCipher,
+                    expiresAt:            expiresAt,
+                    replyToID:            replyToID,
+                    attachmentCiphertext: attachCipher,
+                    mimeType:             mimeType,
+                    audioDuration:        audioDuration
+                )
+                guard let wire = try? self.wireBuilder.build(.mlsMessage, payload: appMsg) else {
+                    throw SophaxError.encryptionFailed("Failed to build MLS attachment wire message")
+                }
+
+                try? self.messageStore.updateStatus(.delivered, forMessageID: messageID, peerID: convID)
+
+                for peerID in group.memberIDs where peerID != myID {
                     try? self.sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
                 }
             } catch {
