@@ -248,6 +248,18 @@ final class AppState: ObservableObject {
         chatManager?.broadcastChannelAnnouncement(for: group)
     }
 
+    /// Whether the given peer has an MLS KeyPackage available.
+    /// Required before creating an MLS group — all members must have exchanged keys at least once.
+    func peerHasMLSKeyPackage(_ peerID: String) -> Bool {
+        chatManager?.peerBundles[peerID]?.mlsKeyPackage != nil
+    }
+
+    /// Create a new MLS (RFC 9420) group. No channel announcement — MLS groups are
+    /// closed-membership and onboard members via Welcome messages.
+    func createMLSGroup(name: String, memberPeerIDs: [String]) {
+        chatManager?.createMLSGroup(name: name, memberPeerIDs: memberPeerIDs)
+    }
+
     func sendGroupMessage(_ text: String, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {
         chatManager?.sendGroupMessage(text, groupID: group.id, members: group.memberIDs,
                                       expiresAt: expiresAt, replyToID: replyToID)
