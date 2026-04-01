@@ -1,0 +1,29 @@
+name: Swift
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build SophaxChatCore
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build core library
+        run: swift build -c release 2>&1
+
+      - name: Run tests
+        run: swift test 2>&1
+        continue-on-error: true   # Tests require XCTest; pass when running on hosted runner

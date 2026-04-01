@@ -13,6 +13,9 @@
     <img src="https://img.shields.io/badge/License-MIT-blue" />
     <img src="https://img.shields.io/badge/Status-Alpha-orange" />
     <img src="https://img.shields.io/badge/Cryptography-CryptoKit-34C759?logo=apple" />
+    <a href="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/swift.yml">
+      <img src="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/swift.yml/badge.svg" alt="Swift build" />
+    </a>
   </p>
 
   <p>
@@ -80,23 +83,25 @@ SophaxChat is built around three principles that cannot be traded away:
 
 ### Why does it exist?
 
-| Scenario | Signal | bitchat | SophaxChat |
-|---|:---:|:---:|:---:|
-| No internet connection (BLE/WiFi mesh) | ❌ | ✅ | ✅ |
-| LAN auto-discovery (same WiFi, no pairing) | ❌ | ❌ | ✅ |
-| Internet reach (TCP, peer-to-peer) | ✅ | ❌ | ✅ |
-| Tor / anonymity network support | ⚠️ | ❌ | ✅ |
-| No phone number required | ❌ | ✅ | ✅ |
-| Signal-grade forward secrecy | ✅ | ❌ | ✅ |
-| Per-session unique keys (X3DH) | ✅ | ❌ | ✅ |
-| Header encryption (relay metadata) | ✅ | ❌ | ✅ |
-| Sealed sender (hides sender from relay) | ✅ | ❌ | ✅ |
-| No server dependency | ❌ | ✅ | ✅ |
-| Group messaging (Sender Keys) | ✅ | ❌ | ✅ |
-| Open-source | ⚠️ | ✅ | ✅ |
-| Multihop relay (mesh routing) | ❌ | ✅ | ✅ |
-| iOS + Android cross-platform | ✅ | ❌ | ✅ |
-| macOS support | ✅ | ❌ | ✅ |
+| Scenario | Signal | Telegram | bitchat | SophaxChat |
+|---|:---:|:---:|:---:|:---:|
+| No internet connection (BLE/WiFi mesh) | ❌ | ❌ | ✅ | ✅ |
+| LAN auto-discovery (same WiFi, no pairing) | ❌ | ❌ | ❌ | ✅ |
+| Internet reach (TCP, peer-to-peer) | ✅ | ✅ | ❌ | ✅ |
+| Tor / anonymity network support | ⚠️ | ❌ | ❌ | ✅ |
+| No phone number required | ❌ | ⚠️¹ | ✅ | ✅ |
+| Signal-grade forward secrecy | ✅ | ⚠️² | ❌ | ✅ |
+| Per-session unique keys (X3DH) | ✅ | ⚠️² | ❌ | ✅ |
+| Header encryption (relay metadata) | ✅ | ❌ | ❌ | ✅ |
+| Sealed sender (hides sender from relay) | ✅ | ❌ | ❌ | ✅ |
+| No server dependency | ❌ | ❌ | ✅ | ✅ |
+| End-to-end encrypted groups | ✅ | ⚠️² | ❌ | ✅ |
+| Open-source | ⚠️ | ⚠️³ | ✅ | ✅ |
+| Multihop relay (mesh routing) | ❌ | ❌ | ✅ | ✅ |
+| iOS + Android cross-platform | ✅ | ✅ | ❌ | ✅ |
+| macOS support | ✅ | ✅ | ❌ | ✅ |
+
+<sub>¹ Telegram requires a phone number to register; usernames added in 2023 do not replace this requirement. ² Telegram's MTProto E2EE applies only to "Secret Chats" — regular chats, groups, and channels are server-side encrypted (Telegram holds the keys). ³ Telegram clients are open-source; the server is closed-source and proprietary.</sub>
 
 SophaxChat occupies a specific niche: **Signal-grade cryptography, zero infrastructure**. Ideal for journalists, activists, protesters, disaster responders, or anyone in an environment where internet access is unavailable, monitored, or untrusted.
 
@@ -331,7 +336,13 @@ SophaxChat/
 │   │   ├── Keccak.swift            # Minimal SHA3-256 (Tor v3 .onion checksum)
 │   │   └── OnionAddress.swift      # Tor v3 .onion derivation from Ed25519 key
 │   ├── Group/
-│   │   └── GroupTypes.swift        # GroupInfo, SenderKeyState, SenderKeyDistributionMessage
+│   │   ├── GroupTypes.swift         # GroupInfo, SenderKeyState, GroupCryptoVersion
+│   │   ├── MLSGroupManager.swift    # MLS actor — wraps mls-rs via UniFFI
+│   │   ├── ChatManager+MLS.swift    # MLS inbound/outbound handlers + dispatch router
+│   │   └── GroupCryptoMigration.swift # Opt-in SKv2 → MLS migration scaffold
+│   ├── MLS/
+│   │   └── Generated/
+│   │       └── sophax_mls.swift     # Auto-generated UniFFI Swift bindings (mls-rs)
 │   ├── Network/
 │   │   ├── NetworkProtocol.swift   # Wire message types + WireMessageBuilder
 │   │   ├── MeshManager.swift       # MultipeerConnectivity P2P transport (BLE/WiFi)
@@ -341,6 +352,13 @@ SophaxChat/
 │   │   ├── MessageStore.swift      # AES-256-GCM encrypted at-rest storage
 │   │   └── AttachmentStore.swift   # Encrypted blob store for images/audio
 │   └── ChatManager.swift           # High-level coordinator (session + routing)
+│
+├── rust/                            # mls-rs Rust crate (compiled to XCFramework via UniFFI)
+│   ├── src/lib.rs                  # Stateless MLS API: create/add/remove/encrypt/decrypt
+│   └── Cargo.toml                  # mls-rs 0.54, RustCrypto backend (no OpenSSL)
+│
+├── scripts/
+│   └── build_mls_xcframework.sh    # Cross-compile Rust → XCFramework for iOS/macOS
 │
 ├── SophaxChat/                      # iOS/macOS SwiftUI application
 │   ├── App/
@@ -353,7 +371,8 @@ SophaxChat/
 │       └── Settings/               # Safety number, app lock, Contact Card, Tor setup
 │
 └── Tests/SophaxChatCoreTests/
-    └── CryptoTests.swift           # X3DH symmetry + Double Ratchet correctness
+    ├── CryptoTests.swift            # X3DH symmetry + Double Ratchet correctness
+    └── MLSGroupManagerTests.swift   # MLS two-party, three-party, removal, epoch tests
 ```
 
 > **macOS:** The app runs on macOS 14+ via Catalyst. `AVAudioSession` calls are guarded with `#if !targetEnvironment(macCatalyst)`. Peer discovery works over WiFi on macOS.
@@ -619,6 +638,7 @@ Do not open public issues for security bugs.
 - [x] Android feature parity — App Lock (BiometricPrompt), unread badges, typing indicators, long-press menu (copy / delete / block / reply), reply-to-message, Safety Number screen, deep link confirmation, onboarding backup + verification slides
 - [x] Security Audit III — ten findings resolved: port bounds check, strict Tor v3 regex, X3DH dhConcat zeroing, EncryptedSharedPreferences for app state, Double Ratchet `mk.fill(0)`, Android clipboard auto-clear, dhConcat length precondition, error message sanitization, `assert` → `precondition` in IdentityManager
 - [x] Android reactions, disappearing messages, contact renaming, message search — full feature parity with iOS
+- [x] MLS (RFC 9420) group encryption — mls-rs 0.54 via UniFFI, RustCrypto backend (no OpenSSL), compiled to XCFramework. Per-epoch post-compromise security; P2P coordinator pattern (group creator issues Commits, members send CommitRequests via DR unicast). `GroupCryptoVersion` field ensures full backward compatibility with existing Sender Keys v2 groups. Opt-in migration scaffold in `GroupCryptoMigration.swift`.
 
 ### Seeking external support
 
