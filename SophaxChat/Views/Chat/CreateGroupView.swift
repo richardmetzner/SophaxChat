@@ -13,11 +13,18 @@ struct CreateGroupView: View {
 
     @State private var groupName:        String = ""
     @State private var selectedPeerIDs:  Set<String> = []
+    @State private var useMLS:           Bool = false
     @FocusState private var nameFocused: Bool
+
+    private var allSelectedPeersHaveKeyPackage: Bool {
+        selectedPeerIDs.allSatisfy { appState.peerHasMLSKeyPackage($0) }
+    }
 
     private var canCreate: Bool {
         let trimmed = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && trimmed.count <= 64 && !selectedPeerIDs.isEmpty
+        guard !trimmed.isEmpty, trimmed.count <= 64, !selectedPeerIDs.isEmpty else { return false }
+        if useMLS && !allSelectedPeersHaveKeyPackage { return false }
+        return true
     }
 
     var body: some View {
@@ -29,6 +36,28 @@ struct CreateGroupView: View {
                         .autocorrectionDisabled()
                 } header: {
                     Text("Group Name")
+                }
+
+                Section {
+                    Toggle(isOn: $useMLS) {
+                        Label("MLS (Post-Compromise Security)", systemImage: "lock.shield")
+                    }
+                    .disabled(!selectedPeerIDs.isEmpty && !allSelectedPeersHaveKeyPackage)
+                } header: {
+                    Text("Encryption Protocol")
+                } footer: {
+                    if useMLS {
+                        if allSelectedPeersHaveKeyPackage || selectedPeerIDs.isEmpty {
+                            Text("MLS provides post-compromise security per epoch. All members must have exchanged keys with you at least once.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("One or more selected members have not yet exchanged MLS keys. Ask them to open SophaxChat while nearby.")
+                                .foregroundStyle(.orange)
+                        }
+                    } else {
+                        Text("Standard uses Signal-style Sender Keys v2. Enable MLS for RFC 9420 post-compromise security.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section {
@@ -87,7 +116,11 @@ struct CreateGroupView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
                         let name = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        appState.createGroup(name: name, memberPeerIDs: Array(selectedPeerIDs))
+                        if useMLS {
+                            appState.createMLSGroup(name: name, memberPeerIDs: Array(selectedPeerIDs))
+                        } else {
+                            appState.createGroup(name: name, memberPeerIDs: Array(selectedPeerIDs))
+                        }
                         dismiss()
                     }
                     .disabled(!canCreate)
