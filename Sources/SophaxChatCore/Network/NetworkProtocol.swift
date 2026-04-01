@@ -179,17 +179,23 @@ public struct MLSCommitMessage: Codable, Sendable {
 /// Encrypted group message for MLS groups (.mlsMessage).
 /// The `ciphertext` is the output of MLSGroupManager.encrypt — an opaque mls-rs blob.
 public struct MLSApplicationMessage: Codable, Sendable {
-    public let groupID:       String
-    public let messageID:     String
-    public let senderPeerID:  String
-    public let senderUsername: String
-    public let timestamp:     Date
-    /// mls-rs application-message ciphertext.
-    public let ciphertext:    Data
+    public let groupID:              String
+    public let messageID:            String
+    public let senderPeerID:         String
+    public let senderUsername:       String
+    public let timestamp:            Date
+    /// MLS-encrypted body (caption text; empty string for attachment-only messages).
+    public let ciphertext:           Data
     /// Auto-delete deadline (nil = persistent).
-    public let expiresAt:     Date?
+    public let expiresAt:            Date?
     /// MessageID of the message being replied to.
-    public let replyToID:     String?
+    public let replyToID:            String?
+    /// MLS-encrypted attachment bytes (image / audio). nil = text-only message.
+    public let attachmentCiphertext: Data?
+    /// MIME type of the attachment (e.g. "image/jpeg", "audio/m4a"). nil = text-only.
+    public let mimeType:             String?
+    /// Audio duration in seconds. Non-nil only for audio/m4a attachments.
+    public let audioDuration:        Double?
 }
 
 /// Sent by a non-coordinator member requesting the coordinator to add or remove a peer.

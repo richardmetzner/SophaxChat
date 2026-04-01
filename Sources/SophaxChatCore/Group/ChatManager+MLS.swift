@@ -298,14 +298,17 @@ extension ChatManager {
                 let ciphertext = try await mls.encrypt(groupID: group.id, plaintext: plaintext)
 
                 let appMsg = MLSApplicationMessage(
-                    groupID:       group.id,
-                    messageID:     messageID,
-                    senderPeerID:  myID,
-                    senderUsername: self.identity.publicIdentity.username,
-                    timestamp:     Date(),
-                    ciphertext:    ciphertext,
-                    expiresAt:     expiresAt,
-                    replyToID:     replyToID
+                    groupID:              group.id,
+                    messageID:            messageID,
+                    senderPeerID:         myID,
+                    senderUsername:       self.identity.publicIdentity.username,
+                    timestamp:            Date(),
+                    ciphertext:           ciphertext,
+                    expiresAt:            expiresAt,
+                    replyToID:            replyToID,
+                    attachmentCiphertext: nil,
+                    mimeType:             nil,
+                    audioDuration:        nil
                 )
                 guard let wire = try? self.wireBuilder.build(.mlsMessage, payload: appMsg) else {
                     throw SophaxError.encryptionFailed("Failed to build MLS wire message")
