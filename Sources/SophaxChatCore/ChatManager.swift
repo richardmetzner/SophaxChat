@@ -193,7 +193,7 @@ public final class ChatManager: @unchecked Sendable {
     var joinedGroups: [String: Set<String>] = [:]
 
     /// Creator peerID for each joined group — used to verify group-delete authority.
-    private var groupCreators: [String: String] = [:]
+    var groupCreators: [String: String] = [:]
 
     /// Messages stored on behalf of offline peers (relay-store role).
     private struct StoredForwardItem {
@@ -825,6 +825,9 @@ public final class ChatManager: @unchecked Sendable {
         groupCreators.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)               // v1 cleanup
         keychain.deleteAllSenderKeyStates(groupID: group.id)     // v2 cleanup
+        if group.cryptoVersion == .mls {
+            Task { try? await self.mlsManager?.deleteGroupState(groupID: group.id) }
+        }
         // Remove this group's entries from the skipped-key cache
         let prefix = group.id + "/"
         skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
@@ -853,6 +856,9 @@ public final class ChatManager: @unchecked Sendable {
         groupCreators.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)
         keychain.deleteAllSenderKeyStates(groupID: group.id)
+        if group.cryptoVersion == .mls {
+            Task { try? await self.mlsManager?.deleteGroupState(groupID: group.id) }
+        }
         let prefix = group.id + "/"
         skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
             skippedGroupMessageKeys.removeValue(forKey: $0)
@@ -1717,6 +1723,7 @@ public final class ChatManager: @unchecked Sendable {
         groupCreators.removeValue(forKey: groupID)
         keychain.deleteGroupKey(groupID: groupID)
         keychain.deleteAllSenderKeyStates(groupID: groupID)
+        Task { try? await self.mlsManager?.deleteGroupState(groupID: groupID) }
         let prefix = groupID + "/"
         skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
             skippedGroupMessageKeys.removeValue(forKey: $0)

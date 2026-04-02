@@ -35,6 +35,7 @@ extension ChatManager {
                     cryptoVersion: .mls
                 )
                 self.joinedGroups[msg.groupID] = Set(msg.memberIDs)
+                self.groupCreators[msg.groupID] = msg.creatorID
 
                 DispatchQueue.main.async {
                     self.delegate?.chatManager(self, didJoinGroup: group)
@@ -287,6 +288,7 @@ extension ChatManager {
                     memberKeyPackages: keyPackages.map(\.kp)
                 )
                 self.joinedGroups[groupID] = Set(allMembers)
+                self.groupCreators[groupID] = myID
 
                 // Send each member their Welcome via DR unicast
                 for welcome in createOut.welcomes {
