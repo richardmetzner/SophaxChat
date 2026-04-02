@@ -261,27 +261,44 @@ final class AppState: ObservableObject {
     }
 
     func sendGroupMessage(_ text: String, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {
-        chatManager?.sendGroupMessage(text, groupID: group.id, members: group.memberIDs,
-                                      expiresAt: expiresAt, replyToID: replyToID)
+        if group.cryptoVersion == .mls {
+            chatManager?.sendMLSGroupMessage(text, group: group, expiresAt: expiresAt, replyToID: replyToID)
+        } else {
+            chatManager?.sendGroupMessage(text, groupID: group.id, members: group.memberIDs,
+                                          expiresAt: expiresAt, replyToID: replyToID)
+        }
     }
 
     func sendGroupReaction(emoji: String?, messageID: String, group: GroupInfo) {
+        // MLS reactions are not yet implemented — SKv2 only
+        guard group.cryptoVersion != .mls else { return }
         chatManager?.sendGroupReaction(emoji: emoji, toMessageID: messageID,
                                        groupID: group.id, members: group.memberIDs)
     }
 
     func sendGroupImage(_ image: UIImage, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {
         guard let data = compressedJPEG(image) else { return }
-        chatManager?.sendGroupAttachment(data, mimeType: "image/jpeg",
-                                         groupID: group.id, members: group.memberIDs,
-                                         expiresAt: expiresAt, replyToID: replyToID)
+        if group.cryptoVersion == .mls {
+            chatManager?.sendMLSGroupAttachment(data, mimeType: "image/jpeg",
+                                                group: group, expiresAt: expiresAt, replyToID: replyToID)
+        } else {
+            chatManager?.sendGroupAttachment(data, mimeType: "image/jpeg",
+                                             groupID: group.id, members: group.memberIDs,
+                                             expiresAt: expiresAt, replyToID: replyToID)
+        }
     }
 
     func sendGroupAudio(_ data: Data, duration: Double, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {
-        chatManager?.sendGroupAttachment(data, mimeType: "audio/m4a",
-                                         audioDuration: duration,
-                                         groupID: group.id, members: group.memberIDs,
-                                         expiresAt: expiresAt, replyToID: replyToID)
+        if group.cryptoVersion == .mls {
+            chatManager?.sendMLSGroupAttachment(data, mimeType: "audio/m4a",
+                                                audioDuration: duration,
+                                                group: group, expiresAt: expiresAt, replyToID: replyToID)
+        } else {
+            chatManager?.sendGroupAttachment(data, mimeType: "audio/m4a",
+                                             audioDuration: duration,
+                                             groupID: group.id, members: group.memberIDs,
+                                             expiresAt: expiresAt, replyToID: replyToID)
+        }
     }
 
     // MARK: - Username change
