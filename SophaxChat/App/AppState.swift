@@ -1452,4 +1452,8 @@ extension AppState: @preconcurrency ChatManagerDelegate {
         messages.removeValue(forKey: convID)
         unreadCounts.removeValue(forKey: convID)
     }
+
+    func chatManager(_ manager: ChatManager, didReceiveAvatarData data: Data, fromPeerID peerID: String) {
+        peerAvatars[peerID] = data
+    }
 }

@@ -127,6 +127,16 @@ extension ChatManager {
                 )
                 try self.messageStore.append(message: stored)
 
+                // Cache sender avatar for group-only contacts
+                if let avatarData = msg.senderAvatarData,
+                   avatarData.count > 0, avatarData.count <= 8_192,
+                   self.peerBundles[msg.senderPeerID]?.avatarData == nil {
+                    let senderID = msg.senderPeerID
+                    DispatchQueue.main.async {
+                        self.delegate?.chatManager(self, didReceiveAvatarData: avatarData, fromPeerID: senderID)
+                    }
+                }
+
                 DispatchQueue.main.async {
                     self.delegate?.chatManager(self, didReceiveGroupMessage: stored, inGroup: msg.groupID)
                 }
@@ -355,7 +365,8 @@ extension ChatManager {
                     replyToID:            replyToID,
                     attachmentCiphertext: nil,
                     mimeType:             nil,
-                    audioDuration:        nil
+                    audioDuration:        nil,
+                    senderAvatarData:     self.identity.loadAvatar()
                 )
                 guard let wire = try? self.wireBuilder.build(.mlsMessage, payload: appMsg) else {
                     throw SophaxError.encryptionFailed("Failed to build MLS wire message")
@@ -444,7 +455,8 @@ extension ChatManager {
                     replyToID:            replyToID,
                     attachmentCiphertext: attachCipher,
                     mimeType:             mimeType,
-                    audioDuration:        audioDuration
+                    audioDuration:        audioDuration,
+                    senderAvatarData:     self.identity.loadAvatar()
                 )
                 guard let wire = try? self.wireBuilder.build(.mlsMessage, payload: appMsg) else {
                     throw SophaxError.encryptionFailed("Failed to build MLS attachment wire message")

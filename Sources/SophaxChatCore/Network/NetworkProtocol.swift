@@ -200,6 +200,8 @@ public struct MLSApplicationMessage: Codable, Sendable {
     public let mimeType:             String?
     /// Audio duration in seconds. Non-nil only for audio/m4a attachments.
     public let audioDuration:        Double?
+    /// Sender's JPEG avatar (≤8 KB) for group-only contacts that haven't received a Hello.
+    public let senderAvatarData:     Data?
 }
 
 /// Sent by a non-coordinator member requesting the coordinator to add or remove a peer.
@@ -478,6 +480,9 @@ public struct GroupWireMessage: Codable, Sendable {
     public let expiresAt:            Date?
     /// Message ID this message is replying to (nil = not a reply).
     public let replyToID:            String?
+    /// Sender's JPEG avatar (≤8 KB). Included so group-only contacts (no direct Hello)
+    /// can display an avatar. Nil once the receiver has already cached it.
+    public let senderAvatarData:     Data?
 
     public init(
         groupID:              String,
@@ -491,7 +496,8 @@ public struct GroupWireMessage: Codable, Sendable {
         audioDuration:        Double? = nil,
         senderKeyIteration:   UInt32? = nil,
         expiresAt:            Date?   = nil,
-        replyToID:            String? = nil
+        replyToID:            String? = nil,
+        senderAvatarData:     Data?   = nil
     ) {
         self.groupID              = groupID
         self.messageID            = messageID
@@ -505,6 +511,7 @@ public struct GroupWireMessage: Codable, Sendable {
         self.senderKeyIteration   = senderKeyIteration
         self.expiresAt            = expiresAt
         self.replyToID            = replyToID
+        self.senderAvatarData     = senderAvatarData
     }
 }
 

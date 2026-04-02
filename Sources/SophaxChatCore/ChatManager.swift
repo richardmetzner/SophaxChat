@@ -114,6 +114,8 @@ public protocol ChatManagerDelegate: AnyObject {
     func chatManager(_ manager: ChatManager, didRotateSenderKey forGroupID: String)
     /// The group creator dissolved the group; local user and all members must drop it.
     func chatManager(_ manager: ChatManager, groupDeletedWithID groupID: String)
+    /// A group message carried avatar data for a peer not yet in peerAvatars.
+    func chatManager(_ manager: ChatManager, didReceiveAvatarData data: Data, fromPeerID peerID: String)
 }
 
 // MARK: - ChatManager
@@ -650,7 +652,8 @@ public final class ChatManager: @unchecked Sendable {
             ciphertext:         ciphertext,
             senderKeyIteration: senderKeyIteration,
             expiresAt:          expiresAt,
-            replyToID:          replyToID
+            replyToID:          replyToID,
+            senderAvatarData:   identity.loadAvatar()
         )
 
         guard let wire = try? wireBuilder.build(.groupMessage, payload: wireMsg) else {
@@ -770,7 +773,8 @@ public final class ChatManager: @unchecked Sendable {
             audioDuration:        audioDuration,
             senderKeyIteration:   senderKeyIteration,
             expiresAt:            expiresAt,
-            replyToID:            replyToID
+            replyToID:            replyToID,
+            senderAvatarData:     identity.loadAvatar()
         )
 
         guard let wire = try? wireBuilder.build(.groupMessage, payload: wireMsg) else {
@@ -1901,6 +1905,17 @@ public final class ChatManager: @unchecked Sendable {
             receivedAt:         Date()
         )
         try? messageStore.append(message: stored)
+
+        // Cache sender avatar if this is a group-only contact (no Hello received yet)
+        if let avatarData = payload.senderAvatarData,
+           avatarData.count > 0, avatarData.count <= 8_192,
+           peerBundles[payload.senderPeerID]?.avatarData == nil {
+            let senderID = payload.senderPeerID
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.delegate?.chatManager(self, didReceiveAvatarData: avatarData, fromPeerID: senderID)
+            }
+        }
 
         // Send a read receipt back to the original sender so they can track delivery.
         // Best-effort: if we have no path to the sender yet, the receipt is silently dropped.
