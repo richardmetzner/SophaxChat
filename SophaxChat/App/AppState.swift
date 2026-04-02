@@ -63,6 +63,24 @@ final class AppState: ObservableObject {
     @Published var tcpEnabled: Bool = false {
         didSet { applyTCPConfig(); UserDefaults.standard.set(tcpEnabled, forKey: tcpEnabledKey) }
     }
+    /// Whether to route TCP traffic through the embedded Tor SOCKS5 proxy.
+    @AppStorage("com.sophax.torEnabled") var torEnabled: Bool = true {
+        didSet {
+            #if !targetEnvironment(macCatalyst)
+            if torEnabled {
+                TorManager.shared.start()
+                if tcpSocksProxy.isEmpty {
+                    tcpSocksProxy = TorManager.socksProxy
+                }
+            } else {
+                TorManager.shared.stop()
+                if tcpSocksProxy == TorManager.socksProxy {
+                    tcpSocksProxy = ""
+                }
+            }
+            #endif
+        }
+    }
     /// Local listen port (default 25519).
     @Published var tcpPort: String = "25519" {
         didSet { applyTCPConfig(); UserDefaults.standard.set(tcpPort, forKey: tcpPortKey) }
@@ -130,8 +148,11 @@ final class AppState: ObservableObject {
             setupChatManager(username: nil)
         }
         // Start embedded Tor immediately (iOS only — Mac Catalyst uses system network directly).
+        // Respects the torEnabled toggle stored in UserDefaults.
         #if !targetEnvironment(macCatalyst)
-        TorManager.shared.start()
+        if torEnabled {
+            TorManager.shared.start()
+        }
         observeTorState()
         #endif
     }
@@ -935,7 +956,7 @@ final class AppState: ObservableObject {
         Task { [weak self] in
             for await state in TorManager.shared.$state.values {
                 guard let self else { return }
-                if case .ready = state, self.tcpSocksProxy.isEmpty {
+                if case .ready = state, self.torEnabled, self.tcpSocksProxy.isEmpty {
                     self.tcpSocksProxy = TorManager.socksProxy
                 }
             }

@@ -199,7 +199,12 @@ struct SettingsView: View {
 
             if appState.tcpEnabled {
                 #if !targetEnvironment(macCatalyst)
-                torStatusCard
+                Toggle(isOn: $appState.torEnabled) {
+                    Label("Route through Tor", systemImage: "network.badge.shield.half.filled")
+                }
+                if appState.torEnabled {
+                    torStatusCard
+                }
                 #endif
                 connectCard
             }
