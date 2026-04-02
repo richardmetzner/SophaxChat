@@ -66,5 +66,11 @@
 		<key>UIColorName</key>
 		<string>AccentColor</string>
 	</dict>
+	<!-- Export compliance: SophaxChat uses non-exempt encryption (ChaCha20-Poly1305,
+	     AES-256-GCM, Ed25519, X25519, MLS/RFC 9420). ECCN 5D002 / EAR99 self-
+	     classification. The compliance UUID below is issued by Apple after the first
+	     TestFlight / App Store upload — fill it in at submission time. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
 </dict>
 </plist>
