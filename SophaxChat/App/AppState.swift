@@ -260,6 +260,15 @@ final class AppState: ObservableObject {
         chatManager?.createMLSGroup(name: name, memberPeerIDs: memberPeerIDs)
     }
 
+    /// Attempt to migrate an SKv2 group to MLS. Only the group creator can call this.
+    func migrateGroupToMLS(_ group: GroupInfo, completion: @escaping (GroupMigrationResult) -> Void) {
+        guard let cm = chatManager else { return }
+        Task {
+            let result = (try? migrateGroupToMLS(group, in: cm)) ?? .requiresAllOnline([])
+            await MainActor.run { completion(result) }
+        }
+    }
+
     func sendGroupMessage(_ text: String, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {
         if group.cryptoVersion == .mls {
             chatManager?.sendMLSGroupMessage(text, group: group, expiresAt: expiresAt, replyToID: replyToID)

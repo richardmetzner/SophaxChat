@@ -42,6 +42,8 @@ struct GroupChatView: View {
     @State private var showingLeaveConfirm  = false
     @State private var showingRotateConfirm = false
     @State private var showingDeleteConfirm = false
+    @State private var showingMigrationAlert   = false
+    @State private var migrationAlertMessage   = ""
 
     private var messages: [StoredMessage] {
         appState.messages[group.conversationID] ?? []
@@ -89,6 +91,11 @@ struct GroupChatView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("All members will lose access to this group immediately. This cannot be undone.")
+            }
+            .alert("Upgrade to MLS", isPresented: $showingMigrationAlert) {
+                Button("OK") {}
+            } message: {
+                Text(migrationAlertMessage)
             }
     }
 
@@ -218,6 +225,26 @@ struct GroupChatView: View {
             Divider()
             Button { showingRotateConfirm = true } label: {
                 Label("Reset Encryption Key", systemImage: "key.slash")
+            }
+            if group.cryptoVersion == .senderKeysV2,
+               group.creatorID == appState.chatManager?.identity.publicIdentity.peerID {
+                Divider()
+                Button {
+                    appState.migrateGroupToMLS(group) { result in
+                        switch result {
+                        case .notNeeded:
+                            break
+                        case .initiated:
+                            migrationAlertMessage = "Migration started. A new MLS group has been created with the same members."
+                            showingMigrationAlert = true
+                        case .requiresAllOnline(let ids):
+                            migrationAlertMessage = "\(ids.count) member(s) are missing MLS keys. Ask them to open SophaxChat while nearby, then try again."
+                            showingMigrationAlert = true
+                        }
+                    }
+                } label: {
+                    Label("Upgrade to MLS", systemImage: "lock.shield")
+                }
             }
             Divider()
             Button(role: .destructive) { showingLeaveConfirm = true } label: {
