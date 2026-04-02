@@ -15,7 +15,8 @@ struct ChatListView: View {
     @State private var showingCreateGroup = false
     @State private var showingScanner     = false
     @State private var peerToBlock: KnownPeer? = nil
-    @State private var groupToLeave: GroupInfo? = nil
+    @State private var groupToLeave:  GroupInfo? = nil
+    @State private var groupToDelete: GroupInfo? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
     @State private var keyChangePeerID: String? = nil
 
@@ -146,6 +147,13 @@ struct ChatListView: View {
                                 groupToLeave = group
                             } label: {
                                 Label("Leave", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                            if group.creatorID == appState.chatManager?.identity.publicIdentity.peerID {
+                                Button(role: .destructive) {
+                                    groupToDelete = group
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -345,6 +353,19 @@ struct ChatListView: View {
             Button("Cancel", role: .cancel) { groupToLeave = nil }
         } message: {
             Text("You will no longer receive messages from this group. This cannot be undone.")
+        }
+        .confirmationDialog(
+            "Delete \"\(groupToDelete?.name ?? "")\" for everyone?",
+            isPresented: Binding(get: { groupToDelete != nil }, set: { if !$0 { groupToDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Group", role: .destructive) {
+                if let g = groupToDelete { appState.deleteGroup(g) }
+                groupToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { groupToDelete = nil }
+        } message: {
+            Text("All members will lose access to this group immediately. This cannot be undone.")
         }
     }
 }

@@ -321,6 +321,14 @@ final class AppState: ObservableObject {
         unreadCounts.removeValue(forKey: group.conversationID)
     }
 
+    func deleteGroup(_ group: GroupInfo) {
+        chatManager?.deleteGroup(group)
+        groups.removeAll { $0.id == group.id }
+        saveGroups()
+        messages.removeValue(forKey: group.conversationID)
+        unreadCounts.removeValue(forKey: group.conversationID)
+    }
+
     func groupMessages(for group: GroupInfo) -> [StoredMessage] {
         messages[group.conversationID] ?? []
     }
@@ -1433,5 +1441,13 @@ extension AppState: @preconcurrency ChatManagerDelegate {
 
     func chatManager(_ manager: ChatManager, didRotateSenderKey forGroupID: String) {
         // No persistent state update needed — rotation is confirmed by the Keychain write in ChatManager.
+    }
+
+    func chatManager(_ manager: ChatManager, groupDeletedWithID groupID: String) {
+        let convID = "group.\(groupID)"
+        groups.removeAll { $0.id == groupID }
+        saveGroups()
+        messages.removeValue(forKey: convID)
+        unreadCounts.removeValue(forKey: convID)
     }
 }

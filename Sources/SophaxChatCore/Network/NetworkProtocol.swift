@@ -103,6 +103,8 @@ public enum WireMessageType: String, Codable, Sendable {
     case groupReaction
     /// A member voluntarily left a group — triggers sender-key rotation in remaining members.
     case groupMemberLeft
+    /// The group creator is dissolving the group for all members.
+    case groupDeleted
     /// Read receipt for a specific group message — unicast from receiver to original sender.
     case groupReadReceipt
     /// Request a directly-connected relay peer to hold a sealed message for an offline target.
@@ -759,6 +761,20 @@ public struct GroupMemberLeftMessage: Codable, Sendable {
         self.groupID            = groupID
         self.leavingPeerID      = leavingPeerID
         self.remainingMemberIDs = remainingMemberIDs
+    }
+}
+
+// MARK: - Group Deleted
+
+/// Broadcast by the group creator when dissolving a group for all members.
+/// Recipients must verify `deletedByPeerID == group.creatorID` before acting.
+public struct GroupDeletedMessage: Codable, Sendable {
+    public let groupID:         String
+    public let deletedByPeerID: String
+
+    public init(groupID: String, deletedByPeerID: String) {
+        self.groupID         = groupID
+        self.deletedByPeerID = deletedByPeerID
     }
 }
 

@@ -112,6 +112,8 @@ public protocol ChatManagerDelegate: AnyObject {
     func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String)
     /// The local user's sender key for a group was rotated (break-in recovery).
     func chatManager(_ manager: ChatManager, didRotateSenderKey forGroupID: String)
+    /// The group creator dissolved the group; local user and all members must drop it.
+    func chatManager(_ manager: ChatManager, groupDeletedWithID groupID: String)
 }
 
 // MARK: - ChatManager
@@ -187,6 +189,9 @@ public final class ChatManager: @unchecked Sendable {
     /// Known group membership keyed by groupID. Populated on create/join, cleared on leave.
     /// Used to reject messages from peers not in the group.
     var joinedGroups: [String: Set<String>] = [:]
+
+    /// Creator peerID for each joined group — used to verify group-delete authority.
+    private var groupCreators: [String: String] = [:]
 
     /// Messages stored on behalf of offline peers (relay-store role).
     private struct StoredForwardItem {
@@ -536,6 +541,7 @@ public final class ChatManager: @unchecked Sendable {
         }
 
         joinedGroups[groupID] = Set(allMembers)
+        groupCreators[groupID] = myID
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -548,6 +554,7 @@ public final class ChatManager: @unchecked Sendable {
     public func registerKnownGroups(_ groups: [GroupInfo]) {
         for group in groups {
             joinedGroups[group.id] = Set(group.memberIDs)
+            groupCreators[group.id] = group.creatorID
         }
     }
 
@@ -811,9 +818,37 @@ public final class ChatManager: @unchecked Sendable {
 
         // Clean up local state
         joinedGroups.removeValue(forKey: group.id)
+        groupCreators.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)               // v1 cleanup
         keychain.deleteAllSenderKeyStates(groupID: group.id)     // v2 cleanup
         // Remove this group's entries from the skipped-key cache
+        let prefix = group.id + "/"
+        skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
+            skippedGroupMessageKeys.removeValue(forKey: $0)
+            skippedGroupMessageKeyDates.removeValue(forKey: $0)
+        }
+        persistSkippedGroupKeyCache()
+        try? messageStore.deleteConversation(peerID: group.conversationID)
+    }
+
+    /// Dissolve a group — creator-only. Broadcasts `.groupDeleted` to all members,
+    /// then cleans up local state identically to `leaveGroup()`.
+    public func deleteGroup(_ group: GroupInfo) {
+        let myID = identity.publicIdentity.peerID
+        guard group.creatorID == myID else { return }
+
+        let msg = GroupDeletedMessage(groupID: group.id, deletedByPeerID: myID)
+        if let wire = try? wireBuilder.build(.groupDeleted, payload: msg) {
+            for peerID in group.memberIDs where peerID != myID {
+                try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+            }
+        }
+
+        // Clean up identically to leaveGroup()
+        joinedGroups.removeValue(forKey: group.id)
+        groupCreators.removeValue(forKey: group.id)
+        keychain.deleteGroupKey(groupID: group.id)
+        keychain.deleteAllSenderKeyStates(groupID: group.id)
         let prefix = group.id + "/"
         skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
             skippedGroupMessageKeys.removeValue(forKey: $0)
@@ -1661,6 +1696,32 @@ public final class ChatManager: @unchecked Sendable {
         }
     }
 
+    private func handleGroupDeleted(_ payload: GroupDeletedMessage, senderID: String) {
+        let groupID = payload.groupID
+        // Only accept from the known group creator.
+        guard joinedGroups[groupID] != nil,
+              let creatorID = groupCreators[groupID],
+              senderID == creatorID else { return }
+
+        // Notify delegate so the UI removes the group
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, groupDeletedWithID: groupID)
+        }
+
+        joinedGroups.removeValue(forKey: groupID)
+        groupCreators.removeValue(forKey: groupID)
+        keychain.deleteGroupKey(groupID: groupID)
+        keychain.deleteAllSenderKeyStates(groupID: groupID)
+        let prefix = groupID + "/"
+        skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
+            skippedGroupMessageKeys.removeValue(forKey: $0)
+            skippedGroupMessageKeyDates.removeValue(forKey: $0)
+        }
+        persistSkippedGroupKeyCache()
+        try? messageStore.deleteConversation(peerID: "group.\(groupID)")
+    }
+
     private func handleGroupInviteReceived(_ inviteData: Data, fromPeer peerID: String) {
         guard let invite = try? JSONDecoder().decode(GroupInvitePayload.self, from: inviteData) else { return }
         // The creatorID inside the payload must match the verified DR sender — prevents a peer
@@ -1712,6 +1773,7 @@ public final class ChatManager: @unchecked Sendable {
             creatorID: invite.creatorID
         )
         joinedGroups[invite.groupID] = Set(dedupedMembers)
+        groupCreators[invite.groupID] = invite.creatorID
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didJoinGroup: group)
@@ -1992,6 +2054,11 @@ public final class ChatManager: @unchecked Sendable {
             let payload = try wireBuilder.decodePayload(GroupMemberLeftMessage.self, from: message)
             handleGroupMemberLeft(payload, senderID: message.senderID)
 
+        case .groupDeleted:
+            if let payload = try? wireBuilder.decodePayload(GroupDeletedMessage.self, from: message) {
+                handleGroupDeleted(payload, senderID: message.senderID)
+            }
+
         case .groupReadReceipt:
             let payload = try wireBuilder.decodePayload(GroupReadReceiptMessage.self, from: message)
             handleGroupReadReceipt(payload, fromPeer: message.senderID)
@@ -2249,6 +2316,11 @@ extension ChatManager: MeshManagerDelegate {
             case .groupMemberLeft:
                 let payload = try wireBuilder.decodePayload(GroupMemberLeftMessage.self, from: message)
                 handleGroupMemberLeft(payload, senderID: message.senderID)
+
+            case .groupDeleted:
+                if let payload = try? wireBuilder.decodePayload(GroupDeletedMessage.self, from: message) {
+                    handleGroupDeleted(payload, senderID: message.senderID)
+                }
 
             case .groupReadReceipt:
                 let payload = try wireBuilder.decodePayload(GroupReadReceiptMessage.self, from: message)

@@ -41,6 +41,7 @@ struct GroupChatView: View {
     @State private var showingMemberList    = false
     @State private var showingLeaveConfirm  = false
     @State private var showingRotateConfirm = false
+    @State private var showingDeleteConfirm = false
 
     private var messages: [StoredMessage] {
         appState.messages[group.conversationID] ?? []
@@ -76,6 +77,18 @@ struct GroupChatView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("You will no longer receive messages from this group. This cannot be undone.")
+            }
+            .confirmationDialog(
+                "Delete \"\(group.name)\" for everyone?",
+                isPresented: $showingDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Group", role: .destructive) {
+                    appState.deleteGroup(group); dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("All members will lose access to this group immediately. This cannot be undone.")
             }
     }
 
@@ -209,6 +222,11 @@ struct GroupChatView: View {
             Divider()
             Button(role: .destructive) { showingLeaveConfirm = true } label: {
                 Label("Leave Group", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+            if group.creatorID == appState.chatManager?.identity.publicIdentity.peerID {
+                Button(role: .destructive) { showingDeleteConfirm = true } label: {
+                    Label("Delete Group", systemImage: "trash")
+                }
             }
         } label: {
             VStack(spacing: 0) {
