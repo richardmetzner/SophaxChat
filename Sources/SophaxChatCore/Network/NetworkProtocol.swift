@@ -273,10 +273,13 @@ public struct DeviceLinkRequestMessage: Codable, Sendable {
     public let deviceLabel: String
     /// The PreKeyBundle of device A — device B uses this to initiate X3DH.
     public let bundle: PreKeyBundle
+    /// When this QR payload expires. nil = no expiry (reciprocal replies and legacy QR codes).
+    public let expiresAt: Date?
 
-    public init(deviceLabel: String, bundle: PreKeyBundle) {
+    public init(deviceLabel: String, bundle: PreKeyBundle, expiresAt: Date? = nil) {
         self.deviceLabel = deviceLabel
         self.bundle      = bundle
+        self.expiresAt   = expiresAt
     }
 }
 

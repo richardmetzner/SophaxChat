@@ -93,17 +93,31 @@ private struct DeviceLinkQRSheet: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    private var qrImage: Image? {
-        guard let data   = appState.generateDeviceLinkQR(),
-              let string = String(data: data, encoding: .utf8) else { return nil }
-        let ctx     = CIContext()
-        let filter  = CIFilter.qrCodeGenerator()
+    @State private var qrData: Data?       = nil
+    @State private var secondsLeft: Int    = 0
+    private let totalSeconds               = 600   // 10-minute window
+
+    private func makeQRImage(from data: Data) -> Image? {
+        guard let string = String(data: data, encoding: .utf8) else { return nil }
+        let ctx    = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(string.utf8)
         filter.correctionLevel = "M"
         guard let output = filter.outputImage else { return nil }
         let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
         guard let cgImg = ctx.createCGImage(scaled, from: scaled.extent) else { return nil }
         return Image(uiImage: UIImage(cgImage: cgImg))
+    }
+
+    private func refresh() {
+        qrData      = appState.generateDeviceLinkQR()
+        secondsLeft = totalSeconds
+    }
+
+    private var countdownLabel: String {
+        let m = secondsLeft / 60
+        let s = secondsLeft % 60
+        return String(format: "%d:%02d", m, s)
     }
 
     var body: some View {
@@ -114,7 +128,7 @@ private struct DeviceLinkQRSheet: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                if let img = qrImage {
+                if let data = qrData, let img = makeQRImage(from: data) {
                     img
                         .interpolation(.none)
                         .resizable()
@@ -129,6 +143,14 @@ private struct DeviceLinkQRSheet: View {
                         .frame(width: 260, height: 260)
                 }
 
+                // Countdown label — turns red in the last 60 seconds
+                HStack(spacing: 4) {
+                    Image(systemName: "timer")
+                    Text("Expires in \(countdownLabel)")
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(secondsLeft <= 60 ? .red : .secondary)
+
                 Text("Keep both devices nearby (Bluetooth range) after scanning so they can exchange keys.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -141,6 +163,14 @@ private struct DeviceLinkQRSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .onAppear { refresh() }
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                if secondsLeft > 0 {
+                    secondsLeft -= 1
+                } else {
+                    refresh()   // auto-regenerate when expired
                 }
             }
         }

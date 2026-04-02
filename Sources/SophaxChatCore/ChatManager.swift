@@ -410,7 +410,11 @@ public final class ChatManager: @unchecked Sendable {
     /// The other device calls `acceptDeviceLink(_:)` after scanning.
     public func generateDeviceLinkPayload(label: String) throws -> Data {
         let bundle = try preKeys.generateBundle(tcpAddress: myTCPAddress)
-        let msg = DeviceLinkRequestMessage(deviceLabel: label, bundle: bundle)
+        let msg = DeviceLinkRequestMessage(
+            deviceLabel: label,
+            bundle: bundle,
+            expiresAt: Date().addingTimeInterval(10 * 60)   // 10-minute window
+        )
         return try JSONEncoder().encode(msg)
     }
 
@@ -419,6 +423,9 @@ public final class ChatManager: @unchecked Sendable {
     /// the other device can complete the pairing without another QR scan.
     public func acceptDeviceLink(_ data: Data) throws {
         let msg = try JSONDecoder().decode(DeviceLinkRequestMessage.self, from: data)
+        if let exp = msg.expiresAt, exp < Date() {
+            throw SophaxError.invalidMessageFormat("Device link QR code has expired")
+        }
         let peerID = msg.bundle.peerID
         guard peerID != identity.publicIdentity.peerID else { return }
         guard try msg.bundle.verifySignedPreKey() else { throw SophaxError.invalidSignature }
@@ -2295,6 +2302,8 @@ public final class ChatManager: @unchecked Sendable {
         // Bundle peerID must match the outer wire senderID to prevent spoofing
         guard payload.bundle.peerID == senderID else { return }
         guard senderID != identity.publicIdentity.peerID else { return }
+        // Reject expired QR payloads (nil expiresAt = reciprocal reply, no expiry needed)
+        if let exp = payload.expiresAt, exp < Date() { return }
         guard (try? payload.bundle.verifySignedPreKey()) == true else { return }
 
         peerBundles[senderID] = payload.bundle
