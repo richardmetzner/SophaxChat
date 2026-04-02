@@ -129,6 +129,13 @@ extension ChatManager {
                 )
                 try self.messageStore.append(message: stored)
 
+                // Send delivery receipt back to the original sender (mirrors v2 group handler).
+                // Best-effort: silently dropped if no path to sender yet.
+                let receiptPayload = GroupReadReceiptMessage(groupID: msg.groupID, targetMessageID: msg.messageID)
+                if let receipt = try? self.wireBuilder.build(.groupReadReceipt, payload: receiptPayload) {
+                    try? self.sendOrQueue(receipt, toPeerID: msg.senderPeerID, messageID: UUID().uuidString)
+                }
+
                 // Cache sender avatar for group-only contacts
                 if let avatarData = msg.senderAvatarData,
                    avatarData.count > 0, avatarData.count <= 8_192,
