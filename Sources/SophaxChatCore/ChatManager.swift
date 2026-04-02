@@ -444,6 +444,9 @@ public final class ChatManager: @unchecked Sendable {
         let wire = try wireBuilder.build(.deviceLinkRequest, payload: reply)
         try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
 
+        // Push recent message history to the newly linked device
+        backfillHistory(toPeerID: peerID)
+
         let peerCopy = peer
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -2314,6 +2317,9 @@ public final class ChatManager: @unchecked Sendable {
         let peer = KnownPeer(from: payload.bundle, safetyNumber: safetyNumber, trustLevel: .accepted)
         knownPeers[senderID] = peer
 
+        // Push recent history to the peer that initiated the link (so both sides backfill each other)
+        backfillHistory(toPeerID: senderID)
+
         let peerCopy = peer
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -2334,6 +2340,29 @@ public final class ChatManager: @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didReceiveSyncedMessage: msg, conversationID: convID)
+        }
+    }
+
+    /// Send the last 100 messages from every conversation to a newly linked device.
+    /// Attachment bytes are not included — only message metadata and body text.
+    private func backfillHistory(toPeerID peerID: String) {
+        let convIDs = messageStore.allConversationPeerIDs()
+        for convID in convIDs {
+            // Skip conversations that ARE this device (would create a sync loop)
+            guard convID != peerID else { continue }
+            guard let msgs = try? messageStore.messages(forPeer: convID) else { continue }
+            // Cap at the last 100 messages per conversation
+            for stored in msgs.suffix(100) {
+                guard let messageJSON = try? JSONEncoder().encode(stored) else { continue }
+                let direction = stored.direction == .sent ? "sent" : "received"
+                let sync = DeviceSyncMessage(
+                    conversationID: convID,
+                    messageJSON:    messageJSON,
+                    direction:      direction
+                )
+                guard let wire = try? wireBuilder.build(.deviceSyncMessage, payload: sync) else { continue }
+                try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+            }
         }
     }
 
