@@ -105,6 +105,17 @@ struct ChatListView: View {
                 .padding(.vertical, 4)
             }
 
+            // Pending contact requests
+            if !appState.pendingContactRequests.isEmpty {
+                Section("Contact Requests") {
+                    ForEach(appState.pendingContactRequests) { peer in
+                        ContactRequestRow(peer: peer,
+                            onAccept: { appState.acceptContact(peer) },
+                            onReject: { appState.rejectContact(peer) })
+                    }
+                }
+            }
+
             // Active conversations (peers with messages, not blocked)
             let conversationPeers = appState.peers.filter {
                 appState.messages[$0.id] != nil && !appState.isBlocked($0.id)
@@ -571,6 +582,42 @@ struct PeerRow: View {
                 Circle().fill(.green).frame(width: 8, height: 8)
             }
         }
+    }
+}
+
+// MARK: - Contact Request Row
+
+struct ContactRequestRow: View {
+    @EnvironmentObject var appState: AppState
+    let peer: KnownPeer
+    let onAccept: () -> Void
+    let onReject: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PeerAvatar(peer: peer, size: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(peer.username)
+                    .font(.subheadline.weight(.semibold))
+                Text(String(peer.id.prefix(8)) + "…")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: onReject) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.red.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+            Button(action: onAccept) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.green)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
     }
 }
 

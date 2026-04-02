@@ -872,6 +872,15 @@ public struct StoreAndForwardItem: Codable, Sendable {
     }
 }
 
+// MARK: - Peer Trust Level
+
+/// Whether the local user has accepted this peer.
+/// Absent in legacy JSON (peers stored before this field) → `.accepted` for backward compatibility.
+public enum PeerTrustLevel: String, Codable, Sendable {
+    case pending   // received Hello; awaiting user decision
+    case accepted  // user tapped Accept (or legacy peer — defaults to accepted)
+}
+
 // MARK: - Known Peer
 
 /// A peer whose identity keys we've received and cryptographically verified.
@@ -888,8 +897,10 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
     public var tcpAddress:       String?
     /// JPEG avatar data received from the peer's PreKeyBundle. nil = no avatar set.
     public var avatarData:       Data?
+    /// Accept/reject gate. Absent in legacy JSON → `.accepted` (backward compatible).
+    public var trustLevel:       PeerTrustLevel
 
-    public init(from bundle: PreKeyBundle, safetyNumber: String) {
+    public init(from bundle: PreKeyBundle, safetyNumber: String, trustLevel: PeerTrustLevel = .pending) {
         self.id                  = bundle.peerID
         self.username            = bundle.username
         self.signingKeyPublic    = bundle.signingKeyPublic
@@ -900,6 +911,7 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         self.isDirectlyConnected = true
         self.tcpAddress          = bundle.tcpAddress
         self.avatarData          = bundle.avatarData
+        self.trustLevel          = trustLevel
     }
 
     /// Construct a KnownPeer directly (used when importing contacts via invite link).
@@ -912,8 +924,9 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         lastSeen:            Date?,
         isOnline:            Bool,
         isDirectlyConnected: Bool,
-        tcpAddress:          String? = nil,
-        avatarData:          Data?   = nil
+        tcpAddress:          String?        = nil,
+        avatarData:          Data?          = nil,
+        trustLevel:          PeerTrustLevel = .accepted
     ) {
         self.id                  = id
         self.username            = username
@@ -925,5 +938,22 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         self.isDirectlyConnected = isDirectlyConnected
         self.tcpAddress          = tcpAddress
         self.avatarData          = avatarData
+        self.trustLevel          = trustLevel
+    }
+
+    // Custom decoder: default trustLevel to .accepted when absent (legacy peers are all accepted)
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id                  = try c.decode(String.self,  forKey: .id)
+        username            = try c.decode(String.self,  forKey: .username)
+        signingKeyPublic    = try c.decode(Data.self,    forKey: .signingKeyPublic)
+        dhKeyPublic         = try c.decode(Data.self,    forKey: .dhKeyPublic)
+        safetyNumber        = try c.decode(String.self,  forKey: .safetyNumber)
+        lastSeen            = try c.decodeIfPresent(Date.self,   forKey: .lastSeen)
+        isOnline            = try c.decodeIfPresent(Bool.self,   forKey: .isOnline)            ?? false
+        isDirectlyConnected = try c.decodeIfPresent(Bool.self,   forKey: .isDirectlyConnected) ?? false
+        tcpAddress          = try c.decodeIfPresent(String.self, forKey: .tcpAddress)
+        avatarData          = try c.decodeIfPresent(Data.self,   forKey: .avatarData)
+        trustLevel          = try c.decodeIfPresent(PeerTrustLevel.self, forKey: .trustLevel) ?? .accepted
     }
 }

@@ -118,6 +118,8 @@ public protocol ChatManagerDelegate: AnyObject {
     func chatManager(_ manager: ChatManager, didReceiveAvatarData data: Data, fromPeerID peerID: String)
     /// The MLS commit coordinator for a group was updated via a handoff message.
     func chatManager(_ manager: ChatManager, didUpdateCoordinator newCoordinatorID: String, inGroupID groupID: String)
+    /// A new peer sent a Hello but has not yet been accepted — show accept/reject UI.
+    func chatManager(_ manager: ChatManager, didReceiveContactRequest peer: KnownPeer)
 }
 
 // MARK: - ChatManager
@@ -353,6 +355,37 @@ public final class ChatManager: @unchecked Sendable {
                 try? tcp.send(wire, toPeerID: peerID)
             }
         }
+    }
+
+    // MARK: - Public: Contact requests
+
+    /// Accept a pending contact request — promotes peer to `.accepted` and fires `didDiscoverPeer`.
+    public func acceptContactRequest(peerID: String) {
+        guard var peer = knownPeers[peerID], peer.trustLevel == .pending else { return }
+        peer.trustLevel = .accepted
+        knownPeers[peerID] = peer
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didDiscoverPeer: peer)
+        }
+        // Now that the peer is accepted, drain any queued messages and deliver stored items
+        drainQueue(forPeerID: peerID)
+        deliverStoredForwardItems(toPeerID: peerID)
+    }
+
+    /// Reject a pending contact request — removes all local state for this peer.
+    public func rejectContactRequest(peerID: String) {
+        guard knownPeers[peerID]?.trustLevel == .pending else { return }
+        knownPeers.removeValue(forKey: peerID)
+        peerBundles.removeValue(forKey: peerID)
+        pendingQueue.removeValue(forKey: peerID)
+    }
+
+    /// Register a peer that was persisted in the pending state across app restarts.
+    /// Does NOT fire the `didReceiveContactRequest` delegate (already shown at request time).
+    public func registerPendingPeer(_ peer: KnownPeer) {
+        guard peer.trustLevel == .pending else { return }
+        knownPeers[peer.id] = peer
     }
 
     // MARK: - Public: Group reactions
@@ -1220,13 +1253,17 @@ public final class ChatManager: @unchecked Sendable {
 
         let peerID       = bundle.peerID
         let safetyNumber = generateSafetyNumber(for: bundle)
-        let peer         = KnownPeer(from: bundle, safetyNumber: safetyNumber)
+
+        // Preserve existing trust level; new peers default to .pending (contact request gate)
+        let existing   = knownPeers[peerID]
+        let trustLevel: PeerTrustLevel = existing?.trustLevel ?? .pending
+        let peer       = KnownPeer(from: bundle, safetyNumber: safetyNumber, trustLevel: trustLevel)
 
         // Detect reconnect: peer was known but is now coming back online
-        let wasOffline = knownPeers[peerID].map { !$0.isOnline } ?? false
+        let wasOffline = existing.map { !$0.isOnline } ?? false
 
         // Record in the key transparency log; only alert if an existing peer's key changed
-        let isKnown = knownPeers[peerID] != nil
+        let isKnown = existing != nil
         let logEntryIsNew = keyLog.record(
             peerID:     peerID,
             signingKey: bundle.signingKeyPublic,
@@ -1237,24 +1274,29 @@ public final class ChatManager: @unchecked Sendable {
         knownPeers[peerID]  = peer
         peerBundles[peerID] = bundle
 
-        let reconnected = wasOffline
+        let reconnected    = wasOffline
+        let isPending      = trustLevel == .pending && !isKnown   // fire request only once
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.delegate?.chatManager(self, didDiscoverPeer: peer)
-            if reconnected {
-                self.delegate?.chatManager(self, peerDidReconnect: peer)
+            if isPending {
+                self.delegate?.chatManager(self, didReceiveContactRequest: peer)
+            } else if trustLevel == .accepted {
+                self.delegate?.chatManager(self, didDiscoverPeer: peer)
+                if reconnected {
+                    self.delegate?.chatManager(self, peerDidReconnect: peer)
+                }
             }
             if keyChanged {
                 self.delegate?.chatManager(self, didDetectKeyChange: peerID)
             }
         }
 
-        // Peer's bundle is now known — drain any messages queued before Hello arrived
-        drainQueue(forPeerID: peerID)
-
-        // Deliver any messages we were holding for this peer (store-and-forward relay role)
-        deliverStoredForwardItems(toPeerID: peerID)
-        deliverDeadDrops(toPeerID: peerID)
+        // Only drain/forward for accepted peers
+        if trustLevel == .accepted {
+            drainQueue(forPeerID: peerID)
+            deliverStoredForwardItems(toPeerID: peerID)
+            deliverDeadDrops(toPeerID: peerID)
+        }
     }
 
     private func handleInitiateSession(_ payload: InitiateSessionMessage) throws {
@@ -1264,6 +1306,9 @@ public final class ChatManager: @unchecked Sendable {
         }
 
         let peerID = senderBundle.peerID
+
+        // Drop session initiation from peers we haven't accepted yet
+        if knownPeers[peerID]?.trustLevel == .pending { return }
 
         // Deduplication: if an active session already exists with this peerID,
         // drop the duplicate initiateSession. This prevents replayed X3DH messages
@@ -1378,6 +1423,9 @@ public final class ChatManager: @unchecked Sendable {
         fromPeer peerID: String,
         hopCount: UInt8? = nil
     ) throws {
+        // Drop messages from peers not yet accepted (contact request gate)
+        guard knownPeers[peerID]?.trustLevel != .pending else { return }
+
         let ad = associatedData(peerID: peerID)
 
         guard let plaintext = try withSession(peerID: peerID, { ratchet in

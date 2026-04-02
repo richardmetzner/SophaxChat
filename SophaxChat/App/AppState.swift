@@ -22,7 +22,8 @@ final class AppState: ObservableObject {
     @Published var isSetupComplete: Bool = false
     @Published var isBlurred: Bool       = false
     @Published var isAppLocked: Bool     = false
-    @Published var peers:        [KnownPeer] = []
+    @Published var peers:                [KnownPeer] = []
+    @Published var pendingContactRequests: [KnownPeer] = []
     @Published var messages:     [String: [StoredMessage]] = [:]  // peerID → messages
     @Published var onlinePeers:  Set<String> = []
     @Published var blockedPeers: Set<String> = []
@@ -139,6 +140,7 @@ final class AppState: ObservableObject {
         self.unlockLockedUntil    = (lockedUntil.map { $0 > Date() } ?? false) ? lockedUntil : nil
 
         loadSavedPeers()
+        loadPendingRequests()
         loadBlockedPeers()
         loadAliases()
         loadGroups()
@@ -185,6 +187,8 @@ final class AppState: ObservableObject {
             manager.delegate      = self
             manager.myTCPAddress  = myTCPAddress.isEmpty ? nil : myTCPAddress
             manager.registerKnownGroups(groups)
+            // Re-register pending contact requests so ChatManager knows to gate their messages
+            for peer in pendingContactRequests { manager.registerPendingPeer(peer) }
             manager.start()
             if tcpEnabled { startTCPTransport(on: manager) }
 
@@ -553,6 +557,21 @@ final class AppState: ObservableObject {
     func deleteMessage(_ message: StoredMessage) {
         try? chatManager?.messageStore.deleteMessage(id: message.id, peerID: message.peerID)
         messages[message.peerID]?.removeAll { $0.id == message.id }
+    }
+
+    // MARK: - Contact request accept / reject
+
+    func acceptContact(_ peer: KnownPeer) {
+        chatManager?.acceptContactRequest(peerID: peer.id)
+        pendingContactRequests.removeAll { $0.id == peer.id }
+        savePendingRequests()
+        // peer will appear in peers[] via the didDiscoverPeer callback
+    }
+
+    func rejectContact(_ peer: KnownPeer) {
+        chatManager?.rejectContactRequest(peerID: peer.id)
+        pendingContactRequests.removeAll { $0.id == peer.id }
+        savePendingRequests()
     }
 
     // MARK: - Blocking
@@ -1086,7 +1105,8 @@ final class AppState: ObservableObject {
 
     // MARK: - Peer persistence
 
-    private let peersDefaultsKey = "com.sophax.knownPeers"
+    private let peersDefaultsKey    = "com.sophax.knownPeers"
+    private let pendingRequestsKey  = "com.sophax.pendingRequests"
 
     private func loadSavedPeers() {
         guard let data = UserDefaults.standard.data(forKey: peersDefaultsKey),
@@ -1106,6 +1126,18 @@ final class AppState: ObservableObject {
     private func savePeers() {
         if let data = try? JSONEncoder().encode(peers) {
             UserDefaults.standard.set(data, forKey: peersDefaultsKey)
+        }
+    }
+
+    private func loadPendingRequests() {
+        guard let data  = UserDefaults.standard.data(forKey: pendingRequestsKey),
+              let saved = try? JSONDecoder().decode([KnownPeer].self, from: data) else { return }
+        pendingContactRequests = saved
+    }
+
+    private func savePendingRequests() {
+        if let data = try? JSONEncoder().encode(pendingContactRequests) {
+            UserDefaults.standard.set(data, forKey: pendingRequestsKey)
         }
     }
 
@@ -1503,5 +1535,18 @@ extension AppState: @preconcurrency ChatManagerDelegate {
             groups[idx].currentCoordinatorID = newCoordinatorID
             saveGroups()
         }
+    }
+
+    func chatManager(_ manager: ChatManager, didReceiveContactRequest peer: KnownPeer) {
+        guard !blockedPeers.contains(peer.id) else { return }
+        guard !pendingContactRequests.contains(where: { $0.id == peer.id }) else { return }
+        pendingContactRequests.append(peer)
+        savePendingRequests()
+        postNotification(
+            id: "req_\(peer.id)",
+            title: "Contact Request",
+            body: "\(peer.username) wants to connect",
+            threadKey: "requests"
+        )
     }
 }
