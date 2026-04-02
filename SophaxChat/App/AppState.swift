@@ -361,6 +361,17 @@ final class AppState: ObservableObject {
         unreadCounts.removeValue(forKey: group.conversationID)
     }
 
+    func handoffGroupCoordinator(_ group: GroupInfo, to newCoordinatorID: String) {
+        chatManager?.handoffCoordinator(group: group, newCoordinatorID: newCoordinatorID)
+    }
+
+    var myPeerID: String? { chatManager?.identity.publicIdentity.peerID }
+
+    func isCoordinator(of group: GroupInfo) -> Bool {
+        guard let id = myPeerID else { return false }
+        return group.currentCoordinatorID == id
+    }
+
     func groupMessages(for group: GroupInfo) -> [StoredMessage] {
         messages[group.conversationID] ?? []
     }
@@ -1485,5 +1496,12 @@ extension AppState: @preconcurrency ChatManagerDelegate {
 
     func chatManager(_ manager: ChatManager, didReceiveAvatarData data: Data, fromPeerID peerID: String) {
         peerAvatars[peerID] = data
+    }
+
+    func chatManager(_ manager: ChatManager, didUpdateCoordinator newCoordinatorID: String, inGroupID groupID: String) {
+        if let idx = groups.firstIndex(where: { $0.id == groupID }) {
+            groups[idx].currentCoordinatorID = newCoordinatorID
+            saveGroups()
+        }
     }
 }

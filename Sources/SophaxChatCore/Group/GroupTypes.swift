@@ -26,31 +26,35 @@ public enum GroupCryptoVersion: String, Codable, Sendable {
 /// A persisted group conversation.
 public struct GroupInfo: Codable, Identifiable, Sendable {
     /// Stable UUID assigned by the creator.
-    public let id:            String
-    public let name:          String
+    public let id:                   String
+    public let name:                 String
     /// All member peerIDs including the creator.
-    public let memberIDs:     [String]
-    /// PeerID of the group creator.
-    public let creatorID:     String
+    public let memberIDs:            [String]
+    /// PeerID of the group creator. Immutable — used to verify delete authority.
+    public let creatorID:            String
     /// Which crypto protocol this group uses. Absent in legacy JSON → decoded as .senderKeysV2.
-    public let cryptoVersion: GroupCryptoVersion
+    public let cryptoVersion:        GroupCryptoVersion
+    /// PeerID of the current MLS commit coordinator. Defaults to creatorID; updated on handoff.
+    /// Absent in legacy JSON → defaults to creatorID (backward-compatible).
+    public var currentCoordinatorID: String
 
     public init(
-        id:            String             = UUID().uuidString,
-        name:          String,
-        memberIDs:     [String],
-        creatorID:     String,
-        cryptoVersion: GroupCryptoVersion = .senderKeysV2
+        id:                   String             = UUID().uuidString,
+        name:                 String,
+        memberIDs:            [String],
+        creatorID:            String,
+        cryptoVersion:        GroupCryptoVersion = .senderKeysV2,
+        currentCoordinatorID: String?            = nil
     ) {
-        self.id            = id
-        self.name          = name
-        self.memberIDs     = memberIDs
-        self.creatorID     = creatorID
-        self.cryptoVersion = cryptoVersion
+        self.id                   = id
+        self.name                 = name
+        self.memberIDs            = memberIDs
+        self.creatorID            = creatorID
+        self.cryptoVersion        = cryptoVersion
+        self.currentCoordinatorID = currentCoordinatorID ?? creatorID
     }
 
-    // Custom decode to default cryptoVersion to .senderKeysV2 when the key is absent
-    // (preserves backward compatibility with persisted groups that pre-date Phase 2).
+    // Custom decode: default both optional fields when absent (backward compatibility).
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id            = try c.decode(String.self, forKey: .id)
@@ -58,6 +62,7 @@ public struct GroupInfo: Codable, Identifiable, Sendable {
         memberIDs     = try c.decode([String].self, forKey: .memberIDs)
         creatorID     = try c.decode(String.self, forKey: .creatorID)
         cryptoVersion = try c.decodeIfPresent(GroupCryptoVersion.self, forKey: .cryptoVersion) ?? .senderKeysV2
+        currentCoordinatorID = try c.decodeIfPresent(String.self, forKey: .currentCoordinatorID) ?? creatorID
     }
 
     /// The key used in MessageStore for this group's conversation.

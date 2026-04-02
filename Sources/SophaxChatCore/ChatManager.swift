@@ -116,6 +116,8 @@ public protocol ChatManagerDelegate: AnyObject {
     func chatManager(_ manager: ChatManager, groupDeletedWithID groupID: String)
     /// A group message carried avatar data for a peer not yet in peerAvatars.
     func chatManager(_ manager: ChatManager, didReceiveAvatarData data: Data, fromPeerID peerID: String)
+    /// The MLS commit coordinator for a group was updated via a handoff message.
+    func chatManager(_ manager: ChatManager, didUpdateCoordinator newCoordinatorID: String, inGroupID groupID: String)
 }
 
 // MARK: - ChatManager
@@ -194,6 +196,9 @@ public final class ChatManager: @unchecked Sendable {
 
     /// Creator peerID for each joined group — used to verify group-delete authority.
     var groupCreators: [String: String] = [:]
+
+    /// Current MLS commit coordinator per group. Starts as creatorID; updated on handoff.
+    var groupCoordinators: [String: String] = [:]
 
     /// Messages stored on behalf of offline peers (relay-store role).
     private struct StoredForwardItem {
@@ -544,6 +549,7 @@ public final class ChatManager: @unchecked Sendable {
 
         joinedGroups[groupID] = Set(allMembers)
         groupCreators[groupID] = myID
+        groupCoordinators[groupID] = myID
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -557,6 +563,7 @@ public final class ChatManager: @unchecked Sendable {
         for group in groups {
             joinedGroups[group.id] = Set(group.memberIDs)
             groupCreators[group.id] = group.creatorID
+            groupCoordinators[group.id] = group.currentCoordinatorID
         }
     }
 
@@ -823,6 +830,7 @@ public final class ChatManager: @unchecked Sendable {
         // Clean up local state
         joinedGroups.removeValue(forKey: group.id)
         groupCreators.removeValue(forKey: group.id)
+        groupCoordinators.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)               // v1 cleanup
         keychain.deleteAllSenderKeyStates(groupID: group.id)     // v2 cleanup
         if group.cryptoVersion == .mls {
@@ -854,6 +862,7 @@ public final class ChatManager: @unchecked Sendable {
         // Clean up identically to leaveGroup()
         joinedGroups.removeValue(forKey: group.id)
         groupCreators.removeValue(forKey: group.id)
+        groupCoordinators.removeValue(forKey: group.id)
         keychain.deleteGroupKey(groupID: group.id)
         keychain.deleteAllSenderKeyStates(groupID: group.id)
         if group.cryptoVersion == .mls {
@@ -866,6 +875,28 @@ public final class ChatManager: @unchecked Sendable {
         }
         persistSkippedGroupKeyCache()
         try? messageStore.deleteConversation(peerID: group.conversationID)
+    }
+
+    /// Transfer MLS commit coordinator authority to another group member.
+    /// Only the current coordinator may call this. Broadcasts to all members so they
+    /// update their local `groupCoordinators` record.
+    public func handoffCoordinator(group: GroupInfo, newCoordinatorID: String) {
+        let myID = identity.publicIdentity.peerID
+        guard groupCoordinators[group.id] == myID,
+              group.memberIDs.contains(newCoordinatorID) else { return }
+
+        let msg = MLSCoordinatorHandoffMessage(
+            groupID:           group.id,
+            fromCoordinatorID: myID,
+            newCoordinatorID:  newCoordinatorID
+        )
+        if let wire = try? wireBuilder.build(.mlsCoordinatorHandoff, payload: msg) {
+            for peerID in group.memberIDs where peerID != myID {
+                try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+            }
+        }
+        groupCoordinators[group.id] = newCoordinatorID
+        delegate?.chatManager(self, didUpdateCoordinator: newCoordinatorID, inGroupID: group.id)
     }
 
     /// Rotate our sender key for a group — generates a fresh random chain key, saves it,
@@ -1721,6 +1752,7 @@ public final class ChatManager: @unchecked Sendable {
 
         joinedGroups.removeValue(forKey: groupID)
         groupCreators.removeValue(forKey: groupID)
+        groupCoordinators.removeValue(forKey: groupID)
         keychain.deleteGroupKey(groupID: groupID)
         keychain.deleteAllSenderKeyStates(groupID: groupID)
         Task { try? await self.mlsManager?.deleteGroupState(groupID: groupID) }
@@ -1731,6 +1763,18 @@ public final class ChatManager: @unchecked Sendable {
         }
         persistSkippedGroupKeyCache()
         try? messageStore.deleteConversation(peerID: "group.\(groupID)")
+    }
+
+    func handleCoordinatorHandoff(_ msg: MLSCoordinatorHandoffMessage, senderID: String) {
+        let groupID = msg.groupID
+        guard joinedGroups[groupID] != nil,
+              groupCoordinators[groupID] == senderID,          // sender must be current coordinator
+              senderID == msg.fromCoordinatorID else { return } // consistency check
+        groupCoordinators[groupID] = msg.newCoordinatorID
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didUpdateCoordinator: msg.newCoordinatorID, inGroupID: groupID)
+        }
     }
 
     private func handleGroupInviteReceived(_ inviteData: Data, fromPeer peerID: String) {
@@ -1785,6 +1829,7 @@ public final class ChatManager: @unchecked Sendable {
         )
         joinedGroups[invite.groupID] = Set(dedupedMembers)
         groupCreators[invite.groupID] = invite.creatorID
+        groupCoordinators[invite.groupID] = invite.creatorID
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didJoinGroup: group)
@@ -2104,7 +2149,7 @@ public final class ChatManager: @unchecked Sendable {
                 handleDeadDrop(drop)
             }
 
-        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction:
+        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff:
             dispatchMLSMessage(message)
         }
     }
@@ -2396,7 +2441,7 @@ extension ChatManager: MeshManagerDelegate {
                 let payload = try wireBuilder.decodePayload(DeadDropEnvelope.self, from: message)
                 handleDeadDrop(payload)
 
-            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction:
+            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff:
                 dispatchMLSMessage(message)
             }
         } catch SophaxError.sessionStateCorrupted {

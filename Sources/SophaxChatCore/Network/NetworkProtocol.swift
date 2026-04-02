@@ -135,6 +135,8 @@ public enum WireMessageType: String, Codable, Sendable {
     case mlsCommitRequest
     /// MLS-encrypted emoji reaction on a group message.
     case mlsReaction
+    /// Current MLS coordinator transfers commit authority to another member — broadcast unicast.
+    case mlsCoordinatorHandoff
 }
 
 // MARK: - MLS Wire Messages
@@ -238,6 +240,23 @@ public struct MLSReactionMessage: Codable, Sendable {
         self.targetMessageID = targetMessageID
         self.ciphertext      = ciphertext
         self.timestamp       = timestamp
+    }
+}
+
+/// Current coordinator transfers commit authority to another group member (.mlsCoordinatorHandoff).
+/// Broadcast as DR-encrypted unicast to every member so they update their local coordinator record.
+public struct MLSCoordinatorHandoffMessage: Codable, Sendable {
+    /// Identifies the group.
+    public let groupID:            String
+    /// PeerID of the sender — must match the current coordinator; verified by recipients.
+    public let fromCoordinatorID:  String
+    /// PeerID of the member taking over as coordinator.
+    public let newCoordinatorID:   String
+
+    public init(groupID: String, fromCoordinatorID: String, newCoordinatorID: String) {
+        self.groupID           = groupID
+        self.fromCoordinatorID = fromCoordinatorID
+        self.newCoordinatorID  = newCoordinatorID
     }
 }
 

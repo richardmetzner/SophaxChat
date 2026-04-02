@@ -36,6 +36,7 @@ extension ChatManager {
                 )
                 self.joinedGroups[msg.groupID] = Set(msg.memberIDs)
                 self.groupCreators[msg.groupID] = msg.creatorID
+                self.groupCoordinators[msg.groupID] = msg.creatorID
 
                 DispatchQueue.main.async {
                     self.delegate?.chatManager(self, didJoinGroup: group)
@@ -289,6 +290,7 @@ extension ChatManager {
                 )
                 self.joinedGroups[groupID] = Set(allMembers)
                 self.groupCreators[groupID] = myID
+                self.groupCoordinators[groupID] = myID
 
                 // Send each member their Welcome via DR unicast
                 for welcome in createOut.welcomes {
@@ -545,6 +547,9 @@ extension ChatManager {
             case .mlsReaction:
                 let payload = try wireBuilder.decodePayload(MLSReactionMessage.self, from: message)
                 handleMLSReaction(payload)
+            case .mlsCoordinatorHandoff:
+                let payload = try wireBuilder.decodePayload(MLSCoordinatorHandoffMessage.self, from: message)
+                handleCoordinatorHandoff(payload, senderID: message.senderID)
             default:
                 break
             }

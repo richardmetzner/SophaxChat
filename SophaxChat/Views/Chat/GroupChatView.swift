@@ -443,6 +443,15 @@ private struct GroupMemberListView: View {
                                             .background(Color.secondary.opacity(0.15))
                                             .clipShape(Capsule())
                                     }
+                                    if group.cryptoVersion == .mls && peerID == group.currentCoordinatorID && peerID != group.creatorID {
+                                        Text("Coordinator")
+                                            .font(.caption2)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1)
+                                            .background(Color.purple.opacity(0.8))
+                                            .clipShape(Capsule())
+                                    }
                                     if peerID == myPeerID {
                                         Text("You")
                                             .font(.caption2)
@@ -458,6 +467,21 @@ private struct GroupMemberListView: View {
                                         .font(.caption2)
                                         .foregroundStyle(.green)
                                 }
+                            }
+
+                            Spacer()
+
+                            // Make Coordinator button — only visible to current coordinator,
+                            // only for MLS groups, not for self or already-coordinator
+                            if group.cryptoVersion == .mls
+                                && appState.isCoordinator(of: group)
+                                && peerID != myPeerID
+                                && peerID != group.currentCoordinatorID {
+                                Button("Make Coordinator") {
+                                    appState.handoffGroupCoordinator(group, to: peerID)
+                                }
+                                .font(.caption)
+                                .buttonStyle(.bordered)
                             }
                         }
                         .padding(.vertical, 2)
