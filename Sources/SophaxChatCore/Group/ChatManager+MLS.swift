@@ -203,6 +203,41 @@ extension ChatManager {
             }
         }
     }
+
+    func handleMLSReaction(_ msg: MLSReactionMessage) {
+        guard joinedGroups[msg.groupID] != nil else { return }
+        let convID        = "group.\(msg.groupID)"
+        let senderPeerID  = msg.senderPeerID
+        let targetID      = msg.targetMessageID
+        let groupID       = msg.groupID
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let mls       = try self.requireMLSManager()
+                let plain     = try await mls.decrypt(groupID: groupID, ciphertext: msg.ciphertext)
+                struct ReactionPayload: Codable { let emoji: String? }
+                guard let payload = try? JSONDecoder().decode(ReactionPayload.self, from: plain) else { return }
+
+                guard let msgs = try? self.messageStore.messages(forPeer: convID),
+                      let idx  = msgs.firstIndex(where: { $0.id == targetID }) else { return }
+                var reactions = msgs[idx].reactions ?? [:]
+                if let e = payload.emoji { reactions[senderPeerID] = e }
+                else { reactions.removeValue(forKey: senderPeerID) }
+                try? self.messageStore.updateReactions(reactions, forMessageID: targetID, peerID: convID)
+                let finalReactions = reactions
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.delegate?.chatManager(self, didUpdateGroupReactions: finalReactions,
+                                               onMessageID: targetID, groupID: groupID)
+                }
+            } catch {
+                #if DEBUG
+                print("[ChatManager][MLS] handleMLSReaction error: \(error)")
+                #endif
+            }
+        }
+    }
 }
 
 // MARK: - MLS outbound
@@ -425,6 +460,52 @@ extension ChatManager {
             }
         }
     }
+
+    /// Send an emoji reaction (or remove one) on a message in an MLS group.
+    public func sendMLSGroupReaction(emoji: String?, toMessageID targetID: String, group: GroupInfo) {
+        let myID      = identity.publicIdentity.peerID
+        let messageID = UUID().uuidString
+        let convID    = "group.\(group.id)"
+
+        // Encode reaction payload and apply locally immediately
+        struct ReactionPayload: Codable { let emoji: String? }
+        guard let payloadData = try? JSONEncoder().encode(ReactionPayload(emoji: emoji)) else { return }
+
+        // Apply locally (mirrors SKv2 sendGroupReaction pattern)
+        if let msgs = try? messageStore.messages(forPeer: convID),
+           let idx  = msgs.firstIndex(where: { $0.id == targetID }) {
+            var reactions = msgs[idx].reactions ?? [:]
+            if let e = emoji { reactions[myID] = e } else { reactions.removeValue(forKey: myID) }
+            try? messageStore.updateReactions(reactions, forMessageID: targetID, peerID: convID)
+            let finalReactions = reactions
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.delegate?.chatManager(self, didUpdateGroupReactions: finalReactions,
+                                           onMessageID: targetID, groupID: group.id)
+            }
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let mls       = try self.requireMLSManager()
+                let ciphertext = try await mls.encrypt(groupID: group.id, plaintext: payloadData)
+                let wire_msg  = MLSReactionMessage(
+                    groupID: group.id, messageID: messageID,
+                    senderPeerID: myID, targetMessageID: targetID,
+                    ciphertext: ciphertext, timestamp: Date()
+                )
+                guard let wire = try? self.wireBuilder.build(.mlsReaction, payload: wire_msg) else { return }
+                for peerID in group.memberIDs where peerID != myID {
+                    try? self.sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
+                }
+            } catch {
+                #if DEBUG
+                print("[ChatManager][MLS] sendMLSGroupReaction error: \(error)")
+                #endif
+            }
+        }
+    }
 }
 
 // MARK: - Wire dispatch (replaces Phase 3 stubs)
@@ -447,6 +528,9 @@ extension ChatManager {
             case .mlsCommitRequest:
                 let payload = try wireBuilder.decodePayload(MLSCommitRequestMessage.self, from: message)
                 handleMLSCommitRequest(payload, fromPeer: message.senderID)
+            case .mlsReaction:
+                let payload = try wireBuilder.decodePayload(MLSReactionMessage.self, from: message)
+                handleMLSReaction(payload)
             default:
                 break
             }

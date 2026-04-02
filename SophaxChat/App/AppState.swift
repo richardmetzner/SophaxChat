@@ -270,10 +270,12 @@ final class AppState: ObservableObject {
     }
 
     func sendGroupReaction(emoji: String?, messageID: String, group: GroupInfo) {
-        // MLS reactions are not yet implemented — SKv2 only
-        guard group.cryptoVersion != .mls else { return }
-        chatManager?.sendGroupReaction(emoji: emoji, toMessageID: messageID,
-                                       groupID: group.id, members: group.memberIDs)
+        if group.cryptoVersion == .mls {
+            chatManager?.sendMLSGroupReaction(emoji: emoji, toMessageID: messageID, group: group)
+        } else {
+            chatManager?.sendGroupReaction(emoji: emoji, toMessageID: messageID,
+                                           groupID: group.id, members: group.memberIDs)
+        }
     }
 
     func sendGroupImage(_ image: UIImage, group: GroupInfo, expiresAt: Date? = nil, replyToID: String? = nil) {

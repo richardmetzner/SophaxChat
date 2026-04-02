@@ -133,6 +133,8 @@ public enum WireMessageType: String, Codable, Sendable {
     case mlsMessage
     /// Non-coordinator member requesting the coordinator to issue a Commit — DR-encrypted unicast.
     case mlsCommitRequest
+    /// MLS-encrypted emoji reaction on a group message.
+    case mlsReaction
 }
 
 // MARK: - MLS Wire Messages
@@ -212,6 +214,29 @@ public struct MLSCommitRequestMessage: Codable, Sendable {
     public let keyPackage:    Data?
     /// For .remove: the peerID to remove.
     public let targetPeerID:  String?
+}
+
+// MARK: - MLS Reaction
+
+/// MLS-encrypted emoji reaction on a group message.
+/// `ciphertext` decrypts to UTF-8 JSON: `{"emoji":"👍"}` or `{"emoji":null}` to remove.
+public struct MLSReactionMessage: Codable, Sendable {
+    public let groupID:          String
+    public let messageID:        String   // stable ID for this reaction wire message
+    public let senderPeerID:     String
+    public let targetMessageID:  String   // the message being reacted to
+    public let ciphertext:       Data
+    public let timestamp:        Date
+
+    public init(groupID: String, messageID: String, senderPeerID: String,
+                targetMessageID: String, ciphertext: Data, timestamp: Date) {
+        self.groupID         = groupID
+        self.messageID       = messageID
+        self.senderPeerID    = senderPeerID
+        self.targetMessageID = targetMessageID
+        self.ciphertext      = ciphertext
+        self.timestamp       = timestamp
+    }
 }
 
 // MARK: - Sender Key Request

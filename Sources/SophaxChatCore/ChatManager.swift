@@ -2082,7 +2082,7 @@ public final class ChatManager: @unchecked Sendable {
                 handleDeadDrop(drop)
             }
 
-        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest:
+        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction:
             dispatchMLSMessage(message)
         }
     }
@@ -2374,7 +2374,7 @@ extension ChatManager: MeshManagerDelegate {
                 let payload = try wireBuilder.decodePayload(DeadDropEnvelope.self, from: message)
                 handleDeadDrop(payload)
 
-            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest:
+            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction:
                 dispatchMLSMessage(message)
             }
         } catch SophaxError.sessionStateCorrupted {
