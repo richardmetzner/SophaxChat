@@ -165,16 +165,37 @@ fun GroupChatScreen(
         }
     }
 
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     if (showMemberSheet) {
         GroupMemberSheet(
-            group    = group,
+            group     = group,
             peerIndex = peerIndex,
-            myPeerID = appState.myPeerID,
+            myPeerID  = appState.myPeerID,
             onLeave = {
                 appState.leaveGroup(group)
                 onBack()
             },
+            onDelete = { showDeleteConfirm = true },
             onDismiss = { showMemberSheet = false }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title   = { Text("Delete Group") },
+            text    = { Text("This will permanently delete the group for all members. This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    appState.deleteGroup(group)
+                    onBack()
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
         )
     }
 }
@@ -280,6 +301,7 @@ private fun GroupMemberSheet(
     peerIndex: Map<String, com.sophax.sophaxchat.protocol.KnownPeer>,
     myPeerID: String,
     onLeave: () -> Unit,
+    onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -328,6 +350,16 @@ private fun GroupMemberSheet(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Leave Group") }
+            }
+            if (myPeerID == group.creatorID) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onDismiss(); onDelete() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Delete Group for Everyone") }
             }
         }
     }

@@ -47,6 +47,10 @@ interface ChatManagerDelegate {
     fun didEncounterError(error: Exception)
     fun didUpdateTypingState(peerID: String, isTyping: Boolean)
     fun didReceiveReaction(conversationID: String, messageID: String, emoji: String?, senderID: String = conversationID)
+    /** The group creator dissolved the group; the local client must drop it. */
+    fun groupDeletedWithID(groupID: String)
+    /** A group message carried avatar data for a peer not yet in the avatar cache. */
+    fun didReceiveAvatarData(data: ByteArray, fromPeerID: String)
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +85,9 @@ class ChatManager(
 
     // Received peer bundles (for initiating X3DH)
     private val peerBundles  = ConcurrentHashMap<String, PreKeyBundle>()
+
+    // Avatar cache: peerID → JPEG bytes (≤8 KB). Populated from piggybacked group messages.
+    val peerAvatarData = ConcurrentHashMap<String, ByteArray>()
 
     // Messages queued while waiting for a peer's bundle: Pair(body, messageID)
     private val pendingQueue = ConcurrentHashMap<String, ArrayDeque<Pair<String, String>>>()
@@ -394,6 +401,19 @@ class ChatManager(
         return null
     }
 
+    /** Creator-only: dissolve the group for all members. */
+    fun deleteGroup(group: GroupInfo) {
+        val myID = identity.publicIdentity.peerID
+        if (group.creatorID != myID) return
+        val msg  = GroupDeletedMessage(group.id, myID)
+        val wire = builder().build(WireMessageType.groupDeleted.name, msg)
+        group.memberIDs.filter { it != myID }.forEach { peerID -> sendOrRoute(wire, peerID) }
+        groups.remove(group.id)
+        deleteSenderKeys(group.id)
+        messageStore.deleteConversation(group.conversationID)
+        saveGroups(groups.values.toList())
+    }
+
     fun leaveGroup(group: GroupInfo) {
         val myID = identity.publicIdentity.peerID
         val remaining = group.memberIDs.filter { it != myID }
@@ -411,6 +431,12 @@ class ChatManager(
 
         val group = groups[gwm.groupID] ?: return
         val senderID = gwm.senderPeerID
+
+        // Cache piggybacked avatar (≤8 KB guard)
+        gwm.senderAvatarData?.takeIf { it.size <= 8_192 && !peerAvatarData.containsKey(senderID) }?.let {
+            peerAvatarData[senderID] = it
+            delegate?.didReceiveAvatarData(it, senderID)
+        }
 
         val targetIteration = gwm.senderKeyIteration ?: 0L
         val state = loadSenderKey(gwm.groupID, senderID) ?: return
@@ -431,6 +457,19 @@ class ChatManager(
         )
         messageStore.store(stored)
         delegate?.didReceiveGroupMessage(stored, group)
+    }
+
+    private fun handleGroupDeleted(message: WireMessage) {
+        val msg = try { json.decodeFromString<GroupDeletedMessage>(String(message.payload)) }
+                  catch (e: Exception) { return }
+        val group = groups[msg.groupID] ?: return
+        // Only accept from the known group creator
+        if (message.senderID != group.creatorID) return
+        groups.remove(msg.groupID)
+        deleteSenderKeys(msg.groupID)
+        messageStore.deleteConversation(group.conversationID)
+        saveGroups(groups.values.toList())
+        delegate?.groupDeletedWithID(msg.groupID)
     }
 
     private fun handleGroupMemberLeft(message: WireMessage) {
@@ -496,6 +535,7 @@ class ChatManager(
             WireMessageType.relay.name             -> handleRelay(message, fromTransportID, isTCP)
             WireMessageType.groupMessage.name      -> handleGroupMessage(message)
             WireMessageType.groupMemberLeft.name   -> handleGroupMemberLeft(message)
+            WireMessageType.groupDeleted.name      -> handleGroupDeleted(message)
             WireMessageType.typing.name            -> handleTyping(message)
             WireMessageType.reaction.name          -> handleReaction(message)
             WireMessageType.groupReaction.name     -> handleGroupReaction(message)

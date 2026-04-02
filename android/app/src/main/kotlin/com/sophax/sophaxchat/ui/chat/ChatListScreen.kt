@@ -11,9 +11,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,7 +31,7 @@ import com.sophax.sophaxchat.AppState
 import com.sophax.sophaxchat.crypto.GroupInfo
 import com.sophax.sophaxchat.protocol.KnownPeer
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatListScreen(
     appState: AppState,
@@ -39,6 +44,9 @@ fun ChatListScreen(
     val groups       by appState.groups.collectAsState()
     val unreadCounts by appState.unreadCounts.collectAsState()
     val peerAliases  by appState.peerAliases.collectAsState()
+    val myPeerID     = appState.myPeerID
+
+    var groupToDelete by remember { mutableStateOf<GroupInfo?>(null) }
 
     Scaffold(
         topBar = {
@@ -69,7 +77,14 @@ fun ChatListScreen(
                         SectionHeader("Groups")
                     }
                     items(groups, key = { "g_${it.id}" }) { group ->
-                        GroupRow(group, unread = unreadCounts[group.conversationID] ?: 0, onClick = { onGroupTap(group.id) })
+                        GroupRow(
+                            group   = group,
+                            unread  = unreadCounts[group.conversationID] ?: 0,
+                            onClick = { onGroupTap(group.id) },
+                            onLongClick = if (group.creatorID == myPeerID) {
+                                { groupToDelete = group }
+                            } else null
+                        )
                     }
                     if (peers.isNotEmpty()) {
                         item { SectionHeader("Direct Messages") }
@@ -80,6 +95,23 @@ fun ChatListScreen(
                 }
             }
         }
+    }
+
+    groupToDelete?.let { group ->
+        AlertDialog(
+            onDismissRequest = { groupToDelete = null },
+            title   = { Text("Delete Group") },
+            text    = { Text("Delete \"${group.name}\" for all members? This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    appState.deleteGroup(group)
+                    groupToDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { groupToDelete = null }) { Text("Cancel") }
+            }
+        )
     }
 }
 
@@ -124,14 +156,15 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GroupRow(group: GroupInfo, unread: Int, onClick: () -> Unit) {
+private fun GroupRow(group: GroupInfo, unread: Int, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     val initial = group.name.firstOrNull()?.uppercaseChar()?.toString() ?: "G"
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

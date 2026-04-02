@@ -75,6 +75,9 @@ class AppState(application: Application) : AndroidViewModel(application) {
     private val _groups = MutableStateFlow<List<GroupInfo>>(emptyList())
     val groups: StateFlow<List<GroupInfo>> = _groups.asStateFlow()
 
+    private val _peerAvatarData = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
+    val peerAvatarData: StateFlow<Map<String, ByteArray>> = _peerAvatarData.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -368,6 +371,15 @@ class AppState(application: Application) : AndroidViewModel(application) {
                     _typingPeers.value = _typingPeers.value - peerID
                 }
             }
+            override fun groupDeletedWithID(groupID: String) {
+                _groups.value = _groups.value.filter { it.id != groupID }
+                val convID = "group.$groupID"
+                _messages.value = _messages.value - convID
+                _unreadCounts.value = _unreadCounts.value - convID
+            }
+            override fun didReceiveAvatarData(data: ByteArray, fromPeerID: String) {
+                _peerAvatarData.value = _peerAvatarData.value + (fromPeerID to data)
+            }
         }
         _chatManager = mgr
         _groups.value = mgr.groupsList()
@@ -446,6 +458,13 @@ class AppState(application: Application) : AndroidViewModel(application) {
     fun leaveGroup(group: GroupInfo) {
         _chatManager?.leaveGroup(group)
         _groups.value = _chatManager?.groupsList() ?: emptyList()
+    }
+
+    fun deleteGroup(group: GroupInfo) {
+        _chatManager?.deleteGroup(group)
+        _groups.value = _chatManager?.groupsList() ?: emptyList()
+        _messages.value = _messages.value - group.conversationID
+        _unreadCounts.value = _unreadCounts.value - group.conversationID
     }
 
     // -----------------------------------------------------------------------

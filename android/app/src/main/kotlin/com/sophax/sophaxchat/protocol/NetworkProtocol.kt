@@ -51,7 +51,7 @@ typealias SerDate = @Serializable(DateSerializer::class) Date
 enum class WireMessageType {
     hello, initiateSession, message, ack, relay, typing,
     sealed, readReceipt, reaction,
-    groupMessage, groupReaction, groupMemberLeft, groupReadReceipt,
+    groupMessage, groupReaction, groupMemberLeft, groupDeleted, groupReadReceipt,
     storeAndForward, storeAndForwardDelivery, channelAnnouncement
 }
 
@@ -221,7 +221,15 @@ data class GroupWireMessage(
     val audioDuration: Double? = null,
     val senderKeyIteration: Long? = null,
     val expiresAt: SerDate? = null,
-    val replyToID: String? = null
+    val replyToID: String? = null,
+    /** ≤8KB JPEG avatar piggyback — used for avatar sync with relay-only contacts. */
+    val senderAvatarData: ByteArrayBase64? = null
+)
+
+@Serializable
+data class GroupDeletedMessage(
+    val groupID: String,
+    val deletedByPeerID: String
 )
 
 @Serializable
