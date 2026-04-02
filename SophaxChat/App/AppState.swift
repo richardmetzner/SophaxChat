@@ -1382,8 +1382,14 @@ extension AppState: @preconcurrency ChatManagerDelegate {
 
     func chatManager(_ manager: ChatManager, peerDidDisconnect peerID: String) {
         onlinePeers.remove(peerID)
+        let now = Date()
         if let idx = peers.firstIndex(where: { $0.id == peerID }) {
             peers[idx].isOnline = false
+            peers[idx].lastSeen = now
+        }
+        if let idx = linkedDevices.firstIndex(where: { $0.id == peerID }) {
+            linkedDevices[idx].isOnline = false
+            linkedDevices[idx].lastSeen = now
         }
     }
 

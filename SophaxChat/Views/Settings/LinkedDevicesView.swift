@@ -46,6 +46,11 @@ struct LinkedDevicesView: View {
                                 Text(String(peer.id.prefix(8)) + "…")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                                if !peer.isOnline, let seen = peer.lastSeen {
+                                    Text("Last seen \(seen, style: .relative) ago")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
                             Spacer()
                             if peer.isOnline {
