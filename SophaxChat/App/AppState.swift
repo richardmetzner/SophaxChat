@@ -24,6 +24,7 @@ final class AppState: ObservableObject {
     @Published var isAppLocked: Bool     = false
     @Published var peers:                [KnownPeer] = []
     @Published var pendingContactRequests: [KnownPeer] = []
+    @Published var linkedDevices: [KnownPeer] = []
     @Published var messages:     [String: [StoredMessage]] = [:]  // peerID → messages
     @Published var onlinePeers:  Set<String> = []
     @Published var blockedPeers: Set<String> = []
@@ -185,11 +186,14 @@ final class AppState: ObservableObject {
                 keychain:        keychain
             )
             manager.delegate      = self
+            manager.deviceLabel   = UIDevice.current.name
             manager.myTCPAddress  = myTCPAddress.isEmpty ? nil : myTCPAddress
             manager.registerKnownGroups(groups)
             // Re-register pending contact requests so ChatManager knows to gate their messages
             for peer in pendingContactRequests { manager.registerPendingPeer(peer) }
             manager.start()
+            // Rebuild linked device peer list from known peers + ChatManager's linked set
+            linkedDevices = peers.filter { manager.linkedDevices.contains($0.id) }
             if tcpEnabled { startTCPTransport(on: manager) }
 
             self.chatManager     = manager
@@ -574,6 +578,28 @@ final class AppState: ObservableObject {
         savePendingRequests()
     }
 
+    // MARK: - Multi-device linking
+
+    /// Generate QR payload data for showing on the "link device" screen.
+    func generateDeviceLinkQR() -> Data? {
+        let label = UIDevice.current.name
+        return try? chatManager?.generateDeviceLinkPayload(label: label)
+    }
+
+    /// Called after scanning a device-link QR from another device.
+    func acceptDeviceLink(_ data: Data) {
+        do {
+            try chatManager?.acceptDeviceLink(data)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func unlinkDevice(_ peer: KnownPeer) {
+        chatManager?.unlinkDevice(peerID: peer.id)
+        linkedDevices.removeAll { $0.id == peer.id }
+    }
+
     // MARK: - Blocking
 
     func blockPeer(peerID: String) {
@@ -849,14 +875,16 @@ final class AppState: ObservableObject {
 
     /// Zero out all in-memory conversation/peer state. Called on both lock and wipe.
     private func clearInMemoryState() {
-        peers           = []
-        messages        = [:]
-        groups          = []
-        peerAvatars     = [:]
-        onlinePeers     = []
-        unreadCounts    = [:]
-        typingPeers     = []
-        keyChangeAlerts = []
+        peers                  = []
+        pendingContactRequests = []
+        linkedDevices          = []
+        messages               = [:]
+        groups                 = []
+        peerAvatars            = [:]
+        onlinePeers            = []
+        unreadCounts           = [:]
+        typingPeers            = []
+        keyChangeAlerts        = []
     }
 
     func tryUnlock() {
@@ -1535,6 +1563,16 @@ extension AppState: @preconcurrency ChatManagerDelegate {
             groups[idx].currentCoordinatorID = newCoordinatorID
             saveGroups()
         }
+    }
+
+    func chatManager(_ manager: ChatManager, didLinkDevice peer: KnownPeer) {
+        guard !linkedDevices.contains(where: { $0.id == peer.id }) else { return }
+        linkedDevices.append(peer)
+    }
+
+    func chatManager(_ manager: ChatManager, didReceiveSyncedMessage message: StoredMessage, conversationID: String) {
+        appendMessage(message)
+        // Don't increment unread or schedule a notification — this is our own message on another device
     }
 
     func chatManager(_ manager: ChatManager, didReceiveContactRequest peer: KnownPeer) {

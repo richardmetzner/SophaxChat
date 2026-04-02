@@ -137,6 +137,10 @@ public enum WireMessageType: String, Codable, Sendable {
     case mlsReaction
     /// Current MLS coordinator transfers commit authority to another member — broadcast unicast.
     case mlsCoordinatorHandoff
+    /// QR-based device link invite from an existing device to a new device.
+    case deviceLinkRequest
+    /// Forwarded copy of a message from the primary device to a linked device.
+    case deviceSyncMessage
 }
 
 // MARK: - MLS Wire Messages
@@ -257,6 +261,39 @@ public struct MLSCoordinatorHandoffMessage: Codable, Sendable {
         self.groupID           = groupID
         self.fromCoordinatorID = fromCoordinatorID
         self.newCoordinatorID  = newCoordinatorID
+    }
+}
+
+// MARK: - Multi-Device Linking
+
+/// QR payload: device A broadcasts its PreKeyBundle so device B can open a DR session.
+/// Transmitted via the `deviceLinkRequest` wire message type.
+public struct DeviceLinkRequestMessage: Codable, Sendable {
+    /// Human-readable label for device A (e.g. "iPhone 16 Pro").
+    public let deviceLabel: String
+    /// The PreKeyBundle of device A — device B uses this to initiate X3DH.
+    public let bundle: PreKeyBundle
+
+    public init(deviceLabel: String, bundle: PreKeyBundle) {
+        self.deviceLabel = deviceLabel
+        self.bundle      = bundle
+    }
+}
+
+/// Forwarded message copy sent from the primary device to each linked device.
+/// Re-encrypted inside a DR session so only the linked device can read it.
+public struct DeviceSyncMessage: Codable, Sendable {
+    /// Conversation identifier: peerID for 1-to-1, "group.<groupID>" for groups.
+    public let conversationID: String
+    /// JSON-encoded `StoredMessage` re-encrypted for the linked device.
+    public let messageJSON:    Data
+    /// Direction as seen by the primary device ("sent" | "received").
+    public let direction:      String
+
+    public init(conversationID: String, messageJSON: Data, direction: String) {
+        self.conversationID = conversationID
+        self.messageJSON    = messageJSON
+        self.direction      = direction
     }
 }
 

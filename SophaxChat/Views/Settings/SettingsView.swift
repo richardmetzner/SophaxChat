@@ -395,6 +395,11 @@ struct SettingsView: View {
     @ViewBuilder
     private var backupSection: some View {
         Section {
+            NavigationLink {
+                LinkedDevicesView()
+            } label: {
+                Label("Linked Devices", systemImage: "iphone.and.iphone")
+            }
             Button {
                 showingBackup = true
             } label: {
@@ -403,7 +408,7 @@ struct SettingsView: View {
         } header: {
             Text("Data")
         } footer: {
-            Text("Encrypted local backup. No cloud, no server — you keep the key.")
+            Text("Linked devices share your messages. Encrypted local backup — no cloud, no server.")
         }
     }
 

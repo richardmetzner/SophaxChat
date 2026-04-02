@@ -120,6 +120,10 @@ public protocol ChatManagerDelegate: AnyObject {
     func chatManager(_ manager: ChatManager, didUpdateCoordinator newCoordinatorID: String, inGroupID groupID: String)
     /// A new peer sent a Hello but has not yet been accepted — show accept/reject UI.
     func chatManager(_ manager: ChatManager, didReceiveContactRequest peer: KnownPeer)
+    /// A device was successfully linked (via QR scan or incoming link request). UI should refresh the linked devices list.
+    func chatManager(_ manager: ChatManager, didLinkDevice peer: KnownPeer)
+    /// A linked device forwarded a message copy. Delegate should store and display it.
+    func chatManager(_ manager: ChatManager, didReceiveSyncedMessage message: StoredMessage, conversationID: String)
 }
 
 // MARK: - ChatManager
@@ -201,6 +205,14 @@ public final class ChatManager: @unchecked Sendable {
 
     /// Current MLS commit coordinator per group. Starts as creatorID; updated on handoff.
     var groupCoordinators: [String: String] = [:]
+
+    /// PeerIDs of devices linked to this account (same person, different device).
+    /// Inbound messages are forwarded to linked devices; they forward back via deviceSyncMessage.
+    private var linkedDevicePeerIDs: Set<String> = []
+    private let linkedDevicesDefaultsKey = "com.sophax.linkedDevices"
+
+    /// Human-readable label for this device shown to the pairing partner (e.g. "iPhone 16 Pro").
+    public var deviceLabel: String = "Device"
 
     /// Messages stored on behalf of offline peers (relay-store role).
     private struct StoredForwardItem {
@@ -295,6 +307,7 @@ public final class ChatManager: @unchecked Sendable {
         scheduleExpiryTimer()
         loadPersistedQueue()
         loadSkippedGroupKeyCache()
+        loadLinkedDevices()
     }
 
     /// Stop the mesh and TCP transport (call on app background / termination).
@@ -386,6 +399,65 @@ public final class ChatManager: @unchecked Sendable {
     public func registerPendingPeer(_ peer: KnownPeer) {
         guard peer.trustLevel == .pending else { return }
         knownPeers[peer.id] = peer
+    }
+
+    // MARK: - Public: Multi-device linking
+
+    /// All currently linked device peerIDs.
+    public var linkedDevices: [String] { Array(linkedDevicePeerIDs) }
+
+    /// Generate a JSON blob to encode in a QR code for device linking.
+    /// The other device calls `acceptDeviceLink(_:)` after scanning.
+    public func generateDeviceLinkPayload(label: String) throws -> Data {
+        let bundle = try preKeys.generateBundle(tcpAddress: myTCPAddress)
+        let msg = DeviceLinkRequestMessage(deviceLabel: label, bundle: bundle)
+        return try JSONEncoder().encode(msg)
+    }
+
+    /// Called on the scanning device after scanning a device-link QR.
+    /// Stores the scanned device's bundle, marks it as linked, and queues a reply so
+    /// the other device can complete the pairing without another QR scan.
+    public func acceptDeviceLink(_ data: Data) throws {
+        let msg = try JSONDecoder().decode(DeviceLinkRequestMessage.self, from: data)
+        let peerID = msg.bundle.peerID
+        guard peerID != identity.publicIdentity.peerID else { return }
+        guard try msg.bundle.verifySignedPreKey() else { throw SophaxError.invalidSignature }
+
+        peerBundles[peerID] = msg.bundle
+        linkedDevicePeerIDs.insert(peerID)
+        saveLinkedDevices()
+
+        let safetyNumber = generateSafetyNumber(for: msg.bundle)
+        let peer = KnownPeer(from: msg.bundle, safetyNumber: safetyNumber, trustLevel: .accepted)
+        knownPeers[peerID] = peer
+
+        // Queue a reciprocal deviceLinkRequest so the other device learns our bundle automatically.
+        let myBundle = try preKeys.generateBundle(tcpAddress: myTCPAddress)
+        let reply = DeviceLinkRequestMessage(deviceLabel: deviceLabel, bundle: myBundle)
+        let wire = try wireBuilder.build(.deviceLinkRequest, payload: reply)
+        try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+
+        let peerCopy = peer
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didLinkDevice: peerCopy)
+            self.delegate?.chatManager(self, didDiscoverPeer: peerCopy)
+        }
+    }
+
+    /// Remove a linked device. Future messages will not be forwarded to it.
+    public func unlinkDevice(peerID: String) {
+        linkedDevicePeerIDs.remove(peerID)
+        saveLinkedDevices()
+    }
+
+    private func saveLinkedDevices() {
+        UserDefaults.standard.set(Array(linkedDevicePeerIDs), forKey: linkedDevicesDefaultsKey)
+    }
+
+    private func loadLinkedDevices() {
+        let saved = UserDefaults.standard.stringArray(forKey: linkedDevicesDefaultsKey) ?? []
+        linkedDevicePeerIDs = Set(saved)
     }
 
     // MARK: - Public: Group reactions
@@ -486,6 +558,7 @@ public final class ChatManager: @unchecked Sendable {
             return
         }
 
+        forwardToLinkedDevices(stored)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didSendMessage: stored, toPeer: peerID)
@@ -1254,9 +1327,12 @@ public final class ChatManager: @unchecked Sendable {
         let peerID       = bundle.peerID
         let safetyNumber = generateSafetyNumber(for: bundle)
 
-        // Preserve existing trust level; new peers default to .pending (contact request gate)
+        // Preserve existing trust level; new peers default to .pending (contact request gate).
+        // Linked devices are always auto-accepted — they belong to the same person.
         let existing   = knownPeers[peerID]
-        let trustLevel: PeerTrustLevel = existing?.trustLevel ?? .pending
+        let trustLevel: PeerTrustLevel = linkedDevicePeerIDs.contains(peerID)
+            ? .accepted
+            : (existing?.trustLevel ?? .pending)
         let peer       = KnownPeer(from: bundle, safetyNumber: safetyNumber, trustLevel: trustLevel)
 
         // Detect reconnect: peer was known but is now coming back online
@@ -1497,6 +1573,7 @@ public final class ChatManager: @unchecked Sendable {
             audioDuration:      content.audioDuration
         )
         try messageStore.append(message: stored)
+        forwardToLinkedDevices(stored)
 
         // Acknowledge delivery — errors here are non-fatal (peer may be gone),
         // but surfaced to the delegate so they are visible in logs.
@@ -2199,6 +2276,74 @@ public final class ChatManager: @unchecked Sendable {
 
         case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff:
             dispatchMLSMessage(message)
+
+        case .deviceLinkRequest:
+            if let payload = try? wireBuilder.decodePayload(DeviceLinkRequestMessage.self, from: message) {
+                handleDeviceLinkRequest(payload, senderID: message.senderID)
+            }
+
+        case .deviceSyncMessage:
+            if let payload = try? wireBuilder.decodePayload(DeviceSyncMessage.self, from: message) {
+                handleDeviceSyncMessage(payload, fromPeer: message.senderID)
+            }
+        }
+    }
+
+    // MARK: - Private: Multi-device handlers
+
+    private func handleDeviceLinkRequest(_ payload: DeviceLinkRequestMessage, senderID: String) {
+        // Bundle peerID must match the outer wire senderID to prevent spoofing
+        guard payload.bundle.peerID == senderID else { return }
+        guard senderID != identity.publicIdentity.peerID else { return }
+        guard (try? payload.bundle.verifySignedPreKey()) == true else { return }
+
+        peerBundles[senderID] = payload.bundle
+        linkedDevicePeerIDs.insert(senderID)
+        saveLinkedDevices()
+
+        let safetyNumber = generateSafetyNumber(for: payload.bundle)
+        let peer = KnownPeer(from: payload.bundle, safetyNumber: safetyNumber, trustLevel: .accepted)
+        knownPeers[senderID] = peer
+
+        let peerCopy = peer
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didLinkDevice: peerCopy)
+            self.delegate?.chatManager(self, didDiscoverPeer: peerCopy)
+        }
+    }
+
+    private func handleDeviceSyncMessage(_ payload: DeviceSyncMessage, fromPeer peerID: String) {
+        // Only accept synced messages from devices we explicitly linked
+        guard linkedDevicePeerIDs.contains(peerID) else { return }
+        guard let msg = try? JSONDecoder().decode(StoredMessage.self, from: payload.messageJSON) else { return }
+        // Dedup: skip if we already stored this message (could happen if both devices are online)
+        if let existing = try? messageStore.messages(forPeer: msg.peerID),
+           existing.contains(where: { $0.id == msg.id }) { return }
+        try? messageStore.append(message: msg)
+        let convID = payload.conversationID
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didReceiveSyncedMessage: msg, conversationID: convID)
+        }
+    }
+
+    /// Forward a stored message to all linked devices as a `deviceSyncMessage`.
+    /// Skips forwarding if this message itself came from a linked device (breaks sync loops).
+    private func forwardToLinkedDevices(_ stored: StoredMessage) {
+        guard !linkedDevicePeerIDs.isEmpty else { return }
+        // Don't forward messages whose peerID is a linked device — they're already synced
+        guard !linkedDevicePeerIDs.contains(stored.peerID) else { return }
+        guard let messageJSON = try? JSONEncoder().encode(stored) else { return }
+        let direction = stored.direction == .sent ? "sent" : "received"
+        let sync = DeviceSyncMessage(
+            conversationID: stored.peerID,
+            messageJSON:    messageJSON,
+            direction:      direction
+        )
+        guard let wire = try? wireBuilder.build(.deviceSyncMessage, payload: sync) else { return }
+        for devicePeerID in linkedDevicePeerIDs {
+            try? sendOrQueue(wire, toPeerID: devicePeerID, messageID: UUID().uuidString)
         }
     }
 
@@ -2491,6 +2636,16 @@ extension ChatManager: MeshManagerDelegate {
 
             case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff:
                 dispatchMLSMessage(message)
+
+            case .deviceLinkRequest:
+                if let payload = try? wireBuilder.decodePayload(DeviceLinkRequestMessage.self, from: message) {
+                    handleDeviceLinkRequest(payload, senderID: message.senderID)
+                }
+
+            case .deviceSyncMessage:
+                if let payload = try? wireBuilder.decodePayload(DeviceSyncMessage.self, from: message) {
+                    handleDeviceSyncMessage(payload, fromPeer: message.senderID)
+                }
             }
         } catch SophaxError.sessionStateCorrupted {
             // The persisted DR session blob was malformed (e.g. crashed mid-write).
