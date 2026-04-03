@@ -423,6 +423,8 @@ private struct GroupMemberListView: View {
     @Environment(\.dismiss) private var dismiss
     let group: GroupInfo
 
+    @State private var selectedMemberForVerification: KnownPeer? = nil
+
     private var myPeerID: String {
         (appState.chatManager?.identity.publicIdentity.peerID) ?? ""
     }
@@ -487,6 +489,23 @@ private struct GroupMemberListView: View {
 
                             Spacer()
 
+                            // Verification shield — tap to verify identity (non-self known peers only)
+                            if peerID != myPeerID,
+                               let peer = appState.peers.first(where: { $0.id == peerID }) {
+                                let keyChanged = appState.hasKeyChanged(for: peerID, currentSafetyNumber: peer.safetyNumber)
+                                let verified   = appState.isVerified(peerID, currentSafetyNumber: peer.safetyNumber)
+                                Button {
+                                    selectedMemberForVerification = peer
+                                } label: {
+                                    Image(systemName: keyChanged  ? "exclamationmark.shield.fill"
+                                                     : verified   ? "checkmark.shield.fill"
+                                                                  : "checkmark.shield")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(keyChanged ? .red : verified ? .green : Color.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
                             // Make Coordinator button — only visible to current coordinator,
                             // only for MLS groups, not for self or already-coordinator
                             if group.cryptoVersion == .mls
@@ -512,6 +531,10 @@ private struct GroupMemberListView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(item: $selectedMemberForVerification) { peer in
+                SafetyNumberView(peer: peer)
+                    .environmentObject(appState)
             }
         }
     }
