@@ -111,9 +111,36 @@ struct GroupChatView: View {
             }
     }
 
+    @ViewBuilder private var pinnedMessageBanner: some View {
+        if let msgID = appState.pinnedMessages[group.conversationID],
+           let msg = messages.first(where: { $0.id == msgID }) {
+            HStack(spacing: 8) {
+                Image(systemName: "pin.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                Text(msg.body.isEmpty ? "Attachment" : msg.body)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Button {
+                    appState.unpinMessage(inConversation: group.conversationID)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Color.orange.opacity(0.08))
+        }
+    }
+
     private var mainContent: some View {
         VStack(spacing: 0) {
             messageScrollView
+            pinnedMessageBanner
             disappearingBanner
             Divider()
             if isSearching {
@@ -157,6 +184,14 @@ struct GroupChatView: View {
                             onEdit:     {
                                 editingText    = message.body
                                 editingMessage = message
+                            },
+                            onPin: {
+                                let convID = group.conversationID
+                                if appState.pinnedMessages[convID] == message.id {
+                                    appState.unpinMessage(inConversation: convID)
+                                } else {
+                                    appState.pinMessage(message.id, inConversation: convID)
+                                }
                             }
                         )
                     }
@@ -550,6 +585,7 @@ private struct GroupMessageBubble: View {
     let onReply:    () -> Void
     let onForward:  () -> Void
     let onEdit:     () -> Void
+    var onPin:      (() -> Void)? = nil
 
     private var isSent: Bool { message.direction == .sent }
 
@@ -582,6 +618,11 @@ private struct GroupMessageBubble: View {
                         withAnimation { onReply() }
                     } label: {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    }
+                    if let onPin {
+                        Button(action: onPin) {
+                            Label("Pin Message", systemImage: "pin")
+                        }
                     }
                     Button {
                         UIPasteboard.general.string = message.body

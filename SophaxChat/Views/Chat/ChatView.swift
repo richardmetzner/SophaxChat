@@ -151,9 +151,36 @@ struct ChatView: View {
     }
 
     // Extracted so the Swift type checker doesn't time out on one giant body expression.
+    @ViewBuilder private var pinnedMessageBanner: some View {
+        if let msgID = appState.pinnedMessages[peer.id],
+           let msg = messages.first(where: { $0.id == msgID }) {
+            HStack(spacing: 8) {
+                Image(systemName: "pin.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                Text(msg.body.isEmpty ? "Attachment" : msg.body)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Button {
+                    appState.unpinMessage(inConversation: peer.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Color.orange.opacity(0.08))
+        }
+    }
+
     private var chatContent: some View {
         VStack(spacing: 0) {
             messageList
+            pinnedMessageBanner
             Divider()
             searchBar
             replyBar
@@ -265,6 +292,13 @@ struct ChatView: View {
                                 messageText = message.body
                                 withAnimation { editingMessage = message }
                                 isInputFocused = true
+                            },
+                            onPin: {
+                                if appState.pinnedMessages[peer.id] == message.id {
+                                    appState.unpinMessage(inConversation: peer.id)
+                                } else {
+                                    appState.pinMessage(message.id, inConversation: peer.id)
+                                }
                             }
                         )
                         .id(message.id)

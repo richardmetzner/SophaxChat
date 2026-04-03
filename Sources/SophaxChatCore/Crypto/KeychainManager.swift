@@ -335,6 +335,22 @@ public final class KeychainManager {
         return peers
     }
 
+    // MARK: - Pinned Messages (conversationID → messageID)
+
+    /// Persist the conversationID → pinned messageID map in the Keychain.
+    public func savePinnedMessages(_ map: [String: String]) throws {
+        let data = try JSONEncoder().encode(map)
+        try save(data: data, account: "pinned.messages")
+    }
+
+    /// Returns the persisted conversationID → pinned messageID map, or [:] if none stored.
+    public func loadPinnedMessages() -> [String: String] {
+        guard let data = try? load(account: "pinned.messages"),
+              let map  = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return [:] }
+        return map
+    }
+
     // MARK: - Peer Aliases (user-assigned contact nicknames)
     // Moved from UserDefaults to Keychain to exclude from iCloud/iTunes backups.
 

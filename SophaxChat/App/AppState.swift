@@ -41,6 +41,9 @@ final class AppState: ObservableObject {
     /// Nil entry = never verified. Different value = key changed warning.
     @Published var verifiedPeers: [String: String] = [:]
 
+    /// Pinned messages: conversationID → pinned messageID. Local-only, never broadcast.
+    @Published var pinnedMessages: [String: String] = [:]
+
     /// peerID → true when their session was established without a one-time prekey (reduced entropy).
     @Published var noOPKSessions: Set<String> = []
 
@@ -146,6 +149,7 @@ final class AppState: ObservableObject {
         loadAliases()
         loadGroups()
         loadVerifiedPeers()
+        loadPinnedMessages()
         loadTCPSettings()
         if keychain.hasIdentity() {
             setupChatManager(username: nil)
@@ -1290,6 +1294,23 @@ final class AppState: ObservableObject {
 
     private func saveVerifiedPeers() {
         keychainSave("verifiedPeers") { try keychain.saveVerifiedPeers(verifiedPeers) }
+    }
+
+    // MARK: - Pinned Messages
+
+    func pinMessage(_ messageID: String, inConversation convID: String) {
+        pinnedMessages[convID] = messageID
+        keychainSave("pinnedMessages") { try keychain.savePinnedMessages(pinnedMessages) }
+    }
+
+    func unpinMessage(inConversation convID: String) {
+        pinnedMessages.removeValue(forKey: convID)
+        keychainSave("pinnedMessages") { try keychain.savePinnedMessages(pinnedMessages) }
+    }
+
+    private func loadPinnedMessages() {
+        let saved = keychain.loadPinnedMessages()
+        if !saved.isEmpty { pinnedMessages = saved }
     }
 
     // MARK: - Backup

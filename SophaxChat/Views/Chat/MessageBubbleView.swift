@@ -19,6 +19,7 @@ struct MessageBubbleView: View {
     var onReply:   (() -> Void)? = nil
     var onForward: (() -> Void)? = nil
     var onEdit:    (() -> Void)? = nil
+    var onPin:     (() -> Void)? = nil
 
     @State private var attachmentData:    Data?    = nil
     @State private var showFullScreen:    Bool     = false
@@ -86,6 +87,11 @@ struct MessageBubbleView: View {
                            let onEdit {
                             Button(action: onEdit) {
                                 Label("Edit", systemImage: "pencil")
+                            }
+                        }
+                        if let onPin {
+                            Button(action: onPin) {
+                                Label("Pin Message", systemImage: "pin")
                             }
                         }
                         Divider()
