@@ -210,6 +210,9 @@ public final class ChatManager: @unchecked Sendable {
     /// Current MLS commit coordinator per group. Starts as creatorID; updated on handoff.
     var groupCoordinators: [String: String] = [:]
 
+    /// Crypto version per group — used to skip sealed-sender double-wrap for MLS groups.
+    var groupCryptoVersions: [String: GroupCryptoVersion] = [:]
+
     /// PeerIDs of devices linked to this account (same person, different device).
     /// Inbound messages are forwarded to linked devices; they forward back via deviceSyncMessage.
     private var linkedDevicePeerIDs: Set<String> = []
@@ -727,6 +730,7 @@ public final class ChatManager: @unchecked Sendable {
         joinedGroups[groupID] = Set(allMembers)
         groupCreators[groupID] = myID
         groupCoordinators[groupID] = myID
+        groupCryptoVersions[groupID] = .senderKeysV2
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -741,6 +745,7 @@ public final class ChatManager: @unchecked Sendable {
             joinedGroups[group.id] = Set(group.memberIDs)
             groupCreators[group.id] = group.creatorID
             groupCoordinators[group.id] = group.currentCoordinatorID
+            groupCryptoVersions[group.id] = group.cryptoVersion
         }
     }
 
@@ -848,11 +853,22 @@ public final class ChatManager: @unchecked Sendable {
         // Mark delivered (no per-member ACK in group), then broadcast.
         try? messageStore.updateStatus(.delivered, forMessageID: messageID, peerID: convID)
 
-        // Broadcast to each member (excluding self)
+        // Broadcast to each member (excluding self).
+        // For SKv2 groups, wrap each copy in sealed sender so relay nodes cannot correlate
+        // the group wire with a specific recipient. MLS groups skip this — epoch keys already
+        // provide per-member confidentiality.
+        let useSealedSender = groupCryptoVersions[groupID] != .mls
         var sendError: Error? = nil
         for peerID in members where peerID != myID {
             do {
-                try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
+                if useSealedSender, let dhKey = knownPeers[peerID]?.dhKeyPublic,
+                   let sealed    = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
+                   let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) {
+                    try sendOrQueue(sealedWire, toPeerID: peerID, messageID: messageID)
+                } else {
+                    // Fallback: peer not yet known or DH key unavailable — send unsealed
+                    try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
+                }
             } catch {
                 sendError = error
             }
@@ -982,10 +998,17 @@ public final class ChatManager: @unchecked Sendable {
         // Mark delivered (no per-member ACK in group), then broadcast.
         try? messageStore.updateStatus(.delivered, forMessageID: messageID, peerID: convID)
 
+        let useSealedSender = groupCryptoVersions[groupID] != .mls
         var sendError: Error? = nil
         for peerID in members where peerID != myID {
             do {
-                try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
+                if useSealedSender, let dhKey = knownPeers[peerID]?.dhKeyPublic,
+                   let sealed    = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
+                   let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) {
+                    try sendOrQueue(sealedWire, toPeerID: peerID, messageID: messageID)
+                } else {
+                    try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
+                }
             } catch {
                 sendError = error
             }
