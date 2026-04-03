@@ -425,6 +425,85 @@ public final class KeychainManager {
         return (try? loadSigningKey()) != nil
     }
 
+    // MARK: - App Lock PIN (custom numeric PIN, alternative to biometrics)
+    //
+    // When set, the user can unlock with this PIN in addition to biometrics.
+    // Stored as SHA256(salt + pin). Same pattern as duress PIN.
+
+    private static let lockPINHashAccount = "settings.lock_pin"
+    private static let lockPINSaltAccount = "settings.lock_pin_s"
+
+    public func saveRealLockPIN(_ pin: String) throws {
+        var salt = Data(repeating: 0, count: 16)
+        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
+        var input = Data(salt)
+        input.append(contentsOf: pin.utf8)
+        let hashData = Data(SHA256.hash(data: input))
+        try save(data: salt,     account: Self.lockPINSaltAccount)
+        try save(data: hashData, account: Self.lockPINHashAccount)
+    }
+
+    public func verifyRealLockPIN(_ pin: String) -> Bool {
+        guard let salt     = try? load(account: Self.lockPINSaltAccount),
+              let hashData = try? load(account: Self.lockPINHashAccount) else { return false }
+        var input = Data(salt)
+        input.append(contentsOf: pin.utf8)
+        return Data(SHA256.hash(data: input)) == hashData
+    }
+
+    public func clearRealLockPIN() throws {
+        try? delete(account: Self.lockPINHashAccount)
+        try? delete(account: Self.lockPINSaltAccount)
+    }
+
+    public func hasRealLockPIN() -> Bool {
+        (try? load(account: Self.lockPINHashAccount)) != nil
+    }
+
+    // MARK: - Duress PIN
+    //
+    // Stored as SHA256(salt + pin) under a non-obvious account key.
+    // The salt is stored alongside the hash so the hash can be re-derived on verify.
+    // PIN is NEVER stored in plaintext, memory, or UserDefaults.
+
+    /// Obfuscated Keychain account key — intentionally non-obvious to forensic tools.
+    private static let duressHashAccount = "settings.security_alt"
+    private static let duressSaltAccount = "settings.security_alt_s"
+
+    /// Hash and persist the duress PIN.  Called only from a short-lived stack; wipe after use.
+    public func saveDuressPIN(_ pin: String) throws {
+        var salt = Data(repeating: 0, count: 16)
+        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
+
+        var input = Data(salt)
+        input.append(contentsOf: pin.utf8)
+        let hash = SHA256.hash(data: input)
+        let hashData = Data(hash)
+
+        try save(data: salt,     account: Self.duressSaltAccount)
+        try save(data: hashData, account: Self.duressHashAccount)
+    }
+
+    /// Returns `true` if `pin` matches the stored duress PIN hash.
+    /// Returns `false` (not throws) when no duress PIN is set.
+    public func verifyDuressPIN(_ pin: String) -> Bool {
+        guard let salt     = try? load(account: Self.duressSaltAccount),
+              let hashData = try? load(account: Self.duressHashAccount) else { return false }
+        var input = Data(salt)
+        input.append(contentsOf: pin.utf8)
+        let computed = Data(SHA256.hash(data: input))
+        return computed == hashData
+    }
+
+    public func clearDuressPIN() throws {
+        try? delete(account: Self.duressHashAccount)
+        try? delete(account: Self.duressSaltAccount)
+    }
+
+    public func hasDuressPIN() -> Bool {
+        (try? load(account: Self.duressHashAccount)) != nil
+    }
+
     // MARK: - Wipe (for account deletion / security)
 
     public func wipeAll() throws {

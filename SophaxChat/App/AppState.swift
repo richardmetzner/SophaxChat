@@ -23,6 +23,9 @@ final class AppState: ObservableObject {
     @Published var isSetupComplete: Bool = false
     @Published var isBlurred: Bool       = false
     @Published var isAppLocked: Bool     = false
+    /// When true, all in-memory state is cleared and the app displays as empty.
+    /// Incoming messages are silently dropped until the next real unlock.
+    @Published var isDuressActive: Bool  = false
     @Published var peers:                [KnownPeer] = []
     @Published var pendingContactRequests: [KnownPeer] = []
     @Published var linkedDevices: [KnownPeer] = []
@@ -1029,6 +1032,50 @@ final class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Duress mode
+
+    /// Activate duress mode: clears all in-memory state, stops the chat engine,
+    /// and keeps the app open but appearing empty.
+    /// Incoming messages are dropped while duress is active (they remain on disk).
+    func activateDuress() {
+        chatManager?.stop()
+        chatManager = nil
+        clearInMemoryState()
+        isDuressActive = true
+        isAppLocked    = false  // remove the lock overlay so the empty state is visible
+    }
+
+    /// Unlock using a custom numeric PIN (alternative to biometrics).
+    /// Checks the duress PIN first; if it matches, activates duress mode.
+    /// Then checks the real lock PIN; if it matches, performs a normal unlock.
+    /// - Returns: `true` if the PIN was accepted (either duress or real).
+    @discardableResult
+    func tryUnlockWithPIN(_ pin: String) -> Bool {
+        // Duress PIN takes priority — silent activation, no error shown
+        if keychain.verifyDuressPIN(pin) {
+            activateDuress()
+            return true
+        }
+        // Real PIN — normal unlock
+        if keychain.verifyRealLockPIN(pin) {
+            failedUnlockAttempts = 0
+            unlockLockedUntil    = nil
+            keychain.saveUnlockAttempts(0, lockedUntil: nil)
+            unlockError          = nil
+            isAppLocked          = false
+            setupChatManager(username: nil)
+            return true
+        }
+        // Wrong PIN — increment failure counter
+        failedUnlockAttempts += 1
+        let delays: [TimeInterval] = [0, 0, 0, 0, 0, 0, 300, 900, 3600]
+        let delay = delays[min(failedUnlockAttempts, delays.count - 1)]
+        unlockLockedUntil = delay > 0 ? Date().addingTimeInterval(delay) : nil
+        keychain.saveUnlockAttempts(failedUnlockAttempts, lockedUntil: unlockLockedUntil)
+        unlockError = "Wrong PIN."
+        return false
     }
 
     // MARK: - Private helpers
