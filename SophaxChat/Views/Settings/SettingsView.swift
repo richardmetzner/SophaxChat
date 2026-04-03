@@ -214,6 +214,14 @@ struct SettingsView: View {
                 }
                 if appState.torEnabled {
                     torStatusCard
+                    Toggle(isOn: $appState.torEnforcedMode) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Enforce Tor (refuse clearnet)")
+                            Text("TCP will not start until Tor is ready. If Tor stops, TCP stops.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 #endif
                 connectCard

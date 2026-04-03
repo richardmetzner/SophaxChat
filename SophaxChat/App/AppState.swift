@@ -82,6 +82,25 @@ final class AppState: ObservableObject {
                 if tcpSocksProxy == TorManager.socksProxy {
                     tcpSocksProxy = ""
                 }
+                // Tor-enforced mode requires Tor — stop TCP immediately if Tor is disabled
+                if torEnforcedMode { chatManager?.stopTCP() }
+            }
+            #endif
+        }
+    }
+
+    /// When true, TCP transport will not start until Tor is fully bootstrapped.
+    /// If Tor stops while TCP is running, the TCP transport is also stopped (fail-closed).
+    @AppStorage("com.sophax.torEnforcedMode") var torEnforcedMode: Bool = false {
+        didSet {
+            #if !targetEnvironment(macCatalyst)
+            if torEnforcedMode {
+                // Enforce immediately: if Tor is not ready, stop TCP
+                if case .ready = TorManager.shared.state { /* Tor is up, keep TCP running */ }
+                else { chatManager?.stopTCP() }
+            } else {
+                // Enforcement lifted: restart TCP if it should be running
+                applyTCPConfig()
             }
             #endif
         }
@@ -1051,6 +1070,15 @@ final class AppState: ObservableObject {
             manager.myTCPAddress = "\(hostname):\(port)"
         }
         if tcpEnabled {
+            #if !targetEnvironment(macCatalyst)
+            // Tor-enforced mode: refuse to start TCP until Tor is fully bootstrapped.
+            if torEnforcedMode {
+                guard case .ready = TorManager.shared.state else {
+                    // Tor not ready — hold off; observeTorState will retry when Tor is ready.
+                    return
+                }
+            }
+            #endif
             startTCPTransport(on: manager)
         } else {
             manager.stopTCP()
@@ -1062,12 +1090,27 @@ final class AppState: ObservableObject {
     #if !targetEnvironment(macCatalyst)
     /// Observes TorManager state. When Tor becomes ready, auto-wires the SOCKS5 proxy
     /// into tcpSocksProxy if the user has not manually overridden it.
+    /// When Tor-enforced mode is on, also starts/stops TCP as Tor transitions.
     private func observeTorState() {
         Task { [weak self] in
             for await state in TorManager.shared.$state.values {
                 guard let self else { return }
-                if case .ready = state, self.torEnabled, self.tcpSocksProxy.isEmpty {
-                    self.tcpSocksProxy = TorManager.socksProxy
+                switch state {
+                case .ready:
+                    if self.torEnabled, self.tcpSocksProxy.isEmpty {
+                        self.tcpSocksProxy = TorManager.socksProxy
+                    }
+                    // In Tor-enforced mode, start TCP now that Tor is ready
+                    if self.torEnforcedMode && self.tcpEnabled {
+                        await MainActor.run { self.applyTCPConfig() }
+                    }
+                case .stopped, .failed:
+                    // In Tor-enforced mode, stop TCP if Tor goes down (fail-closed)
+                    if self.torEnforcedMode {
+                        await MainActor.run { self.chatManager?.stopTCP() }
+                    }
+                default:
+                    break
                 }
             }
         }
