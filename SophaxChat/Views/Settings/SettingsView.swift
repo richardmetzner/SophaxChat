@@ -173,6 +173,16 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            #if !targetEnvironment(macCatalyst)
+            Toggle(isOn: $appState.screenshotPreventionEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Block screenshots")
+                    Text("Screenshots and screen recordings appear blank")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            #endif
         } header: {
             Text("Security")
         } footer: {

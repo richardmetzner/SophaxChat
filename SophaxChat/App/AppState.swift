@@ -117,6 +117,12 @@ final class AppState: ObservableObject {
     /// Set to a peer that just came back online; triggers reconnect banner in UI.
     @Published var reconnectedPeer: KnownPeer? = nil
 
+    /// When true, the app content is wrapped in a UITextField(isSecureTextEntry:true) layer so
+    /// iOS excludes it from screenshots and screen recordings. Opt-in — not enabled by default.
+    /// NOTE: This is a documented-by-practice technique using a private CALayer flag in UITextField.
+    ///       It may break in a future OS. Toggle off if content ever appears blank unexpectedly.
+    @AppStorage("com.sophax.screenshotPreventionEnabled") var screenshotPreventionEnabled = false
+
     /// True while iOS screen recording is active — shown as a security warning banner.
     @Published var isScreenBeingRecorded: Bool = false
     /// Momentarily true after the user takes a screenshot — shown as a brief warning.

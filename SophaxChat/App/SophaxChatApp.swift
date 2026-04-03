@@ -6,6 +6,7 @@
 import SwiftUI
 import BackgroundTasks
 import SophaxChatCore
+import UIKit
 
 extension Notification.Name {
     static let sophaxShowSettings = Notification.Name("com.sophax.showSettings")
@@ -88,12 +89,69 @@ struct SophaxChatApp: App {
     }
 }
 
+// MARK: - Screenshot Prevention
+
+/// Wraps content in a UITextField(isSecureTextEntry: true) layer. iOS excludes the secure
+/// text field's CALayer subtree from screenshots and screen recordings, making the content
+/// appear as a blank frame in any screen capture.
+///
+/// NOTE: This relies on an undocumented CALayer flag inside UITextField. It works on current
+/// iOS versions but could theoretically change in a future OS release. If content ever appears
+/// unexpectedly blank, toggle "Block Screenshots" off in Settings > Security.
+#if !targetEnvironment(macCatalyst)
+private struct SecureContainerView<Content: View>: UIViewRepresentable {
+    let content: Content
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.isSecureTextEntry = true
+        field.backgroundColor   = .clear
+
+        let host = UIHostingController(rootView: content)
+        host.view.backgroundColor = .clear
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        field.addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.topAnchor.constraint(equalTo: field.topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: field.bottomAnchor),
+            host.view.leadingAnchor.constraint(equalTo: field.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: field.trailingAnchor),
+        ])
+        context.coordinator.host = host
+        return field
+    }
+
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        context.coordinator.host?.rootView = content
+    }
+
+    class Coordinator {
+        var host: UIHostingController<Content>?
+    }
+}
+#endif
+
 // MARK: - Root View
 
 struct RootView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
+        #if !targetEnvironment(macCatalyst)
+        if appState.screenshotPreventionEnabled {
+            SecureContainerView(content: rootZStack.environmentObject(appState))
+                .ignoresSafeArea()
+        } else {
+            rootZStack
+        }
+        #else
+        rootZStack
+        #endif
+    }
+
+    @ViewBuilder private var rootZStack: some View {
         ZStack {
             if appState.isSetupComplete {
                 ChatListView()
