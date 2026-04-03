@@ -101,9 +101,10 @@ public protocol ChatManagerDelegate: AnyObject {
     /// A nearby peer is advertising a group that the local user is not a member of.
     /// The delegate can surface this in a "Nearby channels" list.
     func chatManager(_ manager: ChatManager, didDiscoverChannel announcement: ChannelAnnouncement)
-    /// A group message we sent was acknowledged by `peerID` (they decrypted it successfully).
+    /// A group message we sent was acknowledged by `peerID`. `isRead` = true means the user
+    /// has viewed the message; false means delivery-only confirmation.
     func chatManager(_ manager: ChatManager, groupMessageDelivered messageID: String,
-                     inGroup groupID: String, byPeer peerID: String)
+                     inGroup groupID: String, byPeer peerID: String, isRead: Bool)
     /// A received message was edited by its sender. The delegate should update local state.
     func chatManager(_ manager: ChatManager, didReceiveEditedMessage messageID: String,
                      newBody: String, editedAt: Date, peerID: String)
@@ -597,6 +598,18 @@ public final class ChatManager: @unchecked Sendable {
         let payload = ReadReceiptMessage(messageIDs: messageIDs)
         guard let wire = try? wireBuilder.build(.readReceipt, payload: payload) else { return }
         try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+    }
+
+    /// Send true read receipts for group messages the local user has viewed.
+    /// Called by AppState when the user opens a group conversation.
+    /// Sends unicast to each message's original sender (not broadcast to the group).
+    public func sendGroupReadReceipts(messageIDs: [String], senderPeerID: String, groupID: String) {
+        guard !messageIDs.isEmpty else { return }
+        for messageID in messageIDs {
+            let payload = GroupReadReceiptMessage(groupID: groupID, targetMessageID: messageID, isRead: true)
+            guard let wire = try? wireBuilder.build(.groupReadReceipt, payload: payload) else { continue }
+            try? sendOrQueue(wire, toPeerID: senderPeerID, messageID: UUID().uuidString)
+        }
     }
 
     /// Edit a previously sent text message. Sends a Double Ratchet–encrypted edit to the peer.
@@ -2104,9 +2117,9 @@ public final class ChatManager: @unchecked Sendable {
             }
         }
 
-        // Send a read receipt back to the original sender so they can track delivery.
+        // Send a delivery receipt back to the original sender so they can track delivery.
         // Best-effort: if we have no path to the sender yet, the receipt is silently dropped.
-        let receiptPayload = GroupReadReceiptMessage(groupID: payload.groupID, targetMessageID: payload.messageID)
+        let receiptPayload = GroupReadReceiptMessage(groupID: payload.groupID, targetMessageID: payload.messageID, isRead: false)
         if let receipt = try? wireBuilder.build(.groupReadReceipt, payload: receiptPayload) {
             try? sendOrQueue(receipt, toPeerID: payload.senderPeerID, messageID: UUID().uuidString)
         }
@@ -2120,13 +2133,18 @@ public final class ChatManager: @unchecked Sendable {
 
     private func handleGroupReadReceipt(_ payload: GroupReadReceiptMessage, fromPeer peerID: String) {
         let convID = "group.\(payload.groupID)"
-        try? messageStore.addDeliveredBy(peerID, forMessageID: payload.targetMessageID, convID: convID)
-        let messageID = payload.targetMessageID
-        let groupID   = payload.groupID
+        if payload.isRead == true {
+            try? messageStore.addReadBy(peerID, forMessageID: payload.targetMessageID, convID: convID)
+        } else {
+            try? messageStore.addDeliveredBy(peerID, forMessageID: payload.targetMessageID, convID: convID)
+        }
+        let messageID  = payload.targetMessageID
+        let groupID    = payload.groupID
+        let isRead     = payload.isRead == true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, groupMessageDelivered: messageID,
-                                       inGroup: groupID, byPeer: peerID)
+                                       inGroup: groupID, byPeer: peerID, isRead: isRead)
         }
     }
 

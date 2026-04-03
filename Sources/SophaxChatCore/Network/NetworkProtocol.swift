@@ -593,14 +593,17 @@ public struct GroupReactionMessage: Codable, Sendable {
 // MARK: - Group Read Receipt
 
 /// Unicast from a group message recipient back to the original sender.
-/// Lets the sender track how many / which group members have received the message.
+/// Lets the sender track delivery (isRead = false/nil) and true read state (isRead = true).
 public struct GroupReadReceiptMessage: Codable, Sendable {
     public let groupID:          String
     public let targetMessageID:  String
+    /// True = user has viewed the message; false/nil = delivery-only signal (backward compat).
+    public let isRead:           Bool?
 
-    public init(groupID: String, targetMessageID: String) {
+    public init(groupID: String, targetMessageID: String, isRead: Bool? = nil) {
         self.groupID         = groupID
         self.targetMessageID = targetMessageID
+        self.isRead          = isRead
     }
 }
 
@@ -782,6 +785,9 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
     /// Group messages only: peerIDs that have sent a groupReadReceipt back to us.
     /// Nil for direct messages and for messages received before this field was added.
     public var deliveredBy:        [String]?
+    /// Group messages only: peerIDs that have sent a true read receipt (viewed, not just received).
+    /// Nil for direct messages and legacy stored messages.
+    public var readBy:             [String]?
     /// True if the message body was edited after initial delivery.
     /// Backward-compatible: old stored messages decode this as false (missing key).
     public var isEdited:           Bool
@@ -813,6 +819,7 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
         senderID:           String?         = nil,
         receivedAt:         Date?           = nil,
         deliveredBy:        [String]?       = nil,
+        readBy:             [String]?       = nil,
         isEdited:           Bool            = false,
         editedAt:           Date?           = nil
     ) {
@@ -832,6 +839,7 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
         self.senderID           = senderID
         self.receivedAt         = receivedAt
         self.deliveredBy        = deliveredBy
+        self.readBy             = readBy
         self.isEdited           = isEdited
         self.editedAt           = editedAt
     }

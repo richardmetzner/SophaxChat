@@ -131,7 +131,7 @@ extension ChatManager {
 
                 // Send delivery receipt back to the original sender (mirrors v2 group handler).
                 // Best-effort: silently dropped if no path to sender yet.
-                let receiptPayload = GroupReadReceiptMessage(groupID: msg.groupID, targetMessageID: msg.messageID)
+                let receiptPayload = GroupReadReceiptMessage(groupID: msg.groupID, targetMessageID: msg.messageID, isRead: false)
                 if let receipt = try? self.wireBuilder.build(.groupReadReceipt, payload: receiptPayload) {
                     try? self.sendOrQueue(receipt, toPeerID: msg.senderPeerID, messageID: UUID().uuidString)
                 }

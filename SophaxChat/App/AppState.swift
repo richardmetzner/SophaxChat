@@ -391,6 +391,22 @@ final class AppState: ObservableObject {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
         UIApplication.shared.applicationIconBadgeNumber = totalUnreadCount
+
+        // Send true read receipts for received messages we haven't acknowledged yet.
+        // Group by senderID so each receipt goes unicast to the original sender.
+        let myID = myPeerID ?? ""
+        let unread = messages[convID]?.filter {
+            $0.direction == .received &&
+            !($0.readBy?.contains(myID) ?? false)
+        } ?? []
+        let bySender = Dictionary(grouping: unread) { $0.senderID ?? "" }
+        for (senderID, msgs) in bySender where !senderID.isEmpty {
+            chatManager?.sendGroupReadReceipts(
+                messageIDs: msgs.map(\.id),
+                senderPeerID: senderID,
+                groupID: group.id
+            )
+        }
     }
 
     func displayName(forPeerID peerID: String) -> String {
@@ -1523,14 +1539,21 @@ extension AppState: @preconcurrency ChatManagerDelegate {
     }
 
     func chatManager(_ manager: ChatManager, groupMessageDelivered messageID: String,
-                     inGroup groupID: String, byPeer peerID: String) {
+                     inGroup groupID: String, byPeer peerID: String, isRead: Bool) {
         let convID = "group.\(groupID)"
         guard var msgs = messages[convID],
               let idx  = msgs.firstIndex(where: { $0.id == messageID }) else { return }
-        var set = msgs[idx].deliveredBy ?? []
-        guard !set.contains(peerID) else { return }
-        set.append(peerID)
-        msgs[idx].deliveredBy = set
+        if isRead {
+            var set = msgs[idx].readBy ?? []
+            guard !set.contains(peerID) else { return }
+            set.append(peerID)
+            msgs[idx].readBy = set
+        } else {
+            var set = msgs[idx].deliveredBy ?? []
+            guard !set.contains(peerID) else { return }
+            set.append(peerID)
+            msgs[idx].deliveredBy = set
+        }
         messages[convID] = msgs
     }
 

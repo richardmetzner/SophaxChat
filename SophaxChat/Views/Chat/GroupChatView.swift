@@ -587,15 +587,29 @@ private struct GroupMessageBubble: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     if isSent {
-                        let delivered  = message.deliveredBy?.count ?? 0
-                        let total      = max(group.memberIDs.count - 1, 1)
-                        let allDelivered = delivered >= total
-                        Image(systemName: allDelivered ? "checkmark.circle.fill" : "checkmark.circle")
+                        let delivered    = message.deliveredBy?.count ?? 0
+                        let read         = message.readBy?.count ?? 0
+                        let total        = max(group.memberIDs.count - 1, 1)
+                        let allRead      = read >= total
+                        let anyDelivered = delivered > 0
+
+                        Image(systemName: allRead
+                              ? "checkmark.circle.fill"
+                              : (anyDelivered ? "checkmark.circle" : "circle"))
                             .font(.caption2)
-                            .foregroundStyle(allDelivered ? Color.accentColor : Color(.tertiaryLabel))
-                        Text("\(delivered)/\(total)")
-                            .font(.caption2)
-                            .foregroundStyle(allDelivered ? Color.accentColor : Color(.tertiaryLabel))
+                            .foregroundStyle(
+                                allRead        ? Color.accentColor
+                                : anyDelivered ? Color(.tertiaryLabel)
+                                              : Color(.quaternaryLabel))
+                        if allRead {
+                            Text("Read \(read)/\(total)")
+                                .font(.caption2)
+                                .foregroundStyle(Color.accentColor)
+                        } else {
+                            Text("\(delivered)/\(total)")
+                                .font(.caption2)
+                                .foregroundStyle(anyDelivered ? Color(.tertiaryLabel) : Color(.quaternaryLabel))
+                        }
                     }
                 }
             }

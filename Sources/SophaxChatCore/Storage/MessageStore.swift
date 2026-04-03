@@ -112,6 +112,19 @@ public final class MessageStore: @unchecked Sendable {
         try saveToDisk(messages: messages, peerID: convID)
     }
 
+    /// Append `readerID` to the `readBy` set of a group message.
+    /// No-op if the peerID is already present. Idempotent.
+    public func addReadBy(_ readerID: String, forMessageID messageID: String, convID: String) throws {
+        var messages = (try? self.messages(forPeer: convID)) ?? []
+        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        var set = messages[idx].readBy ?? []
+        guard !set.contains(readerID) else { return }
+        set.append(readerID)
+        messages[idx].readBy = set
+        cache[convID] = messages
+        try saveToDisk(messages: messages, peerID: convID)
+    }
+
     /// Update the body text of a message, marking it as edited.
     public func updateMessage(id: String, peerID: String, newBody: String, editedAt: Date) throws {
         var messages = (try? self.messages(forPeer: peerID)) ?? []
