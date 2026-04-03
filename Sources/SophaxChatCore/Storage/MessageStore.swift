@@ -142,6 +142,7 @@ public final class MessageStore: @unchecked Sendable {
             hopCount:           old.hopCount,
             attachmentID:       old.attachmentID,
             attachmentMimeType: old.attachmentMimeType,
+            attachmentFilename: old.attachmentFilename,
             audioDuration:      old.audioDuration,
             reactions:          old.reactions,
             senderID:           old.senderID,

@@ -49,9 +49,10 @@ struct ChatView: View {
     @State private var typingTask: Task<Void, Never>? = nil
     @FocusState private var isInputFocused: Bool
 
-    // Attachment / camera
+    // Attachment / camera / file
     @State private var photoPickerItem:    PhotosPickerItem? = nil
     @State private var showingCamera       = false
+    @State private var showingFilePicker   = false
 
     // PTT recording
     @StateObject private var voiceRecorder = VoiceRecorder()
@@ -497,6 +498,11 @@ struct ChatView: View {
                     .font(.system(size: 22))
                     .foregroundStyle(.secondary)
             }
+            Button { showingFilePicker = true } label: {
+                Image(systemName: "doc")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.secondary)
+            }
             TextField("Message", text: $messageText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
@@ -532,6 +538,16 @@ struct ChatView: View {
                 guard let image else { return }
                 appState.sendImage(image, toPeerID: peer.id,
                                    expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+            }
+        }
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                appState.sendFile(url, toPeerID: peer.id, expiresAt: expiresAt)
             }
         }
     }

@@ -387,8 +387,10 @@ public struct MessageContent: Codable, Sendable {
     public let expiresAt:          Date?
     /// Binary attachment (JPEG image or M4A audio). Encrypted with the Double Ratchet.
     public let attachmentData:     Data?
-    /// MIME type: "image/jpeg" | "audio/m4a"
+    /// MIME type: "image/jpeg" | "audio/m4a" | "application/pdf" | …
     public let attachmentMimeType: String?
+    /// Original filename for file attachments (type == .file). Nil for images and audio.
+    public let attachmentFilename: String?
     /// Audio duration in seconds (nil for non-audio).
     public let audioDuration:      Double?
     /// JSON-encoded GroupInvitePayload — only set when type == .groupInvite.
@@ -398,6 +400,8 @@ public struct MessageContent: Codable, Sendable {
         case text
         case image
         case audio
+        /// Arbitrary file attachment — attachmentData carries the raw bytes; attachmentFilename the original name.
+        case file
         /// Group invite — body is the group name; groupInviteData carries GroupInvitePayload JSON.
         case groupInvite
         /// Sender key distribution (v2 groups) — senderKeyData carries SenderKeyDistributionMessage JSON.
@@ -423,6 +427,7 @@ public struct MessageContent: Codable, Sendable {
         expiresAt:          Date?       = nil,
         attachmentData:     Data?       = nil,
         attachmentMimeType: String?     = nil,
+        attachmentFilename: String?     = nil,
         audioDuration:      Double?     = nil,
         groupInviteData:         Data?       = nil,
         senderKeyData:           Data?       = nil,
@@ -436,6 +441,7 @@ public struct MessageContent: Codable, Sendable {
         self.expiresAt            = expiresAt
         self.attachmentData       = attachmentData
         self.attachmentMimeType   = attachmentMimeType
+        self.attachmentFilename   = attachmentFilename
         self.audioDuration        = audioDuration
         self.groupInviteData      = groupInviteData
         self.senderKeyData        = senderKeyData
@@ -532,8 +538,10 @@ public struct GroupWireMessage: Codable, Sendable {
     public let ciphertext:           Data
     /// ChaChaPoly.combined for the binary attachment (nil = text-only message).
     public let attachmentCiphertext: Data?
-    /// "image/jpeg" | "audio/m4a" — nil when no attachment.
+    /// MIME type: "image/jpeg" | "audio/m4a" | "application/pdf" | … — nil when no attachment.
     public let attachmentMimeType:   String?
+    /// Original filename for file attachments. Nil for images and audio.
+    public let attachmentFilename:   String?
     /// Audio duration in seconds (nil for non-audio).
     public let audioDuration:        Double?
     /// v2 Sender Keys: which KDF chain iteration produced the message key.
@@ -556,6 +564,7 @@ public struct GroupWireMessage: Codable, Sendable {
         ciphertext:           Data,
         attachmentCiphertext: Data?   = nil,
         attachmentMimeType:   String? = nil,
+        attachmentFilename:   String? = nil,
         audioDuration:        Double? = nil,
         senderKeyIteration:   UInt32? = nil,
         expiresAt:            Date?   = nil,
@@ -570,6 +579,7 @@ public struct GroupWireMessage: Codable, Sendable {
         self.ciphertext           = ciphertext
         self.attachmentCiphertext = attachmentCiphertext
         self.attachmentMimeType   = attachmentMimeType
+        self.attachmentFilename   = attachmentFilename
         self.audioDuration        = audioDuration
         self.senderKeyIteration   = senderKeyIteration
         self.expiresAt            = expiresAt
@@ -811,8 +821,10 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
     public let hopCount:           UInt8?
     /// Local file ID in AttachmentStore — nil means no attachment.
     public let attachmentID:       String?
-    /// "image/jpeg" | "audio/m4a" — mirrors MessageContent.attachmentMimeType
+    /// "image/jpeg" | "audio/m4a" | "application/pdf" | …
     public let attachmentMimeType: String?
+    /// Original filename for file attachments. Nil for images and audio.
+    public let attachmentFilename: String?
     /// Audio duration in seconds (nil for non-audio).
     public let audioDuration:      Double?
     /// Emoji reactions on this message, keyed by peerID. nil = no reactions.
@@ -856,6 +868,7 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
         hopCount:           UInt8?          = nil,
         attachmentID:       String?         = nil,
         attachmentMimeType: String?         = nil,
+        attachmentFilename: String?         = nil,
         audioDuration:      Double?         = nil,
         reactions:          [String: String]? = nil,
         senderID:           String?         = nil,
@@ -876,6 +889,7 @@ public struct StoredMessage: Codable, Identifiable, Sendable {
         self.hopCount           = hopCount
         self.attachmentID       = attachmentID
         self.attachmentMimeType = attachmentMimeType
+        self.attachmentFilename = attachmentFilename
         self.audioDuration      = audioDuration
         self.reactions          = reactions
         self.senderID           = senderID
