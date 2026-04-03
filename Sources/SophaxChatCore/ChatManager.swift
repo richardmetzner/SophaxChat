@@ -537,6 +537,10 @@ public final class ChatManager: @unchecked Sendable {
     /// Maximum binary attachment size (image, audio) in bytes.
     public static let maxAttachmentBytes = 524_288   // 512 KB
 
+    /// Maximum file attachment size in bytes (arbitrary files via file picker).
+    /// 2 MB keeps the JSON-encoded WireMessage comfortably under the 4 MiB TCP frame limit.
+    public static let maxFileAttachmentBytes = 2_097_152  // 2 MB
+
     /// Maximum number of outbound messages queued per offline peer.
     /// Prevents memory exhaustion if a peer never reconnects.
     private static let maxQueuedMessagesPerPeer = 100
@@ -860,20 +864,24 @@ public final class ChatManager: @unchecked Sendable {
         performSenderKeyRotationIfNeeded(groupID: groupID, members: members)
     }
 
-    /// Send a binary attachment (image or audio) to all members of a group.
+    /// Send a binary attachment (image, audio, or arbitrary file) to all members of a group.
     public func sendGroupAttachment(
         _ data: Data,
         mimeType: String,
         caption: String = "",
+        filename: String? = nil,
         audioDuration: Double? = nil,
         groupID: String,
         members: [String],
         expiresAt: Date? = nil,
         replyToID: String? = nil
     ) {
-        guard data.count <= Self.maxAttachmentBytes else {
+        let isFile = !mimeType.hasPrefix("image/") && !mimeType.hasPrefix("audio/") && !mimeType.hasPrefix("video/")
+        let sizeLimit = isFile ? Self.maxFileAttachmentBytes : Self.maxAttachmentBytes
+        guard data.count <= sizeLimit else {
+            let limit = isFile ? "2 MB" : "512 KB"
             delegate?.chatManager(self, didEncounterError:
-                SophaxError.invalidMessageFormat("Attachment exceeds 512 KB limit"))
+                SophaxError.invalidMessageFormat("Attachment exceeds \(limit) limit"))
             return
         }
 
@@ -882,10 +890,17 @@ public final class ChatManager: @unchecked Sendable {
         let messageID    = UUID().uuidString
         let attachmentID = UUID().uuidString
         let timestamp    = Date()
-        let msgType: MessageContent.MessageType = mimeType.hasPrefix("image/") ? .image : .audio
-        let displayBody  = caption.isEmpty
-            ? (msgType == .image ? "📷 Photo" : "🎤 Voice message")
-            : caption
+        let msgType: MessageContent.MessageType
+        if mimeType.hasPrefix("image/")      { msgType = .image }
+        else if mimeType.hasPrefix("audio/") { msgType = .audio }
+        else if mimeType.hasPrefix("video/") { msgType = .image }
+        else                                  { msgType = .file  }
+
+        let displayBody: String
+        if !caption.isEmpty       { displayBody = caption }
+        else if msgType == .image  { displayBody = "📷 Photo" }
+        else if msgType == .audio  { displayBody = "🎤 Voice message" }
+        else                       { displayBody = "📎 \(filename ?? mimeType)" }
         let convID = "group.\(groupID)"
 
         // Helper: surface an encryption/storage failure to the UI.
@@ -906,6 +921,7 @@ public final class ChatManager: @unchecked Sendable {
             direction: .sent, body: displayBody, status: .sending,
             replyToID: replyToID, expiresAt: expiresAt,
             attachmentID: attachmentID, attachmentMimeType: mimeType,
+            attachmentFilename: filename,
             audioDuration: audioDuration, senderID: myID
         )
         do {
@@ -950,6 +966,7 @@ public final class ChatManager: @unchecked Sendable {
             ciphertext:           bodyCiphertext,
             attachmentCiphertext: attCiphertext,
             attachmentMimeType:   mimeType,
+            attachmentFilename:   filename,
             audioDuration:        audioDuration,
             senderKeyIteration:   senderKeyIteration,
             expiresAt:            expiresAt,
@@ -1105,22 +1122,33 @@ public final class ChatManager: @unchecked Sendable {
         _ data: Data,
         mimeType: String,
         caption: String = "",
+        filename: String? = nil,
         audioDuration: Double? = nil,
         toPeerID peerID: String,
         expiresAt: Date? = nil
     ) {
-        guard data.count <= Self.maxAttachmentBytes else {
+        let isFile = !mimeType.hasPrefix("image/") && !mimeType.hasPrefix("audio/") && !mimeType.hasPrefix("video/")
+        let sizeLimit = isFile ? Self.maxFileAttachmentBytes : Self.maxAttachmentBytes
+        guard data.count <= sizeLimit else {
+            let limit = isFile ? "2 MB" : "512 KB"
             delegate?.chatManager(self, didEncounterError:
-                SophaxError.invalidMessageFormat("Attachment exceeds 512 KB limit"))
+                SophaxError.invalidMessageFormat("Attachment exceeds \(limit) limit"))
             return
         }
 
         let messageID    = UUID().uuidString
         let attachmentID = UUID().uuidString
-        let msgType: MessageContent.MessageType = mimeType.hasPrefix("image/") ? .image : .audio
-        let displayBody  = caption.isEmpty
-            ? (msgType == .image ? "📷 Photo" : "🎤 Voice message")
-            : caption
+        let msgType: MessageContent.MessageType
+        if mimeType.hasPrefix("image/")      { msgType = .image }
+        else if mimeType.hasPrefix("audio/") { msgType = .audio }
+        else if mimeType.hasPrefix("video/") { msgType = .image } // video treated as image for display
+        else                                  { msgType = .file  }
+
+        let displayBody: String
+        if !caption.isEmpty            { displayBody = caption }
+        else if msgType == .image      { displayBody = "📷 Photo" }
+        else if msgType == .audio      { displayBody = "🎤 Voice message" }
+        else                           { displayBody = "📎 \(filename ?? mimeType)" }
 
         // Save attachment locally for the sender's own bubble
         try? attachmentStore.save(data, id: attachmentID)
@@ -1129,6 +1157,7 @@ public final class ChatManager: @unchecked Sendable {
             id: messageID, peerID: peerID,
             direction: .sent, body: displayBody, status: .sending,
             attachmentID: attachmentID, attachmentMimeType: mimeType,
+            attachmentFilename: filename,
             audioDuration: audioDuration
         )
         do {
@@ -1147,6 +1176,7 @@ public final class ChatManager: @unchecked Sendable {
             let content = MessageContent(
                 body: caption, type: msgType, expiresAt: expiresAt,
                 attachmentData: data, attachmentMimeType: mimeType,
+                attachmentFilename: filename,
                 audioDuration: audioDuration
             )
             let wire = try buildOutboundWire(content: content, messageID: messageID, toPeerID: peerID)
@@ -1528,6 +1558,7 @@ public final class ChatManager: @unchecked Sendable {
         case .text:                  displayBody = content.body
         case .image:                 displayBody = content.body.isEmpty ? "📷 Photo" : content.body
         case .audio:                 displayBody = content.body.isEmpty ? "🎤 Voice message" : content.body
+        case .file:                  displayBody = content.attachmentFilename ?? (content.body.isEmpty ? "📎 File" : content.body)
         case .groupInvite:           return                               // dead code; handled above
         case .senderKeyDistribution: return                               // dead code; handled above
         case .mlsCommitRequest:      return                               // Phase 4 — not yet handled
@@ -1549,6 +1580,7 @@ public final class ChatManager: @unchecked Sendable {
             expiresAt:          clampedExpiry(content.expiresAt),
             attachmentID:       attachmentID,
             attachmentMimeType: content.attachmentMimeType,
+            attachmentFilename: content.attachmentFilename,
             audioDuration:      content.audioDuration
         )
         try messageStore.append(message: stored)
@@ -1621,6 +1653,7 @@ public final class ChatManager: @unchecked Sendable {
         case .text:  displayBody = content.body
         case .image: displayBody = content.body.isEmpty ? "📷 Photo" : content.body
         case .audio: displayBody = content.body.isEmpty ? "🎤 Voice message" : content.body
+        case .file:  displayBody = content.attachmentFilename ?? (content.body.isEmpty ? "📎 File" : content.body)
         case .groupInvite:            return  // already handled above; belt-and-suspenders guard
         case .senderKeyDistribution:  return  // already handled above; belt-and-suspenders guard
         case .mlsCommitRequest:       return  // Phase 4 — not yet handled
@@ -1637,6 +1670,7 @@ public final class ChatManager: @unchecked Sendable {
             hopCount:           hopCount,
             attachmentID:       attachmentID,
             attachmentMimeType: content.attachmentMimeType,
+            attachmentFilename: content.attachmentFilename,
             audioDuration:      content.audioDuration
         )
         try messageStore.append(message: stored)
@@ -2171,6 +2205,7 @@ public final class ChatManager: @unchecked Sendable {
             expiresAt:          clampedExpiry(payload.expiresAt),
             attachmentID:       attachmentID,
             attachmentMimeType: payload.attachmentMimeType,
+            attachmentFilename: payload.attachmentFilename,
             audioDuration:      payload.audioDuration,
             senderID:           payload.senderPeerID,
             receivedAt:         Date()

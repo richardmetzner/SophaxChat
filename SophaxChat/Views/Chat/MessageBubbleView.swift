@@ -8,6 +8,19 @@ import SwiftUI
 import UIKit
 import SophaxChatCore
 
+// Wraps UIActivityViewController so file data can be shared / opened in other apps.
+struct FileShareSheet: UIViewControllerRepresentable {
+    let data:     Data
+    let filename: String
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try? data.write(to: url, options: .atomic)
+        return UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 // Common emoji reactions
 private let reactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "👎"]
 
@@ -234,6 +247,8 @@ struct MessageBubbleView: View {
             audioBubble
         } else if message.attachmentMimeType?.hasPrefix("video/") == true {
             videoBubble
+        } else if message.attachmentID != nil && message.attachmentMimeType != nil {
+            fileBubble
         } else {
             textBubble
         }
@@ -342,6 +357,41 @@ struct MessageBubbleView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
+        }
+    }
+
+    // MARK: - File bubble
+
+    @State private var showFileShare = false
+
+    private var fileBubble: some View {
+        Button { showFileShare = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(isSent ? .white : Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(message.attachmentFilename ?? "File")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(isSent ? .white : .primary)
+                        .lineLimit(2)
+                    if let mime = message.attachmentMimeType {
+                        Text(mime)
+                            .font(.caption2)
+                            .foregroundStyle(isSent ? .white.opacity(0.7) : .secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(isSent ? Color.accentColor : Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showFileShare) {
+            if let data = attachmentData {
+                FileShareSheet(data: data, filename: message.attachmentFilename ?? "file")
+            }
         }
     }
 

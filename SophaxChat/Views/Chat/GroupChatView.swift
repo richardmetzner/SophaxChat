@@ -21,8 +21,9 @@ struct GroupChatView: View {
     private var disappearingKey: String { "com.sophax.disappearingInterval.group.\(group.id)" }
     private var draftKey: String { "com.sophax.draft.group.\(group.id)" }
 
-    // Attachment / camera
-    @State private var photoPickerItem: PhotosPickerItem? = nil
+    // Attachment / camera / file
+    @State private var photoPickerItem:  PhotosPickerItem? = nil
+    @State private var showingFilePicker = false
 
     // PTT recording
     @StateObject private var voiceRecorder = VoiceRecorder()
@@ -415,6 +416,11 @@ struct GroupChatView: View {
                     photoPickerItem = nil
                 }
             }
+            Button { showingFilePicker = true } label: {
+                Image(systemName: "doc")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.secondary)
+            }
             pttButton
             TextField("Message", text: $messageText, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -437,6 +443,16 @@ struct GroupChatView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.bar)
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                appState.sendGroupFile(url, group: group, expiresAt: expiresAt)
+            }
+        }
     }
 
     private func sendMessage() {
@@ -711,6 +727,8 @@ private struct GroupMessageBubble: View {
         }
     }
 
+    @State private var showFileShare = false
+
     @ViewBuilder
     private var groupBubbleContent: some View {
         let mime = message.attachmentMimeType ?? ""
@@ -739,6 +757,34 @@ private struct GroupMessageBubble: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(isSent ? Color.accentColor : Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 18))
+        } else if message.attachmentID != nil && !mime.isEmpty
+                    && !mime.hasPrefix("image/") && !mime.hasPrefix("audio/") && !mime.hasPrefix("video/") {
+            Button { showFileShare = true } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(isSent ? .white : Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(message.attachmentFilename ?? "File")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(isSent ? .white : .primary)
+                            .lineLimit(2)
+                        Text(mime)
+                            .font(.caption2)
+                            .foregroundStyle(isSent ? .white.opacity(0.7) : .secondary)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(isSent ? Color.accentColor : Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showFileShare) {
+                if let id = message.attachmentID,
+                   let data = appState.loadAttachment(id: id) {
+                    FileShareSheet(data: data, filename: message.attachmentFilename ?? "file")
+                }
+            }
         } else {
             Text(message.body)
                 .font(.body)
