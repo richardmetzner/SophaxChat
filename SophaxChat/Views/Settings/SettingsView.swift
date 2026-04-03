@@ -19,6 +19,9 @@ struct SettingsView: View {
     @State private var showingIdentity: Bool      = false
     @State private var showingWipeConfirm: Bool   = false
     @State private var showingWipeConfirm2: Bool  = false
+    @State private var showingFullExport: Bool             = false
+    @State private var showingFullImport: Bool             = false
+    @State private var pendingFullRestoreData: FullRestoreWrapper? = nil
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -62,6 +65,23 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingIdentity) {
                 IdentityView().environmentObject(appState)
+            }
+            .sheet(isPresented: $showingFullExport) {
+                FullExportView().environmentObject(appState)
+            }
+            .sheet(item: $pendingFullRestoreData) { wrapper in
+                FullRestoreView(data: wrapper.data).environmentObject(appState)
+            }
+            .fileImporter(
+                isPresented: $showingFullImport,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false
+            ) { result in
+                guard case .success(let urls) = result, let url = urls.first else { return }
+                guard url.startAccessingSecurityScopedResource() else { return }
+                defer { url.stopAccessingSecurityScopedResource() }
+                guard let data = try? Data(contentsOf: url) else { return }
+                pendingFullRestoreData = FullRestoreWrapper(data: data)
             }
             .confirmationDialog(
                 "Delete account and all data?",
@@ -423,10 +443,20 @@ struct SettingsView: View {
             } label: {
                 Label("Backup & Restore", systemImage: "externaldrive.badge.checkmark")
             }
+            Button {
+                showingFullExport = true
+            } label: {
+                Label("Export Everything", systemImage: "tray.and.arrow.up.fill")
+            }
+            Button {
+                showingFullImport = true
+            } label: {
+                Label("Restore from Full Export", systemImage: "tray.and.arrow.down.fill")
+            }
         } header: {
             Text("Data")
         } footer: {
-            Text("Linked devices share your messages. Encrypted local backup — no cloud, no server.")
+            Text("Linked devices share your messages. Encrypted local backup — no cloud, no server. \"Export Everything\" saves identity + all messages in one encrypted .sxfe file for device migration.")
         }
     }
 

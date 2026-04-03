@@ -12,6 +12,7 @@ import CryptoKit
 import LocalAuthentication
 import UserNotifications
 import ReplayKit
+import UniformTypeIdentifiers
 import SophaxChatCore
 
 @MainActor
@@ -545,6 +546,29 @@ final class AppState: ObservableObject {
                                                  expiresAt: expiresAt)
             }
         }
+    }
+
+    /// Send an arbitrary file (PDF, document, etc.) as an encrypted attachment.
+    func sendFile(_ url: URL, toPeerID peerID: String, expiresAt: Date? = nil) {
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        guard let data = try? Data(contentsOf: url),
+              data.count <= ChatManager.maxFileAttachmentBytes else { return }
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        chatManager?.sendAttachment(data, mimeType: mime, filename: url.lastPathComponent,
+                                    toPeerID: peerID, expiresAt: expiresAt)
+    }
+
+    /// Send an arbitrary file to a group.
+    func sendGroupFile(_ url: URL, group: GroupInfo, expiresAt: Date? = nil) {
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        guard let data = try? Data(contentsOf: url),
+              data.count <= ChatManager.maxFileAttachmentBytes else { return }
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        chatManager?.sendGroupAttachment(data, mimeType: mime, filename: url.lastPathComponent,
+                                         groupID: group.id, members: group.memberIDs,
+                                         expiresAt: expiresAt)
     }
 
     private func compressVideo(_ url: URL) async -> Data? {
@@ -1413,6 +1437,48 @@ final class AppState: ObservableObject {
             identityFingerprint: fingerprint
         )
         return try BackupManager.export(backup: backup, passphrase: passphrase)
+    }
+
+    // MARK: - Full export (identity + messages in one file)
+
+    /// Export identity keys + full message history into a single encrypted `.sxfe` blob.
+    func exportFullBackup(passphrase: String) throws -> Data {
+        guard let cm = chatManager else { throw SophaxError.sessionNotInitialized }
+        let store    = cm.messageStore
+        let peerIDs  = store.allConversationPeerIDs()
+        var messages = [String: [StoredMessage]]()
+        for pid in peerIDs {
+            messages[pid] = (try? store.messages(forPeer: pid)) ?? []
+        }
+        let pub         = cm.identity.publicIdentity
+        let fingerprint = cm.identity.identityFingerprint
+        let backup = SophaxBackup(
+            version:             1,
+            createdAt:           Date(),
+            username:            pub.username,
+            peers:               peers,
+            messages:            messages,
+            identityFingerprint: fingerprint
+        )
+        return try FullExportManager.export(
+            identity:   cm.identity,
+            backup:     backup,
+            passphrase: passphrase
+        )
+    }
+
+    /// Restore from a `.sxfe` full export — replaces identity keys and message history.
+    func importFullBackup(data: Data, passphrase: String) throws {
+        guard let cm = chatManager else { throw SophaxError.sessionNotInitialized }
+        chatManager?.stop()
+        chatManager = nil
+        try FullExportManager.restore(
+            data:         data,
+            passphrase:   passphrase,
+            keychain:     keychain,
+            messageStore: cm.messageStore
+        )
+        setupChatManager(username: nil)
     }
 
     // MARK: - Identity backup / restore

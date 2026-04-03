@@ -72,5 +72,38 @@
 	     TestFlight / App Store upload — fill it in at submission time. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<true/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.sophax.sxfe</string>
+			<key>UTTypeDescription</key>
+			<string>SophaxChat Full Export</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sxfe</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>SophaxChat Full Export</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.sophax.sxfe</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
