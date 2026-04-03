@@ -108,6 +108,9 @@ public protocol ChatManagerDelegate: AnyObject {
     /// A received message was edited by its sender. The delegate should update local state.
     func chatManager(_ manager: ChatManager, didReceiveEditedMessage messageID: String,
                      newBody: String, editedAt: Date, peerID: String)
+    /// A group message was edited. The delegate should update local state.
+    func chatManager(_ manager: ChatManager, didReceiveEditedGroupMessage messageID: String,
+                     newBody: String, editedAt: Date, groupID: String)
     /// A peer's identity keys changed from a previously stored value.
     /// This may indicate a legitimate re-install or a potential MITM.
     func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String)
@@ -622,6 +625,47 @@ public final class ChatManager: @unchecked Sendable {
         guard let wire = try? buildOutboundWire(content: content, messageID: wireID, toPeerID: peerID) else { return }
         try? sendOrQueue(wire, toPeerID: peerID, messageID: wireID)
         try? messageStore.updateMessage(id: messageID, peerID: peerID, newBody: newBody, editedAt: editedAt)
+    }
+
+    /// Edit a previously sent group (Sender Keys v2) message.
+    /// Fans out a `groupEditMessage` to every member. Only the original sender can edit;
+    /// edits are text-only and must occur within 5 minutes of the original send.
+    public func sendEditGroupMessage(messageID: String, newBody: String, groupID: String, members: [String]) {
+        guard !newBody.isEmpty, newBody.utf8.count <= Self.maxMessageBytes else { return }
+        let convID = "group.\(groupID)"
+        let editedAt = Date()
+        // Enforce: must be our own sent message, no attachment, within 5-minute window
+        guard let msgs = try? messageStore.messages(forPeer: convID),
+              let existing = msgs.first(where: { $0.id == messageID }),
+              existing.direction == .sent,
+              existing.attachmentID == nil,
+              existing.timestamp.timeIntervalSinceNow > -300 else { return }
+
+        let payload = GroupEditMessagePayload(
+            groupID:   groupID,
+            messageID: messageID,
+            newBody:   newBody,
+            editedAt:  editedAt
+        )
+        guard let wire = try? wireBuilder.build(.groupEditMessage, payload: payload) else { return }
+        let myID = identity.publicIdentity.peerID
+        for peerID in members where peerID != myID {
+            try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+        }
+        try? messageStore.updateMessage(id: messageID, peerID: convID, newBody: newBody, editedAt: editedAt)
+
+        // Forward updated message to linked devices
+        if let updated = (try? messageStore.messages(forPeer: convID))?.first(where: { $0.id == messageID }) {
+            forwardToLinkedDevices(updated)
+        }
+
+        let body     = newBody
+        let editTime = editedAt
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didReceiveEditedGroupMessage: messageID,
+                                       newBody: body, editedAt: editTime, groupID: groupID)
+        }
     }
 
     /// Send an emoji reaction (or remove one) on a specific message.
@@ -1653,6 +1697,33 @@ public final class ChatManager: @unchecked Sendable {
         }
     }
 
+    /// Handle an incoming group message edit (Sender Keys v2).
+    /// Validates authorship (senderID must match stored message senderID), 5-minute window,
+    /// and text-only constraint before updating the store.
+    private func handleGroupEditMessage(_ payload: GroupEditMessagePayload, fromPeer peerID: String) {
+        guard !payload.newBody.isEmpty, payload.newBody.utf8.count <= Self.maxMessageBytes else { return }
+        guard joinedGroups[payload.groupID] != nil else { return }
+        let convID = "group.\(payload.groupID)"
+        guard let msgs = try? messageStore.messages(forPeer: convID),
+              let existing = msgs.first(where: { $0.id == payload.messageID }),
+              existing.senderID == peerID,          // only the original author can edit
+              existing.attachmentID == nil,          // text-only edits
+              existing.timestamp.timeIntervalSinceNow > -310 else { return }   // 5 min + 10 s clock slack
+        try? messageStore.updateMessage(
+            id: payload.messageID, peerID: convID,
+            newBody: payload.newBody, editedAt: payload.editedAt
+        )
+        let messageID = payload.messageID
+        let newBody   = payload.newBody
+        let editedAt  = payload.editedAt
+        let groupID   = payload.groupID
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didReceiveEditedGroupMessage: messageID,
+                                       newBody: newBody, editedAt: editedAt, groupID: groupID)
+        }
+    }
+
     private func handleReaction(_ payload: ReactionMessage, fromPeer peerID: String) {
         // Determine which conversation owns the target message.
         // For sent messages the peerID is the conversation partner; reactions come from that peer.
@@ -2246,6 +2317,11 @@ public final class ChatManager: @unchecked Sendable {
             let payload = try wireBuilder.decodePayload(EditMessagePayload.self, from: message)
             handleEditMessage(payload, fromPeer: message.senderID)
 
+        case .groupEditMessage:
+            if let payload = try? wireBuilder.decodePayload(GroupEditMessagePayload.self, from: message) {
+                handleGroupEditMessage(payload, fromPeer: message.senderID)
+            }
+
         case .groupMessage:
             let payload = try wireBuilder.decodePayload(GroupWireMessage.self, from: message)
             handleGroupMessage(payload)
@@ -2302,7 +2378,7 @@ public final class ChatManager: @unchecked Sendable {
                 handleDeadDrop(drop)
             }
 
-        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff:
+        case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff, .mlsGroupEditMessage:
             dispatchMLSMessage(message)
 
         case .deviceLinkRequest:
@@ -2621,6 +2697,11 @@ extension ChatManager: MeshManagerDelegate {
                 let payload = try wireBuilder.decodePayload(EditMessagePayload.self, from: message)
                 handleEditMessage(payload, fromPeer: message.senderID)
 
+            case .groupEditMessage:
+                if let payload = try? wireBuilder.decodePayload(GroupEditMessagePayload.self, from: message) {
+                    handleGroupEditMessage(payload, fromPeer: message.senderID)
+                }
+
             case .groupMessage:
                 let payload = try wireBuilder.decodePayload(GroupWireMessage.self, from: message)
                 handleGroupMessage(payload)
@@ -2690,7 +2771,7 @@ extension ChatManager: MeshManagerDelegate {
                 let payload = try wireBuilder.decodePayload(DeadDropEnvelope.self, from: message)
                 handleDeadDrop(payload)
 
-            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff:
+            case .mlsWelcome, .mlsCommit, .mlsMessage, .mlsCommitRequest, .mlsReaction, .mlsCoordinatorHandoff, .mlsGroupEditMessage:
                 dispatchMLSMessage(message)
 
             case .deviceLinkRequest:

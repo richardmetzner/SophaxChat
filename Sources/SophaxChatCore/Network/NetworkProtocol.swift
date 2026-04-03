@@ -119,6 +119,8 @@ public enum WireMessageType: String, Codable, Sendable {
     case deadDrop
     /// Edit a previously sent message — replaces the body text in-place.
     case editMessage
+    /// Edit a previously sent group message — fanned out to all group members.
+    case groupEditMessage
     /// Request a peer to re-send their SenderKeyDistributionMessage for a specific group.
     /// Sent when the receiver has no key for that sender or the stored key is stale.
     case senderKeyRequest
@@ -137,6 +139,8 @@ public enum WireMessageType: String, Codable, Sendable {
     case mlsReaction
     /// Current MLS coordinator transfers commit authority to another member — broadcast unicast.
     case mlsCoordinatorHandoff
+    /// Edit a previously sent MLS group message — MLS-encrypted replacement body.
+    case mlsGroupEditMessage
     /// QR-based device link invite from an existing device to a new device.
     case deviceLinkRequest
     /// Forwarded copy of a message from the primary device to a linked device.
@@ -587,6 +591,44 @@ public struct GroupReactionMessage: Codable, Sendable {
         self.groupID         = groupID
         self.targetMessageID = targetMessageID
         self.emoji           = emoji
+    }
+}
+
+// MARK: - Group Edit Message
+
+/// Fanned out to all group members when the original author edits a message.
+/// Unencrypted body (Sender Keys group); recipients validate against stored senderID.
+public struct GroupEditMessagePayload: Codable, Sendable {
+    /// ID of the group this edit belongs to.
+    public let groupID:    String
+    /// Stable ID of the message being edited.
+    public let messageID:  String
+    /// Replacement body text (plaintext, will be Sender-Key–encrypted at the wire layer).
+    public let newBody:    String
+    /// Wall-clock time of the edit.
+    public let editedAt:   Date
+
+    public init(groupID: String, messageID: String, newBody: String, editedAt: Date = Date()) {
+        self.groupID   = groupID
+        self.messageID = messageID
+        self.newBody   = newBody
+        self.editedAt  = editedAt
+    }
+}
+
+/// MLS-group variant: body is MLS-encrypted so only current epoch members can decrypt.
+public struct MLSGroupEditMessage: Codable, Sendable {
+    public let groupID:    String
+    public let messageID:  String
+    /// MLS-encrypted replacement body text.
+    public let ciphertext: Data
+    public let editedAt:   Date
+
+    public init(groupID: String, messageID: String, ciphertext: Data, editedAt: Date = Date()) {
+        self.groupID    = groupID
+        self.messageID  = messageID
+        self.ciphertext = ciphertext
+        self.editedAt   = editedAt
     }
 }
 

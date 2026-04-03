@@ -33,6 +33,10 @@ struct GroupChatView: View {
     // Forward
     @State private var forwardingMessage: StoredMessage? = nil
 
+    // Edit
+    @State private var editingMessage: StoredMessage? = nil
+    @State private var editingText:    String         = ""
+
     // Search
     @State private var isSearching: Bool   = false
     @State private var searchQuery: String = ""
@@ -67,6 +71,14 @@ struct GroupChatView: View {
             .sheet(item: $forwardingMessage) { message in
                 ForwardPickerView(message: message)
                     .environmentObject(appState)
+            }
+            .sheet(item: $editingMessage) { message in
+                GroupEditMessageSheet(
+                    message:     message,
+                    group:       group,
+                    editingText: $editingText
+                )
+                .environmentObject(appState)
             }
             .confirmationDialog(
                 "Leave \"\(group.name)\"?",
@@ -141,7 +153,11 @@ struct GroupChatView: View {
                             group:      group,
                             replyingTo: messages.first { $0.id == message.replyToID },
                             onReply:    { withAnimation { replyingTo = message } },
-                            onForward:  { forwardingMessage = message }
+                            onForward:  { forwardingMessage = message },
+                            onEdit:     {
+                                editingText    = message.body
+                                editingMessage = message
+                            }
                         )
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -510,6 +526,7 @@ private struct GroupMessageBubble: View {
     let replyingTo: StoredMessage?
     let onReply:    () -> Void
     let onForward:  () -> Void
+    let onEdit:     () -> Void
 
     private var isSent: Bool { message.direction == .sent }
 
@@ -552,6 +569,13 @@ private struct GroupMessageBubble: View {
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
                     }
+                    if isSent && message.attachmentID == nil && message.timestamp.timeIntervalSinceNow > -300 {
+                        Button {
+                            onEdit()
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                    }
                     Button {
                         onForward()
                     } label: {
@@ -586,6 +610,11 @@ private struct GroupMessageBubble: View {
                     Text(message.timestamp, style: .time)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                    if message.isEdited {
+                        Text("edited")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                     if isSent {
                         let delivered    = message.deliveredBy?.count ?? 0
                         let read         = message.readBy?.count ?? 0
@@ -710,6 +739,49 @@ private struct ReactionPillRow: View {
                 .padding(.vertical, 3)
                 .background(Color(.tertiarySystemGroupedBackground))
                 .clipShape(Capsule())
+            }
+        }
+    }
+}
+
+// MARK: - Group Edit Message Sheet
+
+private struct GroupEditMessageSheet: View {
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let message:         StoredMessage
+    let group:           GroupInfo
+    @Binding var editingText: String
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                TextEditor(text: $editingText)
+                    .padding(12)
+                    .frame(minHeight: 120, maxHeight: 300)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(.systemGray4)))
+                    .padding()
+                Spacer()
+            }
+            .navigationTitle("Edit Message")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        appState.sendGroupEditMessage(
+                            messageID: message.id,
+                            newBody:   trimmed,
+                            group:     group
+                        )
+                        dismiss()
+                    }
+                    .disabled(editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
     }

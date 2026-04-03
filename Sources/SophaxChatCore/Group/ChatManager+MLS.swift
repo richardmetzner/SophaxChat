@@ -157,6 +157,86 @@ extension ChatManager {
         }
     }
 
+    // MARK: Group edit (MLS)
+
+    /// Send an edit for a previously sent MLS group message.
+    /// Encrypts the replacement body with the current MLS epoch key before sending.
+    func sendMLSGroupEditMessage(messageID: String, newBody: String, group: GroupInfo) {
+        guard !newBody.isEmpty, newBody.utf8.count <= Self.maxMessageBytes else { return }
+        let convID = "group.\(group.id)"
+        let editedAt = Date()
+        guard let msgs = try? messageStore.messages(forPeer: convID),
+              let existing = msgs.first(where: { $0.id == messageID }),
+              existing.direction == .sent,
+              existing.attachmentID == nil,
+              existing.timestamp.timeIntervalSinceNow > -300 else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let mls = try self.requireMLSManager()
+                guard let plaintext = newBody.data(using: .utf8) else { return }
+                let ciphertext = try await mls.encrypt(groupID: group.id, plaintext: plaintext)
+                let payload = MLSGroupEditMessage(
+                    groupID:   group.id,
+                    messageID: messageID,
+                    ciphertext: ciphertext,
+                    editedAt:  editedAt
+                )
+                guard let wire = try? self.wireBuilder.build(.mlsGroupEditMessage, payload: payload) else { return }
+                let myID = self.identity.publicIdentity.peerID
+                for peerID in group.memberIDs where peerID != myID {
+                    try? self.sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+                }
+                try? self.messageStore.updateMessage(
+                    id: messageID, peerID: convID, newBody: newBody, editedAt: editedAt
+                )
+                let body     = newBody
+                let editTime = editedAt
+                let groupID  = group.id
+                DispatchQueue.main.async {
+                    self.delegate?.chatManager(self, didReceiveEditedGroupMessage: messageID,
+                                               newBody: body, editedAt: editTime, groupID: groupID)
+                }
+            } catch { /* silently drop failed encrypt */ }
+        }
+    }
+
+    /// Handle an incoming MLS group edit — decrypts and updates the message store.
+    func handleMLSGroupEditMessage(_ msg: MLSGroupEditMessage) {
+        guard joinedGroups[msg.groupID] != nil else { return }
+        let convID = "group.\(msg.groupID)"
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let mls = try self.requireMLSManager()
+                let plaintext = try await mls.decrypt(groupID: msg.groupID, ciphertext: msg.ciphertext)
+                guard let newBody = String(data: plaintext, encoding: .utf8),
+                      !newBody.isEmpty,
+                      newBody.utf8.count <= Self.maxMessageBytes else { return }
+
+                // Validate: text-only, within 5-minute window (+10 s clock slack)
+                guard let msgs = try? self.messageStore.messages(forPeer: convID),
+                      let existing = msgs.first(where: { $0.id == msg.messageID }),
+                      existing.attachmentID == nil,
+                      existing.timestamp.timeIntervalSinceNow > -310 else { return }
+
+                try? self.messageStore.updateMessage(
+                    id: msg.messageID, peerID: convID, newBody: newBody, editedAt: msg.editedAt
+                )
+                let messageID = msg.messageID
+                let body      = newBody
+                let editedAt  = msg.editedAt
+                let groupID   = msg.groupID
+                DispatchQueue.main.async {
+                    self.delegate?.chatManager(self, didReceiveEditedGroupMessage: messageID,
+                                               newBody: body, editedAt: editedAt, groupID: groupID)
+                }
+            } catch { }
+        }
+    }
+
     // MARK: Commit request (coordinator path)
 
     /// Handle a CommitRequest from a non-coordinator member (add or remove).
@@ -557,6 +637,10 @@ extension ChatManager {
             case .mlsCoordinatorHandoff:
                 let payload = try wireBuilder.decodePayload(MLSCoordinatorHandoffMessage.self, from: message)
                 handleCoordinatorHandoff(payload, senderID: message.senderID)
+            case .mlsGroupEditMessage:
+                if let payload = try? wireBuilder.decodePayload(MLSGroupEditMessage.self, from: message) {
+                    handleMLSGroupEditMessage(payload)
+                }
             default:
                 break
             }

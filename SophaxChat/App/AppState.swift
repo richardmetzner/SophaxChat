@@ -1566,6 +1566,26 @@ extension AppState: @preconcurrency ChatManagerDelegate {
         }
     }
 
+    func chatManager(_ manager: ChatManager, didReceiveEditedGroupMessage messageID: String,
+                     newBody: String, editedAt: Date, groupID: String) {
+        let convID = "group.\(groupID)"
+        if let idx = messages[convID]?.firstIndex(where: { $0.id == messageID }) {
+            messages[convID]?[idx].body     = newBody
+            messages[convID]?[idx].isEdited = true
+            messages[convID]?[idx].editedAt = editedAt
+        }
+    }
+
+    func sendGroupEditMessage(messageID: String, newBody: String, group: GroupInfo) {
+        guard let cm = chatManager else { return }
+        if group.cryptoVersion == .mls {
+            cm.sendMLSGroupEditMessage(messageID: messageID, newBody: newBody, group: group)
+        } else {
+            cm.sendEditGroupMessage(messageID: messageID, newBody: newBody,
+                                    groupID: group.id, members: group.memberIDs)
+        }
+    }
+
     func chatManager(_ manager: ChatManager, didDetectKeyChange forPeerID: String) {
         guard !keyChangeAlerts.contains(forPeerID) else { return }
         keyChangeAlerts.append(forPeerID)
