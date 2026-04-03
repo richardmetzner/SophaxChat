@@ -2466,6 +2466,8 @@ public final class ChatManager: @unchecked Sendable {
         guard !linkedDevicePeerIDs.isEmpty else { return }
         // Don't forward messages whose peerID is a linked device — they're already synced
         guard !linkedDevicePeerIDs.contains(stored.peerID) else { return }
+        // Note to Self is local-only — never sync to linked devices
+        guard stored.peerID != "__note_to_self__" else { return }
         guard let messageJSON = try? JSONEncoder().encode(stored) else { return }
         let direction = stored.direction == .sent ? "sent" : "received"
         let sync = DeviceSyncMessage(

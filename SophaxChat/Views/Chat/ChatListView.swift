@@ -47,6 +47,7 @@ struct ChatListView: View {
                     GroupChatView(group: group)
                 }
                 .navigationDestination(for: AIDestination.self) { _ in AIAssistantView() }
+                .navigationDestination(for: NoteToSelfDestination.self) { _ in NoteToSelfView() }
         } detail: {
             emptyDetailView
         }
@@ -75,6 +76,7 @@ struct ChatListView: View {
                     GroupChatView(group: group)
                 }
                 .navigationDestination(for: AIDestination.self) { _ in AIAssistantView() }
+                .navigationDestination(for: NoteToSelfDestination.self) { _ in NoteToSelfView() }
         }
     }
 
@@ -97,6 +99,28 @@ struct ChatListView: View {
                         Text("Assistant")
                             .font(.subheadline.weight(.semibold))
                         Text("Local · Private · On-device")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            }
+
+            NavigationLink(value: NoteToSelfDestination.noteToSelf) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.yellow.opacity(0.12))
+                            .frame(width: 48, height: 48)
+                        Image(systemName: "lock.doc.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.yellow)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Note to Self")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Encrypted — local only")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -663,6 +687,9 @@ struct PeerAvatar: View {
 
 /// Type-safe navigation destination for the AI assistant row.
 private enum AIDestination: Hashable { case assistant }
+
+/// Type-safe navigation destination for the Note to Self row.
+private enum NoteToSelfDestination: Hashable { case noteToSelf }
 
 // MARK: - Hashable conformances for NavigationLink(value:)
 

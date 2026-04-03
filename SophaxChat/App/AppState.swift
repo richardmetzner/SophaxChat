@@ -256,6 +256,32 @@ final class AppState: ObservableObject {
         manager.stop()
     }
 
+    // MARK: - Note to Self
+
+    /// Synthetic peerID for the local encrypted notepad. Never transmitted over the network.
+    static let noteToSelfID = "__note_to_self__"
+
+    var noteToSelfMessages: [StoredMessage] {
+        messages[AppState.noteToSelfID] ?? []
+    }
+
+    /// Save a note locally. Goes directly to MessageStore, never to the network.
+    func sendNoteToSelf(_ text: String) {
+        let msg = StoredMessage(
+            peerID:    AppState.noteToSelfID,
+            direction: .sent,
+            body:      text,
+            status:    .delivered
+        )
+        try? chatManager?.messageStore.append(message: msg)
+        appendMessage(msg)
+    }
+
+    func deleteNoteToSelf(_ message: StoredMessage) {
+        try? chatManager?.messageStore.deleteMessage(id: message.id, peerID: AppState.noteToSelfID)
+        messages[AppState.noteToSelfID]?.removeAll { $0.id == message.id }
+    }
+
     // MARK: - Message sending
 
     func sendMessage(_ text: String, toPeerID peerID: String, expiresAt: Date? = nil, replyToID: String? = nil) {
