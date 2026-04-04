@@ -1330,6 +1330,16 @@ public final class ChatManager: @unchecked Sendable {
             let relayWire = try wireBuilder.build(.relay, payload: envelope)
             try mesh.broadcast(relayWire)
 
+            // Also forward relay envelope over any connected TCP/Tor peers so the
+            // message can reach nodes outside the local BLE/WiFi mesh.
+            // The inner payload is already sealed for the target; TCP relay nodes
+            // see only the targetPeerID in the envelope — same exposure as mesh relay.
+            if let tcp = tcpTransport {
+                for tcpPeerID in tcp.connectedPeerIDs {
+                    try? tcp.send(relayWire, toPeerID: tcpPeerID)
+                }
+            }
+
             // ── Store-and-forward: also ask relay peers to hold the message ───
             // If the target is not currently in the mesh, at least one relay peer
             // may later encounter them. Re-uses the sealed message already produced
