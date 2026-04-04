@@ -24,6 +24,7 @@ struct SettingsView: View {
     @State private var pendingFullRestoreData: FullRestoreWrapper? = nil
     @State private var showingPINSetup: Bool    = false
     @State private var showingDuressSetup: Bool = false
+    @State private var showingCrashLog: Bool    = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -76,6 +77,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingDuressSetup) {
                 DuressPINSetupView().environmentObject(appState)
+            }
+            .sheet(isPresented: $showingCrashLog) {
+                CrashLogView()
             }
             .sheet(item: $pendingFullRestoreData) { wrapper in
                 FullRestoreView(data: wrapper.data).environmentObject(appState)
@@ -552,6 +556,12 @@ struct SettingsView: View {
                 Text(appState.tcpEnabled ? "BLE / WiFi + TCP" : "Bluetooth LE / WiFi Direct")
                     .foregroundStyle(.secondary)
                     .font(.caption)
+            }
+            Button {
+                showingCrashLog = true
+            } label: {
+                Label("Diagnostic Log", systemImage: "doc.text.magnifyingglass")
+                    .foregroundStyle(.primary)
             }
         } header: {
             Text("Help & About")
