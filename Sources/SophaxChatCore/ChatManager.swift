@@ -1470,6 +1470,16 @@ public final class ChatManager: @unchecked Sendable {
         knownPeers[peerID]  = peer
         peerBundles[peerID] = bundle
 
+        // Eagerly push avatar data so group-only contacts (who never send a DM) get
+        // their avatar immediately after Hello rather than waiting for a group message.
+        if let avatarData = bundle.avatarData {
+            let pid = peerID
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.delegate?.chatManager(self, didReceiveAvatarData: avatarData, fromPeerID: pid)
+            }
+        }
+
         let reconnected    = wasOffline
         let isPending      = trustLevel == .pending && !isKnown   // fire request only once
         DispatchQueue.main.async { [weak self] in
