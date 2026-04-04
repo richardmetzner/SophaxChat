@@ -19,6 +19,9 @@ struct ChatListView: View {
     @State private var groupToDelete: GroupInfo? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
     @State private var keyChangePeerID: String? = nil
+    @State private var showingAddByLink  = false
+    @State private var pastedInviteLink  = ""
+    @State private var inviteLinkError: String? = nil
 
     private var showGettingStartedCard: Bool {
         appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty
@@ -266,10 +269,19 @@ struct ChatListView: View {
         .navigationTitle("SophaxChat")
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    showingScanner = true
-                } label: {
-                    Image(systemName: "qrcode.viewfinder")
+                HStack(spacing: 4) {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    Button {
+                        showingAddByLink = true
+                        pastedInviteLink = ""
+                        inviteLinkError  = nil
+                    } label: {
+                        Image(systemName: "link.badge.plus")
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -353,6 +365,9 @@ struct ChatListView: View {
         .sheet(isPresented: $showingScanner) {
             ContactScannerView().environmentObject(appState)
         }
+        .sheet(isPresented: $showingAddByLink) {
+            addByLinkSheet
+        }
         .alert("Error", isPresented: Binding(
             get: { appState.errorMessage != nil },
             set: { if !$0 { appState.errorMessage = nil } }
@@ -402,6 +417,56 @@ struct ChatListView: View {
         } message: {
             Text("All members will lose access to this group immediately. This cannot be undone.")
         }
+    }
+
+    // MARK: - Add by Link sheet
+
+    @ViewBuilder private var addByLinkSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("sophaxchat://…", text: $pastedInviteLink, axis: .vertical)
+                        .lineLimit(3...6)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                } header: {
+                    Text("Paste invite link")
+                } footer: {
+                    Text("Paste a sophaxchat:// link shared by another user via any channel (iMessage, email, etc.).")
+                }
+
+                if let err = inviteLinkError {
+                    Section { Text(err).foregroundStyle(.red) }
+                }
+
+                Section {
+                    Button("Add Contact") {
+                        processLink()
+                    }
+                    .disabled(pastedInviteLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .navigationTitle("Add by Link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingAddByLink = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func processLink() {
+        let raw = pastedInviteLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: raw), url.scheme == "sophaxchat" else {
+            inviteLinkError = "Not a valid sophaxchat:// link."
+            return
+        }
+        inviteLinkError  = nil
+        showingAddByLink = false
+        appState.handleIncomingLink(url)
     }
 }
 

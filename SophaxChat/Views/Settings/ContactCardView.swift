@@ -82,6 +82,28 @@ struct ContactCardView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
+                Spacer().frame(height: 20)
+
+                // Invite code — for verbal recognition ("my code is SXPH-…")
+                HStack(spacing: 10) {
+                    Text(appState.friendlyCode)
+                        .font(.system(.callout, design: .monospaced).weight(.semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(.primary)
+                    Button {
+                        UIPasteboard.general.string = appState.friendlyCode
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
                 Spacer()
 
                 // Share button

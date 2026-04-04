@@ -895,6 +895,16 @@ final class AppState: ObservableObject {
     /// Nil only before identity is created (first launch before onboarding completes).
     var derivedOnionHostname: String? { chatManager?.identity.onionHostname }
 
+    /// Human-readable fingerprint derived from the first 6 bytes of peerID.
+    /// Format: SXPH-XXXX-XXXX-XXXX (3 × 4 uppercase hex chars).
+    /// Purely for verbal recognition — cannot be used to add a contact standalone.
+    var friendlyCode: String {
+        guard let pid = chatManager?.identity.publicIdentity.peerID,
+              pid.count >= 12 else { return "——" }
+        let h = pid.uppercased()
+        return "SXPH-\(h.prefix(4))-\(h.dropFirst(4).prefix(4))-\(h.dropFirst(8).prefix(4))"
+    }
+
     /// Number of one-time prekeys remaining. Below 5 means reduced X3DH entropy.
     var opkCount: Int { chatManager?.preKeys.opkCount ?? 0 }
 
