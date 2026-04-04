@@ -89,25 +89,26 @@ SophaxChat is built around three principles that cannot be traded away:
 
 ### Why does it exist?
 
-| Scenario | Signal | Telegram | bitchat | SophaxChat |
-|---|:---:|:---:|:---:|:---:|
-| No internet connection (BLE/WiFi mesh) | ❌ | ❌ | ✅ | ✅ |
-| LAN auto-discovery (same WiFi, no pairing) | ❌ | ❌ | ❌ | ✅ |
-| Internet reach (TCP, peer-to-peer) | ✅ | ✅ | ❌ | ✅ |
-| Tor / anonymity network support | ⚠️ | ❌ | ❌ | ✅ |
-| No phone number required | ❌ | ⚠️¹ | ✅ | ✅ |
-| Signal-grade forward secrecy | ✅ | ⚠️² | ❌ | ✅ |
-| Per-session unique keys (X3DH) | ✅ | ⚠️² | ❌ | ✅ |
-| Header encryption (relay metadata) | ✅ | ❌ | ❌ | ✅ |
-| Sealed sender (hides sender from relay) | ✅ | ❌ | ❌ | ✅ |
-| No server dependency | ❌ | ❌ | ✅ | ✅ |
-| End-to-end encrypted groups | ✅ | ⚠️² | ❌ | ✅ |
-| Open-source | ⚠️ | ⚠️³ | ✅ | ✅ |
-| Multihop relay (mesh routing) | ❌ | ❌ | ✅ | ✅ |
-| iOS + Android cross-platform | ✅ | ✅ | ❌ | ✅ |
-| macOS support | ✅ | ✅ | ❌ | ✅ |
+| Scenario | Signal | Telegram | WhatsApp | bitchat | SophaxChat |
+|---|:---:|:---:|:---:|:---:|:---:|
+| No internet connection (BLE/WiFi mesh) | ❌ | ❌ | ❌ | ✅ | ✅ |
+| LAN auto-discovery (same WiFi, no pairing) | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Internet reach (TCP, peer-to-peer) | ✅ | ✅ | ✅ | ❌ | ✅ |
+| Tor / anonymity network support | ⚠️ | ❌ | ❌ | ❌ | ✅ |
+| No phone number required | ❌ | ⚠️¹ | ❌ | ✅ | ✅ |
+| Signal-grade forward secrecy | ✅ | ⚠️² | ✅ | ❌ | ✅ |
+| Per-session unique keys (X3DH) | ✅ | ⚠️² | ✅ | ❌ | ✅ |
+| Header encryption (relay metadata) | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Sealed sender (hides sender from relay) | ✅ | ❌ | ❌ | ❌ | ✅ |
+| No server dependency | ❌ | ❌ | ❌ | ✅ | ✅ |
+| No metadata collection | ❌ | ❌ | ❌³ | ✅ | ✅ |
+| End-to-end encrypted groups | ✅ | ⚠️² | ✅ | ❌ | ✅ |
+| Open-source | ⚠️ | ⚠️⁴ | ❌ | ✅ | ✅ |
+| Multihop relay (mesh routing) | ❌ | ❌ | ❌ | ✅ | ✅ |
+| iOS + Android cross-platform | ✅ | ✅ | ✅ | ❌ | ✅ |
+| macOS support | ✅ | ✅ | ✅ | ❌ | ✅ |
 
-<sub>¹ Telegram requires a phone number to register; usernames added in 2023 do not replace this requirement. ² Telegram's MTProto E2EE applies only to "Secret Chats" — regular chats, groups, and channels are server-side encrypted (Telegram holds the keys). ³ Telegram clients are open-source; the server is closed-source and proprietary.</sub>
+<sub>¹ Telegram requires a phone number to register; usernames added in 2023 do not replace this requirement. ² Telegram's MTProto E2EE applies only to "Secret Chats" — regular chats, groups, and channels are server-side encrypted (Telegram holds the keys). ³ WhatsApp uses Signal Protocol for message content but collects extensive metadata: who you talk to, when, how often, your IP address, device fingerprint, and contact graph — all shared with Meta. ⁴ Telegram clients are open-source; the server is closed-source and proprietary.</sub>
 
 SophaxChat occupies a specific niche: **Signal-grade cryptography, zero infrastructure**. Ideal for journalists, activists, protesters, disaster responders, or anyone in an environment where internet access is unavailable, monitored, or untrusted.
 
