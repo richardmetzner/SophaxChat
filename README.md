@@ -585,13 +585,14 @@ Do not open public issues for security bugs.
 
 ### Recently shipped
 
+- [x] Friendly invite code — `SXPH-XXXX-XXXX` fingerprint in ContactCard + paste-link flow; no server
+- [x] Mesh relay via Tor — relay envelopes forwarded over TCP/Tor peers, extends reach beyond local BLE/WiFi
+- [x] Avatar sync for group-only contacts — eager push in Hello handler, no DM required
+- [x] On-device diagnostic log — rotating local log, voluntary export from Settings; zero telemetry
 - [x] Duress mode — custom PIN shows empty decoy app; silently drops incoming messages
 - [x] Full export (`.sxfe`) — identity + all messages in one PBKDF2-encrypted file
 - [x] Sealed sender for groups — per-member SKv2 fan-out wrapped in ECDH envelope
 - [x] File sharing — arbitrary file attachments (≤2 MB) in DMs and groups
-- [x] MLS (RFC 9420) group encryption — mls-rs 0.54 via UniFFI, per-epoch post-compromise security
-- [x] iOS ↔ Android cross-platform messaging — same X3DH + Double Ratchet over TCP
-- [x] Security Audit III — 10 findings resolved (Tor v3 regex, X3DH zeroing, EncryptedSharedPreferences, DR key zeroing, and more)
 
 <details>
 <summary>Full completed list (50+ items)</summary>
@@ -633,8 +634,8 @@ Do not open public issues for security bugs.
 ### Up next
 
 - [ ] **TestFlight public beta** — applying for [NLnet NGI Assure](https://nlnet.nl/assure/) grant to cover Apple Developer Program and independent audit
-- [ ] **Friendly invite code** — short alphanumeric code (`SXPH-4729-KRTM`) encoding identity, shareable verbally or in a bio — no server, no metadata
 - [ ] **Independent third-party security audit** — highest-priority before v1.0. Open a [GitHub Security Advisory](https://github.com/sophaxtechnologies/SophaxChat/security/advisories/new) if you are interested in auditing
+- [ ] **DHT peer discovery** — opt-in BitTorrent DHT announce of `.onion` address; no server, no IP leak
 - [ ] **Hardware security key binding** — Secure Enclave identity key + FIDO2 external key (post-audit)
 
 ---

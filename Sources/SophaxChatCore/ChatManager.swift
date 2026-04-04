@@ -575,6 +575,7 @@ public final class ChatManager: @unchecked Sendable {
         do {
             try messageStore.append(message: stored)
         } catch {
+            CrashLogManager.shared.log(error, context: "MessageStore")
             delegate?.chatManager(self, didEncounterError: error)
             return
         }
@@ -592,10 +593,12 @@ public final class ChatManager: @unchecked Sendable {
         } catch SophaxError.sessionStateCorrupted {
             // Corrupt session was cleared in withSession(). Broadcast Hello so the
             // peer re-initiates X3DH; the user should retry sending after reconnection.
+            CrashLogManager.shared.log("Session state corrupted on send — cleared, broadcasting Hello", context: "DR")
             try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: peerID)
             broadcastHello()
             delegate?.chatManager(self, didEncounterError: SophaxError.sessionStateCorrupted)
         } catch {
+            CrashLogManager.shared.log(error, context: "MessageSend")
             try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: peerID)
             delegate?.chatManager(self, didEncounterError: error)
         }
@@ -1205,10 +1208,12 @@ public final class ChatManager: @unchecked Sendable {
             let wire = try buildOutboundWire(content: content, messageID: messageID, toPeerID: peerID)
             try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
         } catch SophaxError.sessionStateCorrupted {
+            CrashLogManager.shared.log("Session state corrupted on attachment send — cleared, broadcasting Hello", context: "DR")
             try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: peerID)
             broadcastHello()
             delegate?.chatManager(self, didEncounterError: SophaxError.sessionStateCorrupted)
         } catch {
+            CrashLogManager.shared.log(error, context: "AttachmentSend")
             try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: peerID)
             delegate?.chatManager(self, didEncounterError: error)
         }
@@ -1411,6 +1416,7 @@ public final class ChatManager: @unchecked Sendable {
                 // Persisted state is malformed or truncated (e.g. crash mid-write).
                 // Delete the corrupt blob so the next outbound message triggers
                 // a clean X3DH re-initiation rather than failing indefinitely.
+                CrashLogManager.shared.log(error, context: "SessionLoad")
                 try? keychain.deleteSessionState(peerID: peerID)
                 sessions.removeValue(forKey: peerID)
                 throw SophaxError.sessionStateCorrupted
@@ -2869,9 +2875,11 @@ extension ChatManager: MeshManagerDelegate {
             // The corrupt state has already been purged from Keychain in withSession().
             // Re-broadcast our Hello so the sender's next message triggers a fresh
             // X3DH handshake from their side, restoring the session automatically.
+            CrashLogManager.shared.log("Session state corrupted on receive — broadcasting Hello", context: "DR")
             broadcastHello()
             delegate?.chatManager(self, didEncounterError: SophaxError.sessionStateCorrupted)
         } catch {
+            CrashLogManager.shared.log(error, context: "MessageReceive")
             #if DEBUG
             print("[ChatManager] ❌ Error: \(error) | type=\(message.type.rawValue)")
             #endif
