@@ -1584,7 +1584,7 @@ public final class ChatManager: @unchecked Sendable {
         case .file:                  displayBody = content.attachmentFilename ?? (content.body.isEmpty ? "📎 File" : content.body)
         case .groupInvite:           return                               // dead code; handled above
         case .senderKeyDistribution: return                               // dead code; handled above
-        case .mlsCommitRequest:      return                               // Phase 4 — not yet handled
+        case .mlsCommitRequest:      return                               // wire-level only; never arrives as DR payload content
         }
 
         try storeNewSession(ratchet, peerID: peerID)
@@ -1679,7 +1679,7 @@ public final class ChatManager: @unchecked Sendable {
         case .file:  displayBody = content.attachmentFilename ?? (content.body.isEmpty ? "📎 File" : content.body)
         case .groupInvite:            return  // already handled above; belt-and-suspenders guard
         case .senderKeyDistribution:  return  // already handled above; belt-and-suspenders guard
-        case .mlsCommitRequest:       return  // Phase 4 — not yet handled
+        case .mlsCommitRequest:       return  // wire-level only; never arrives as DR payload content
         }
 
         let stored = StoredMessage(
