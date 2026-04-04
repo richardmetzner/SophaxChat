@@ -3,7 +3,7 @@
 
   <h1>SophaxChat</h1>
 
-  <p><strong>Signal-grade encryption. No servers. No accounts. Mesh-first, internet-optional.</strong></p>
+  <p><strong>Works offline over Bluetooth mesh. Reaches anyone in the world over Tor. No servers. No phone number. No account.</strong></p>
 
   <p>
     <img src="https://img.shields.io/badge/Swift-6.2-FA7343?logo=swift&logoColor=white" />
@@ -33,6 +33,10 @@
 
   > ⚠️ **Alpha — not yet production-ready.** Cryptographic primitives are sound, but the codebase has not been independently audited. Do not rely on it for life-critical anonymity.
 
+  <br />
+
+  **[TestFlight beta — coming soon](https://github.com/sophaxtechnologies/SophaxChat/issues)** &nbsp;·&nbsp; **[Mac: works today with a free Apple ID](#run-on-mac-catalyst)** &nbsp;·&nbsp; **[Android](android/README.md)**
+
 </div>
 
 ---
@@ -52,11 +56,13 @@
 
 ## What is SophaxChat?
 
-SophaxChat is an **open-source, infrastructure-free, end-to-end encrypted** messenger for iOS, macOS, and Android. It works over Bluetooth LE and WiFi Direct by default — no internet required, no servers, no phone number, no account.
+SophaxChat is an **open-source, serverless, end-to-end encrypted** messenger for iOS, macOS, and Android.
 
-When you need to reach someone across the world, an optional TCP transport lets you connect peer-to-peer over the internet. The **recommended way** to use this is through **[Orbot](https://apps.apple.com/app/orbot/id1609461599)** (Tor VPN mode) — which routes your TCP traffic anonymously through Tor with zero configuration inside SophaxChat. The cryptographic layer is identical regardless of transport.
+**Nearby** — it works over Bluetooth LE and WiFi Direct. No internet, no servers, no pairing. Messages relay across multiple devices automatically (up to 6 hops), so you reach people even when you're not directly connected.
 
-Every message is protected by the **Signal Protocol** (X3DH + Double Ratchet with Header Encryption). Your identity is nothing more than a cryptographic key pair generated on your device.
+**Globally** — enable TCP and connect through **[Orbot](https://apps.apple.com/app/orbot/id1609461599)** (Tor). Your traffic is anonymous, your IP is hidden, and you can reach anyone in the world with a `.onion` address. No configuration inside SophaxChat — Orbot handles everything.
+
+In both modes: **no phone number, no email, no account**. Your identity is a Curve25519 key pair, generated on your device, never transmitted to any server. Every message uses the **Signal Protocol** (X3DH + Double Ratchet with Header Encryption).
 
 > **Is it still "Anonymous, offline, end-to-end encrypted mesh chat"?**
 > Yes — and more. Local mode (BLE/WiFi) is fully offline and anonymous as always. With TCP enabled via Orbot/Tor, it becomes *global*: still anonymous (no account, no phone number), still end-to-end encrypted (same X3DH + Double Ratchet pipeline), still decentralized (no servers — direct peer-to-peer). TCP and Tor support are optional and off by default.
@@ -278,6 +284,11 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 | Keyboard privacy (autocorrect disabled, no learning) | ✅ |
 | Screen recording warning banner | ✅ |
 | Screenshot notification toast | ✅ |
+| Screenshot prevention (screen appears blank) | ✅ |
+| Duress PIN — decoy empty state on coercion | ✅ |
+| Custom numeric lock PIN (alternative to biometrics) | ✅ |
+| Full encrypted export — identity + messages (`.sxfe`) | ✅ |
+| File sharing (arbitrary files ≤ 2 MB) | ✅ |
 
 ### Global Reach (Tor)
 
@@ -571,79 +582,59 @@ Do not open public issues for security bugs.
 
 ## Roadmap
 
-### Completed
+### Recently shipped
+
+- [x] Duress mode — custom PIN shows empty decoy app; silently drops incoming messages
+- [x] Full export (`.sxfe`) — identity + all messages in one PBKDF2-encrypted file
+- [x] Sealed sender for groups — per-member SKv2 fan-out wrapped in ECDH envelope
+- [x] File sharing — arbitrary file attachments (≤2 MB) in DMs and groups
+- [x] MLS (RFC 9420) group encryption — mls-rs 0.54 via UniFFI, per-epoch post-compromise security
+- [x] iOS ↔ Android cross-platform messaging — same X3DH + Double Ratchet over TCP
+- [x] Security Audit III — 10 findings resolved (Tor v3 regex, X3DH zeroing, EncryptedSharedPreferences, DR key zeroing, and more)
+
+<details>
+<summary>Full completed list (50+ items)</summary>
 
 - [x] X3DH session establishment
-- [x] Double Ratchet messaging
-- [x] Header Encryption (Double Ratchet extension — hides ratchet metadata from relay)
-- [x] Sealed sender (hides sender identity from relay nodes)
-- [x] Multihop relay (TTL flooding + LRU dedup)
-- [x] Offline message queue
-- [x] Disappearing messages (30s–7d, per-message expiry, 1:1 and group)
-- [x] SPK rotation (7-day automatic)
-- [x] OTPK replenishment
-- [x] Safety Numbers (manual + QR scan)
-- [x] Rate limiting on relay forwarding (20 / 10s per peer)
+- [x] Double Ratchet + Header Encryption
+- [x] Sealed sender (hides sender from relay nodes)
+- [x] Multihop relay (TTL=6, LRU dedup)
+- [x] Offline message queue + store-and-forward (48h TTL, 300 items)
+- [x] Disappearing messages (30s–7d, 1:1 and group)
+- [x] SPK rotation (7-day) + OTPK replenishment
+- [x] Safety Numbers (QR + manual)
+- [x] Rate limiting (20 relays/10s per peer, 50/10s global)
 - [x] Session initiation deduplication
-- [x] Push-to-talk voice messages (AAC M4A, encrypted)
-- [x] Image sharing (encrypted, tap-to-zoom, PhotosPicker + camera)
-- [x] Unread message badges
-- [x] Delete conversation + block peer
-- [x] Reply to message (quoted bubble, context menu)
-- [x] Read receipts (blue tick)
-- [x] App lock (Face ID / Touch ID / passcode, auto-lock on background)
-- [x] Contact renaming
-- [x] Local push notifications (grouped by thread, cleared on read)
-- [x] Forward message
-- [x] Message search (per-conversation)
-- [x] Message reactions (6-emoji picker, tappable pill row)
-- [x] Group messaging (Signal-style Sender Keys — per-member KDF chains)
-- [x] Group images and voice messages
-- [x] Group disappearing messages
-- [x] Group member list + leave group
+- [x] Voice messages PTT (AAC M4A, encrypted)
+- [x] Image sharing (encrypted, PhotosPicker + camera)
+- [x] Reply, forward, search, reactions, read receipts
+- [x] App lock (Face ID / Touch ID / passcode + custom PIN)
+- [x] Group messaging — Signal-style Sender Keys v2 (per-member KDF chains)
+- [x] Group re-keying on member leave
+- [x] Group skipped message key cache (200 keys/sender)
 - [x] macOS Catalyst support
-- [x] Group re-keying on member leave (H-1 — fresh sender chain on every membership change)
-- [x] Group skipped message key cache (M-1 — bounded 200 keys/sender, auto-eviction)
-- [x] Notification content hiding on lock screen (M-4 — `hiddenPreviewsBodyPlaceholder`)
-- [x] TOFU key-change detection (Safety Number changed banner)
+- [x] TOFU key-change detection
+- [x] Channel discovery (nearby groups broadcast)
+- [x] Tor global reach — `.onion` v3 from Ed25519 identity key
+- [x] Contact Card — QR + `sophaxchat://add` deep link
+- [x] Orbot auto-detection (SOCKS5 probe)
+- [x] Clipboard auto-clear (60s)
+- [x] Keyboard privacy (autocorrect disabled)
+- [x] Screen recording warning + screenshot toast
+- [x] Local AI assistant (Apple Foundation Models, iOS 26+)
+- [x] Background BLE operation (`BGAppRefreshTask`)
+- [x] Pluggable transport adapter (`MessageTransport` protocol)
+- [x] Android feature parity — App Lock, reactions, disappearing messages, safety numbers, search
 - [x] PrivacyInfo.xcprivacy (App Store privacy manifest)
-- [x] Store-and-forward via relay peers (48h TTL, up to 300 items, delivered on reconnect)
 
-### Completed (continued)
+</details>
 
-- [x] Background operation — `bluetooth-central` + `bluetooth-peripheral` background modes declared; `BGAppRefreshTask` registered (`com.sophax.mesh-refresh`) to restart the mesh briefly after iOS suspends the process and drain any pending queues. MPC sessions survive for several minutes after backgrounding with BLE background modes alone.
-- [x] Channel discovery — `ChannelAnnouncement` wire message type added. Group creators broadcast signed announcements to all nearby peers (1 hop). Non-members see a "Nearby Channels" section in the conversation list; they can contact the creator to request an invite.
-- [x] Pluggable transport adapter — `MessageTransport` protocol defined in `Network/MessageTransport.swift`. `MeshManager` is the production implementation (MultipeerConnectivity). Future adapters (LoRa, acoustic covert channel) implement the same `start/stop/send/broadcast/isConnected` surface. Adapter stubs and specification notes are in the protocol file.
-- [x] TCP internet transport — `TCPTransport.swift` (Network.framework, iOS 17+). 4-byte length-prefix framing, Hello exchange on connect, SOCKS5/Tor proxy support. ChatManager routes to TCP first when the peer is connected, falling back to BLE/WiFi mesh. Off by default; toggled in Settings under "Internet Mode".
-- [x] Internet mode Settings UI — TCP toggle, port field, public address entry ("My Address"), SOCKS5 proxy field, direct connect button (enter peer's host:port).
+### Up next
 
-### Completed (continued)
-
-- [x] Tor global reach — `.onion` v3 address derived from Ed25519 identity key (pure Swift, no Tor library). Address is permanent and tied to identity. `Keccak.swift` + `OnionAddress.swift`.
-- [x] Contact Card — QR code + `sophaxchat://add` deep link for sharing your Tor address out-of-band. Scanning adds the peer and connects automatically if Orbot is running.
-- [x] QR contact scanner — camera-based scanner (`DataScannerViewController`, iOS 16+) accessible from the chat list toolbar.
-- [x] Orbot auto-detection — probes `127.0.0.1:9050` via `NWConnection` on foreground; shows green "Orbot active" in Settings when running.
-- [x] Tor onboarding — 3-step guide shown on first "Connect Globally" toggle.
-- [x] Clipboard auto-clear — copied message text cleared from `UIPasteboard` after 60 seconds.
-- [x] Keyboard privacy — `autocorrectionDisabled()` + `.textContentType(.none)` on all message inputs; iOS keyboard cannot learn from messages.
-- [x] Screen recording detection — `RPScreenRecorder` polled every 1.5s; red warning banner shown while recording is active (iOS only).
-- [x] Screenshot notification — toast shown when user takes a screenshot while the app is open.
-- [x] Local AI assistant — `AIAssistantView` powered by Apple Foundation Models (`LanguageModelSession`, iOS 26+). Runs entirely on-device; no server, no API key, no data leaves the phone. Graceful fallback on unsupported devices.
-- [x] Message draft persistence — `messageText` saved to `UserDefaults` per peer/group on view disappear, restored on appear.
-- [x] Haptic feedback — `UIImpactFeedbackGenerator(.light)` on message send.
-
-### Completed (continued)
-
-- [x] Security Audit II — six findings resolved: SKD monotonicity, relay inner-message signature, global relay rate limit (50/10s), TCP 120s idle timeout, deep link confirmation gate, app lock notification clear
-- [x] Android feature parity — App Lock (BiometricPrompt), unread badges, typing indicators, long-press menu (copy / delete / block / reply), reply-to-message, Safety Number screen, deep link confirmation, onboarding backup + verification slides
-- [x] Security Audit III — ten findings resolved: port bounds check, strict Tor v3 regex, X3DH dhConcat zeroing, EncryptedSharedPreferences for app state, Double Ratchet `mk.fill(0)`, Android clipboard auto-clear, dhConcat length precondition, error message sanitization, `assert` → `precondition` in IdentityManager
-- [x] Android reactions, disappearing messages, contact renaming, message search — full feature parity with iOS
-- [x] MLS (RFC 9420) group encryption — mls-rs 0.54 via UniFFI, RustCrypto backend (no OpenSSL), compiled to XCFramework. Per-epoch post-compromise security; P2P coordinator pattern (group creator issues Commits, members send CommitRequests via DR unicast). `GroupCryptoVersion` field ensures full backward compatibility with existing Sender Keys v2 groups. Opt-in migration scaffold in `GroupCryptoMigration.swift`.
-
-### Seeking external support
-
-- [ ] **Independent third-party security audit** — highest-priority post-v1.0 item. Target: [NLnet / NGI Zero](https://nlnet.nl/NGI0/) grant. Open a [GitHub Security Advisory](https://github.com/sophaxtechnologies/SophaxChat/security/advisories/new) if you are interested in auditing.
-- [ ] **Hardware security key binding** — Secure Enclave identity key storage (migration path needed for existing installs) and FIDO2 external key support (requires ASAuthorizationSecurityKeyPublicKeyCredentialProvider, iOS 16+). Planned post-audit.
+- [ ] **TestFlight public beta** — applying for [NLnet NGI Assure](https://nlnet.nl/assure/) grant to cover Apple Developer Program and independent audit
+- [ ] **Friendly invite code** — short alphanumeric code (`SXPH-4729-KRTM`) encoding identity, shareable verbally or in a bio — no server, no metadata
+- [ ] **Independent third-party security audit** — highest-priority before v1.0. Open a [GitHub Security Advisory](https://github.com/sophaxtechnologies/SophaxChat/security/advisories/new) if you are interested in auditing
+- [ ] **Hardware security key binding** — Secure Enclave identity key + FIDO2 external key (post-audit)
 
 ---
 
