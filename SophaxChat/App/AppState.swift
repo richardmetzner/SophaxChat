@@ -925,6 +925,30 @@ final class AppState: ObservableObject {
         set { try? keychain.saveAppLockEnabled(newValue) }
     }
 
+    /// Whether a custom numeric real-lock PIN has been set (enables the PIN entry path in AppLockView).
+    var hasRealLockPIN: Bool { keychain.hasRealLockPIN() }
+
+    /// Whether a duress PIN has been set.
+    var hasDuressPIN: Bool { keychain.hasDuressPIN() }
+
+    /// Set or replace the real lock PIN. Throws if Keychain write fails.
+    func setRealLockPIN(_ pin: String) throws { try keychain.saveRealLockPIN(pin) }
+
+    /// Clear the real lock PIN (and implicitly the duress PIN — duress requires a real PIN).
+    func clearRealLockPIN() throws {
+        try keychain.clearRealLockPIN()
+        try keychain.clearDuressPIN()
+    }
+
+    /// Set or replace the duress PIN.
+    func setDuressPIN(_ pin: String) throws { try keychain.saveDuressPIN(pin) }
+
+    /// Check if a string matches the real lock PIN (used by DuressPINSetupView to enforce they differ).
+    func verifyRealLockPIN(_ pin: String) -> Bool { keychain.verifyRealLockPIN(pin) }
+
+    /// Clear only the duress PIN.
+    func clearDuressPIN() throws { try keychain.clearDuressPIN() }
+
     // MARK: - Account wipe
 
     /// Permanently delete all identity keys, messages, attachments, and settings.
@@ -1623,6 +1647,7 @@ extension AppState: @preconcurrency ChatManagerDelegate {
     }
 
     func chatManager(_ manager: ChatManager, didReceiveMessage message: StoredMessage, fromPeer peerID: String) {
+        guard !isDuressActive else { return }   // silently drop while duress is active
         guard !blockedPeers.contains(peerID) else { return }
         appendMessage(message)
         unreadCounts[peerID, default: 0] += 1
@@ -1716,6 +1741,7 @@ extension AppState: @preconcurrency ChatManagerDelegate {
     }
 
     func chatManager(_ manager: ChatManager, didReceiveGroupMessage message: StoredMessage, inGroup groupID: String) {
+        guard !isDuressActive else { return }   // silently drop while duress is active
         appendMessage(message)
         let convID = "group.\(groupID)"
         unreadCounts[convID, default: 0] += message.direction == .received ? 1 : 0

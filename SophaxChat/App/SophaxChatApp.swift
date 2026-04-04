@@ -174,6 +174,14 @@ struct RootView: View {
                     .transition(.opacity)
             }
 
+            // Duress overlay: replaces real content with an empty decoy state.
+            // Shown when the user entered the duress PIN on the lock screen.
+            if appState.isDuressActive {
+                DuressEmptyView()
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+
             if appState.isScreenBeingRecorded {
                 VStack {
                     HStack(spacing: 6) {

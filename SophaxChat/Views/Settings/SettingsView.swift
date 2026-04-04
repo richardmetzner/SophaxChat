@@ -22,6 +22,8 @@ struct SettingsView: View {
     @State private var showingFullExport: Bool             = false
     @State private var showingFullImport: Bool             = false
     @State private var pendingFullRestoreData: FullRestoreWrapper? = nil
+    @State private var showingPINSetup: Bool    = false
+    @State private var showingDuressSetup: Bool = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -68,6 +70,12 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingFullExport) {
                 FullExportView().environmentObject(appState)
+            }
+            .sheet(isPresented: $showingPINSetup) {
+                LockPINSetupView().environmentObject(appState)
+            }
+            .sheet(isPresented: $showingDuressSetup) {
+                DuressPINSetupView().environmentObject(appState)
             }
             .sheet(item: $pendingFullRestoreData) { wrapper in
                 FullRestoreView(data: wrapper.data).environmentObject(appState)
@@ -182,7 +190,10 @@ struct SettingsView: View {
                 get: { appState.appLockEnabled },
                 set: { enabled in
                     appState.appLockEnabled = enabled
-                    if !enabled { appState.isAppLocked = false }
+                    if !enabled {
+                        appState.isAppLocked = false
+                        try? appState.clearRealLockPIN()
+                    }
                 }
             ))
             Toggle(isOn: $appState.notifShowSender) {
@@ -207,6 +218,56 @@ struct SettingsView: View {
             Text("Security")
         } footer: {
             Text("When "Show sender" is off, notifications only say "New message" — no name or content visible on the lock screen.")
+        }
+
+        if appState.appLockEnabled {
+            Section {
+                Button {
+                    showingPINSetup = true
+                } label: {
+                    HStack {
+                        Label(
+                            appState.hasRealLockPIN ? "Change Lock PIN" : "Set Lock PIN",
+                            systemImage: "lock.rotation"
+                        )
+                        Spacer()
+                        if appState.hasRealLockPIN {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+                if appState.hasRealLockPIN {
+                    Button {
+                        showingDuressSetup = true
+                    } label: {
+                        HStack {
+                            Label(
+                                appState.hasDuressPIN ? "Change Duress PIN" : "Set Duress PIN",
+                                systemImage: "exclamationmark.shield"
+                            )
+                            Spacer()
+                            if appState.hasDuressPIN {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                    if appState.hasDuressPIN {
+                        Button(role: .destructive) {
+                            try? appState.clearDuressPIN()
+                        } label: {
+                            Label("Remove Duress PIN", systemImage: "trash")
+                        }
+                    }
+                }
+            } header: {
+                Text("PIN Lock")
+            } footer: {
+                Text(appState.hasRealLockPIN
+                     ? "Entering the duress PIN shows an empty app without unlocking it."
+                     : "Set a numeric PIN to enable an alternative unlock path. Required before setting a duress PIN.")
+            }
         }
     }
 
