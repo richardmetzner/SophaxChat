@@ -296,7 +296,7 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 | Feature | Status |
 |---|---|
 | `.onion` address derived from identity key (no configuration) | ✅ |
-| Orbot auto-detection (SOCKS5 probe) | ✅ |
+| Orbot SOCKS5 support (route through Tor via proxy config) | ✅ |
 | Contact Card — QR code + `sophaxchat://` deep link | ✅ |
 | QR scanner for adding contacts | ✅ |
 | `sophaxchat://add` deep link handling | ✅ |
@@ -375,7 +375,7 @@ SophaxChat/
 ├── SophaxChat/                      # iOS/macOS SwiftUI application
 │   ├── App/
 │   │   ├── SophaxChatApp.swift     # App entry point, security overlays, deep links
-│   │   └── AppState.swift          # @MainActor observable state, Orbot probe
+│   │   └── AppState.swift          # @MainActor observable state, SOCKS5/Tor config
 │   └── Views/
 │       ├── Onboarding/             # First-run username setup
 │       ├── AI/                     # Local AI assistant (Apple Foundation Models)
@@ -506,6 +506,19 @@ In Xcode:
 - Screen recording warning is disabled (screen recording is normal OS behavior on Mac)
 - Camera picker uses the Mac camera
 
+### Run on iPhone without an Apple Developer account (AltStore)
+
+You can sideload SophaxChat on iPhone for free using [AltStore](https://altstore.io) — no Apple Developer account required.
+
+1. Install **AltStore** on your Mac and iPhone ([altstore.io](https://altstore.io))
+2. Clone + generate the Xcode project (steps above)
+3. In Xcode: `Product → Archive` (select **Any iOS Device** as destination)
+4. In the Organizer: **Distribute App → Save for Ad Hoc Deployment** → save the `.ipa`
+5. In AltStore on your Mac: drag-and-drop the `.ipa` onto your iPhone
+6. AltStore re-signs automatically every 7 days when AltServer is running on your Mac
+
+> **Free Apple ID limit:** you can have 3 sideloaded apps active at a time. AltStore itself counts as one.
+
 ### Verify the core library (no Xcode needed)
 
 ```sh
@@ -619,7 +632,7 @@ Do not open public issues for security bugs.
 - [x] Channel discovery (nearby groups broadcast)
 - [x] Tor global reach — `.onion` v3 from Ed25519 identity key
 - [x] Contact Card — QR + `sophaxchat://add` deep link
-- [x] Orbot auto-detection (SOCKS5 probe)
+- [x] Orbot SOCKS5 support (route TCP traffic through Tor proxy)
 - [x] Clipboard auto-clear (60s)
 - [x] Keyboard privacy (autocorrect disabled)
 - [x] Screen recording warning + screenshot toast

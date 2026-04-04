@@ -321,16 +321,18 @@ public final class TCPTransport: @unchecked Sendable {
         var frames: [Data] = []
         var oversized = false
         while buf.count >= 4 {
-            let length = buf.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-            guard length <= TCPTransport.maxFrameSize else {
+            let lengthU32 = buf.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+            // Explicit Int conversion after bounds check — safe on 64-bit (maxFrameSize = 4 MiB).
+            guard Int(lengthU32) <= TCPTransport.maxFrameSize else {
                 // Protocol violation: cancel the connection instead of silently dropping data.
                 buf.removeAll()
                 oversized = true
                 break
             }
-            guard buf.count >= 4 + Int(length) else { break }
-            frames.append(Data(buf[4..<(4 + Int(length))]))
-            buf = Data(buf[(4 + Int(length))...])
+            let length = Int(lengthU32)
+            guard buf.count >= 4 + length else { break }
+            frames.append(Data(buf[4..<(4 + length)]))
+            buf = Data(buf[(4 + length)...])
         }
         receiveBuffers[oid] = buf
         lock.unlock()

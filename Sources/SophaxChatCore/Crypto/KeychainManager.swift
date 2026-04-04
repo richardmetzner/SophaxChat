@@ -448,7 +448,14 @@ public final class KeychainManager {
               let hashData = try? load(account: Self.lockPINHashAccount) else { return false }
         var input = Data(salt)
         input.append(contentsOf: pin.utf8)
-        return Data(SHA256.hash(data: input)) == hashData
+        let computed = Data(SHA256.hash(data: input))
+        // Constant-time comparison to prevent timing side-channel on PIN brute-force.
+        guard computed.count == hashData.count else { return false }
+        return computed.withUnsafeBytes { cp in
+            hashData.withUnsafeBytes { hp in
+                timingsafe_bcmp(cp.baseAddress!, hp.baseAddress!, cp.count) == 0
+            }
+        }
     }
 
     public func clearRealLockPIN() throws {
@@ -492,7 +499,13 @@ public final class KeychainManager {
         var input = Data(salt)
         input.append(contentsOf: pin.utf8)
         let computed = Data(SHA256.hash(data: input))
-        return computed == hashData
+        // Constant-time comparison to prevent timing side-channel on PIN brute-force.
+        guard computed.count == hashData.count else { return false }
+        return computed.withUnsafeBytes { cp in
+            hashData.withUnsafeBytes { hp in
+                timingsafe_bcmp(cp.baseAddress!, hp.baseAddress!, cp.count) == 0
+            }
+        }
     }
 
     public func clearDuressPIN() throws {

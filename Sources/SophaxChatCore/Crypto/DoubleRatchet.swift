@@ -304,8 +304,9 @@ public final class DoubleRatchet: @unchecked Sendable {
     private func skipMessageKeys(until target: UInt32) throws {
         guard let ck = state.receivingChainKey?.key else { return }
 
-        let totalSkipped = Int(target) - Int(state.receiveMessageCount)
-        guard totalSkipped >= 0 else { return }
+        // Use UInt32 subtraction to avoid Int underflow on crafted messageNumber values.
+        guard target > state.receiveMessageCount else { return }
+        let totalSkipped = Int(target - state.receiveMessageCount)
 
         let totalStored = state.skippedKeyBundles.values.reduce(0) { $0 + $1.count }
         guard totalStored + totalSkipped <= CryptoConstants.maxSkippedMessages else {

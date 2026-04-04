@@ -1,6 +1,6 @@
 # Security Architecture & Review
 
-*Last reviewed: 2026-03-13. Reviewed against source code; not an independent external audit.*
+*Last reviewed: 2026-04-04. Reviewed against source code; not an independent external audit.*
 
 ---
 
@@ -204,6 +204,86 @@ Performance micro-issue; no security impact.
 - **Physical device seizure**: Bypasses all software-layer protections.
 - **Bluetooth range limitations**: Mesh is limited to ~100m (WiFi Direct) or ~30m (Bluetooth LE).
 - **No key recovery**: If a device is wiped or lost, all message history and identity keys are permanently gone. There is intentionally no backup or recovery mechanism.
+
+---
+
+## 2026-04 Internal Audit — Fixed Findings
+
+The following findings were identified and addressed during an internal review conducted ahead of a planned third-party audit. All HIGH findings are fixed.
+
+### HIGH — Fixed
+
+#### H1 · Integer underflow in Double Ratchet skip-key calculation
+**File:** `Sources/SophaxChatCore/Crypto/DoubleRatchet.swift`
+**Status:** ✅ Fixed
+
+A malicious peer could send a message with `messageNumber < receiveMessageCount`. The original signed-`Int` subtraction produced a negative `totalSkipped` value that bypassed the `maxSkippedMessages` guard, potentially triggering unbounded key derivation (memory exhaustion / DoS).
+
+**Fix:** Changed to UInt32 subtraction after an explicit `guard target > state.receiveMessageCount` check, making the arithmetic inherently non-negative.
+
+#### H2 · Timing side-channel in PIN verification
+**File:** `Sources/SophaxChatCore/Crypto/KeychainManager.swift`
+**Status:** ✅ Fixed
+
+Both `verifyRealLockPIN` and `verifyDuressPIN` used Swift's `Data ==` operator, which short-circuits on the first differing byte. An attacker with physical device access could brute-force a 4-digit PIN faster via timing analysis.
+
+**Fix:** Replaced with `timingsafe_bcmp` — the same constant-time comparison already used in `SerializableSymmetricKey` (CryptoTypes.swift).
+
+#### H3 · TCP frame size: UInt32 → Int conversion before bounds check
+**File:** `Sources/SophaxChatCore/Network/TCPTransport.swift`
+**Status:** ✅ Fixed
+
+The raw `UInt32` frame length was implicitly converted to `Int` before comparison against `maxFrameSize`, obscuring overflow risk and making the guard's safety property non-obvious.
+
+**Fix:** Added an explicit `guard Int(lengthU32) <= TCPTransport.maxFrameSize` check before using the value, then assigned to a named `length: Int` constant.
+
+---
+
+### MEDIUM — Fixed
+
+#### M1 · Prekey bundle replay window too wide (24 hours)
+**File:** `Sources/SophaxChatCore/Crypto/CryptoTypes.swift`
+**Status:** ✅ Fixed
+
+`maxPreKeyBundleAge` was 86 400 s (24 h), giving a passive adversary a full day to replay a captured bundle. Reduced to 3 600 s (1 h).
+
+#### M3 · No rate limiting for incoming typing / reaction messages
+**File:** `Sources/SophaxChatCore/ChatManager.swift`
+**Status:** ✅ Fixed
+
+`.typing` and `.reaction` wire messages were processed unconditionally, allowing a malicious peer to flood the UI thread.
+
+**Fix:** Added a per-peer token bucket (`TokenBucket` struct): `.typing` — 10 events / 10 s; `.reaction` — 20 events / 10 s. Excess messages are silently dropped before decoding.
+
+---
+
+### MEDIUM — Deferred
+
+#### M2 · DHConcat intermediates not explicitly zeroed
+**File:** `Sources/SophaxChatCore/Crypto/X3DH.swift`
+**Status:** ⚠️ Deferred
+
+CryptoKit's `SharedSecret` does not expose a public zeroing API. Deferred until CryptoKit provides a zeroing interface or a third-party auditor identifies a concrete exploitation path on iOS 17+.
+
+---
+
+### LOW — Fixed
+
+#### L2 · No length guard on Keychain account keys
+**File:** `Sources/SophaxChatCore/Crypto/KeychainManager.swift`
+**Status:** ✅ Fixed — `guard account.count <= 256` added before Keychain API calls.
+
+#### L3 · DoubleRatchet importState: no pre-check on JSON data size
+**File:** `Sources/SophaxChatCore/Crypto/DoubleRatchet.swift`
+**Status:** ✅ Fixed — `guard data.count < 100_000` added before `JSONDecoder` call.
+
+---
+
+### LOW — Deferred
+
+#### L1 · MessageStore filenames derived from raw peerID
+**File:** `Sources/SophaxChatCore/Storage/MessageStore.swift`
+**Status:** ⚠️ Deferred — changing the filename scheme (e.g. to SHA256(peerID)) would break existing installations without a migration path. Risk is low: the directory is under `FileProtectionType.complete` (encrypted at rest, inaccessible when device is locked). Will be addressed alongside a planned storage-layer migration.
 
 ---
 

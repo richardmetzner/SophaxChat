@@ -239,6 +239,40 @@ public final class ChatManager: @unchecked Sendable {
     private static let deadDropDedupeWindow: TimeInterval = 60   // seconds
     private var seenDeadDropIDs: [String: Date]       = [:]      // id → receivedAt
 
+    // MARK: - Per-peer rate limiter (typing + reaction)
+
+    /// Token bucket: allow up to `capacity` events per `windowSeconds`, refilled continuously.
+    private struct TokenBucket {
+        let capacity: Double
+        let windowSeconds: Double
+        var tokens: Double
+        var lastRefill: Date
+
+        init(capacity: Double, windowSeconds: Double) {
+            self.capacity = capacity
+            self.windowSeconds = windowSeconds
+            self.tokens = capacity
+            self.lastRefill = Date()
+        }
+
+        /// Returns true if the event is allowed; false if rate-limited.
+        mutating func consume() -> Bool {
+            let now = Date()
+            let elapsed = now.timeIntervalSince(lastRefill)
+            tokens = min(capacity, tokens + elapsed * (capacity / windowSeconds))
+            lastRefill = now
+            if tokens >= 1 {
+                tokens -= 1
+                return true
+            }
+            return false
+        }
+    }
+
+    /// Per-peer buckets for `.typing` (10 per 10 s) and `.reaction` (20 per 10 s).
+    private var typingRateLimiters:   [String: TokenBucket] = [:]
+    private var reactionRateLimiters: [String: TokenBucket] = [:]
+
     /// Fires every 60 seconds to purge messages whose expiresAt has passed.
     private var expiryTimer: Timer?
 
@@ -2776,8 +2810,13 @@ extension ChatManager: MeshManagerDelegate {
                 handleReadReceipt(payload, fromPeer: message.senderID)
 
             case .reaction:
+                let reactionSenderID = message.senderID
+                if reactionRateLimiters[reactionSenderID] == nil {
+                    reactionRateLimiters[reactionSenderID] = TokenBucket(capacity: 20, windowSeconds: 10)
+                }
+                guard reactionRateLimiters[reactionSenderID]!.consume() else { break }
                 let payload = try wireBuilder.decodePayload(ReactionMessage.self, from: message)
-                handleReaction(payload, fromPeer: message.senderID)
+                handleReaction(payload, fromPeer: reactionSenderID)
 
             case .editMessage:
                 let payload = try wireBuilder.decodePayload(EditMessagePayload.self, from: message)
@@ -2845,12 +2884,16 @@ extension ChatManager: MeshManagerDelegate {
                 try processRelayedInnerMessage(inner, hopCount: 0)
 
             case .typing:
+                let typingSenderID = message.senderID
+                if typingRateLimiters[typingSenderID] == nil {
+                    typingRateLimiters[typingSenderID] = TokenBucket(capacity: 10, windowSeconds: 10)
+                }
+                guard typingRateLimiters[typingSenderID]!.consume() else { break }
                 let payload = try wireBuilder.decodePayload(TypingMessage.self, from: message)
-                let senderID = message.senderID
                 let isTyping = payload.isTyping
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
-                    self.delegate?.chatManager(self, peerDidUpdateTyping: senderID, isTyping: isTyping)
+                    self.delegate?.chatManager(self, peerDidUpdateTyping: typingSenderID, isTyping: isTyping)
                 }
 
             case .deadDrop:

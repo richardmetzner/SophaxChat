@@ -124,9 +124,9 @@ public enum CryptoConstants {
     /// Prevents memory exhaustion attacks.
     public static let maxSkippedMessages: Int = 1000
 
-    /// Maximum prekey bundle age in seconds (24 hours).
-    /// Stale bundles are rejected to prevent replay attacks.
-    public static let maxPreKeyBundleAge: TimeInterval = 86400
+    /// Maximum prekey bundle age in seconds (1 hour).
+    /// Reduced from 24h to narrow the replay window for captured prekey bundles.
+    public static let maxPreKeyBundleAge: TimeInterval = 3600
 }
 
 // MARK: - Errors
