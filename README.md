@@ -653,6 +653,14 @@ Do not open public issues for security bugs.
 
 ---
 
+## Funding
+
+SophaxChat is applying for funding through [NLnet Foundation](https://nlnet.nl) / [NGI Zero Core](https://nlnet.nl/core/). NLnet supports open internet projects focused on privacy, security, and decentralization.
+
+If this project receives a grant, the funds will be used for: Apple Developer Program membership (required for TestFlight distribution) and an independent third-party security audit.
+
+---
+
 ## Contributing
 
 Pull requests are welcome. Before contributing:
