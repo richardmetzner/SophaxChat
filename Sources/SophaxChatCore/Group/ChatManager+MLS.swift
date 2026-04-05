@@ -588,12 +588,12 @@ extension ChatManager {
             do {
                 let mls       = try self.requireMLSManager()
                 let ciphertext = try await mls.encrypt(groupID: group.id, plaintext: payloadData)
-                let wire_msg  = MLSReactionMessage(
+                let wireMsg  = MLSReactionMessage(
                     groupID: group.id, messageID: messageID,
                     senderPeerID: myID, targetMessageID: targetID,
                     ciphertext: ciphertext, timestamp: Date()
                 )
-                guard let wire = try? self.wireBuilder.build(.mlsReaction, payload: wire_msg) else { return }
+                guard let wire = try? self.wireBuilder.build(.mlsReaction, payload: wireMsg) else { return }
                 for peerID in group.memberIDs where peerID != myID {
                     try? self.sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
                 }
