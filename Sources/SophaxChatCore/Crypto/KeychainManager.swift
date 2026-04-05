@@ -583,7 +583,11 @@ public final class KeychainManager {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: account
+            kSecAttrAccount: account,
+            // Forces the data-protection keychain on macOS Catalyst (no-op on iOS where
+            // data-protection is always used). Without this flag Mac builds fall back to
+            // the file-based keychain which has weaker at-rest encryption.
+            kSecUseDataProtectionKeychain: true
         ]
         if let accessGroup {
             query[kSecAttrAccessGroup] = accessGroup
