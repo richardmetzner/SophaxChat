@@ -1312,12 +1312,10 @@ final class AppState: ObservableObject {
     func confirmDeepLink() {
         guard let pending = pendingDeepLink else { return }
         pendingDeepLink = nil
-        // Store the address on the peer if we already know them, or remember it for later
+        // Store the address on the peer if we already know them
         if let idx = peers.firstIndex(where: { $0.id == pending.peerID }) {
             peers[idx].tcpAddress = pending.address
             savePeers()
-        } else {
-            UserDefaults.standard.set(pending.address, forKey: "com.sophax.pendingOnion.\(pending.peerID)")
         }
         // Attempt immediate TCP connect if TCP is enabled
         if tcpEnabled {
