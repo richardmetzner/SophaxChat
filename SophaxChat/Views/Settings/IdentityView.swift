@@ -189,6 +189,7 @@ struct IdentityView: View {
                                 do {
                                     let data = try appState.exportIdentity(passphrase: trimmed)
                                     exportedBlob = IdentityTransferable(data: data)
+                                    exportPassphrase = ""  // clear from SwiftUI state immediately
                                 } catch {
                                     exportError = error.localizedDescription
                                 }
