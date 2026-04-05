@@ -1056,9 +1056,9 @@ final class AppState: ObservableObject {
                     self.isAppLocked  = false
                     self.setupChatManager(username: nil)
                 } else {
-                    // Increment failure counter; apply exponential lockout after 6 failures
+                    // Increment failure counter; apply exponential lockout after 3 failures
                     self.failedUnlockAttempts += 1
-                    let delays: [TimeInterval] = [0, 0, 0, 0, 0, 0, 300, 900, 3600]
+                    let delays: [TimeInterval] = [0, 0, 0, 300, 900, 3600, 3600]
                     let delay = delays[min(self.failedUnlockAttempts, delays.count - 1)]
                     self.unlockLockedUntil = delay > 0 ? Date().addingTimeInterval(delay) : nil
                     self.keychain.saveUnlockAttempts(
@@ -1104,7 +1104,7 @@ final class AppState: ObservableObject {
         }
         // Wrong PIN — increment failure counter
         failedUnlockAttempts += 1
-        let delays: [TimeInterval] = [0, 0, 0, 0, 0, 0, 300, 900, 3600]
+        let delays: [TimeInterval] = [0, 0, 0, 300, 900, 3600, 3600]
         let delay = delays[min(failedUnlockAttempts, delays.count - 1)]
         unlockLockedUntil = delay > 0 ? Date().addingTimeInterval(delay) : nil
         keychain.saveUnlockAttempts(failedUnlockAttempts, lockedUntil: unlockLockedUntil)
