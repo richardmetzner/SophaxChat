@@ -406,6 +406,17 @@ extension ChatManager {
         return group
     }
 
+    // MARK: - Shared send-path helper
+
+    /// Mark a group message as failed and surface the error to the delegate.
+    private func failGroupMessage(_ error: Error, messageID: String, convID: String) {
+        try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: convID)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didEncounterError: error)
+        }
+    }
+
     /// Send a text message to an MLS group.
     public func sendMLSGroupMessage(
         _ body: String,
@@ -418,21 +429,13 @@ extension ChatManager {
         let messageID = UUID().uuidString
         let convID    = "group.\(group.id)"
 
-        func fail(_ error: Error) {
-            try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: convID)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.delegate?.chatManager(self, didEncounterError: error)
-            }
-        }
-
         // Store locally as .sending so the bubble appears immediately
         let stored = StoredMessage(
             id: messageID, peerID: convID,
             direction: .sent, body: body, status: .sending,
             replyToID: replyToID, expiresAt: expiresAt, senderID: myID
         )
-        do { try messageStore.append(message: stored) } catch { fail(error); return }
+        do { try messageStore.append(message: stored) } catch { failGroupMessage(error, messageID: messageID, convID: convID); return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didReceiveGroupMessage: stored, inGroup: group.id)
@@ -470,7 +473,7 @@ extension ChatManager {
                     try? self.sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
                 }
             } catch {
-                fail(error)
+                failGroupMessage(error, messageID: messageID, convID: convID)
             }
         }
     }
@@ -500,14 +503,6 @@ extension ChatManager {
             ? (msgType == "image" ? "📷 Photo" : "🎤 Voice message")
             : caption
 
-        func fail(_ error: Error) {
-            try? messageStore.updateStatus(.failed, forMessageID: messageID, peerID: convID)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.delegate?.chatManager(self, didEncounterError: error)
-            }
-        }
-
         // Save attachment locally for sender's own bubble
         try? attachmentStore.save(data, id: attachmentID)
 
@@ -518,7 +513,7 @@ extension ChatManager {
             attachmentID: attachmentID, attachmentMimeType: mimeType,
             audioDuration: audioDuration, senderID: myID
         )
-        do { try messageStore.append(message: stored) } catch { fail(error); return }
+        do { try messageStore.append(message: stored) } catch { failGroupMessage(error, messageID: messageID, convID: convID); return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didReceiveGroupMessage: stored, inGroup: group.id)
@@ -559,7 +554,7 @@ extension ChatManager {
                     try? self.sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
                 }
             } catch {
-                fail(error)
+                failGroupMessage(error, messageID: messageID, convID: convID)
             }
         }
     }
