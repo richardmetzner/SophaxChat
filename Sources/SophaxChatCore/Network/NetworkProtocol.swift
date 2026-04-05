@@ -27,7 +27,6 @@
 //     B processes the inner message
 
 import Foundation
-import CryptoKit
 
 // MARK: - Wire Message Envelope
 
