@@ -137,8 +137,9 @@ public final class IdentityExportManager: Sendable {
         // Read PBKDF2 iteration count from bytes 5–8 (big-endian UInt32)
         let iterBytes  = data[5..<9]
         let iterations = iterBytes.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-        // Reject suspiciously low iteration counts — protects against downgrade attacks
-        guard iterations >= 100_000 else { throw IdentityExportError.corruptFile }
+        // Reject iteration counts below the current export default — prevents a crafted
+        // backup from forcing a weaker KDF than the app itself would produce.
+        guard iterations >= 600_000 else { throw IdentityExportError.corruptFile }
 
         let salt     = data[9..<41]
         let combined = data[41...]
