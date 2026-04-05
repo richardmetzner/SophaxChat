@@ -115,7 +115,9 @@ public final class TCPTransport: @unchecked Sendable {
     private var listener: NWListener?
 
     private static let helloTimeout: TimeInterval = 10
-    private static let maxFrameSize: Int = 4 * 1024 * 1024  // 4 MiB safety cap
+    // 3 MiB: maxFileAttachmentBytes (2 MB) + generous overhead for JSON wrapper and headers.
+    // Keeping this tight limits the memory a slow peer can occupy while streaming a frame.
+    private static let maxFrameSize: Int = 3 * 1024 * 1024
     /// Idle timeout for established connections: if no complete frame arrives within this window
     /// the connection is dropped. Prevents a slow peer from holding a slot indefinitely by
     /// trickling bytes without completing a frame (memory exhaustion DoS).
