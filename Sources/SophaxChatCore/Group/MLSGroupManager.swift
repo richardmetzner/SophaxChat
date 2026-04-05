@@ -52,7 +52,7 @@ public actor MLSGroupManager {
     /// - Returns: `CreateGroupOutput` containing the coordinator's initial group state
     ///   and one `MemberWelcome` per invitee. Send each Welcome via DR unicast.
     public func createGroup(groupID: String, memberKeyPackages: [Data]) throws -> CreateGroupOutput {
-        let groupIdData = groupID.data(using: .utf8) ?? Data(groupID.utf8)
+        let groupIdData = groupIDData(groupID)
         let output = try mlsCreateGroup(client: client, groupId: groupIdData, memberKeyPackages: memberKeyPackages)
         try saveState(output.groupState, groupID: groupID)
         return output
@@ -67,7 +67,7 @@ public actor MLSGroupManager {
     ///   unicast to the new member.
     public func addMember(groupID: String, keyPackage: Data) throws -> CommitOutput {
         let state = try loadState(groupID: groupID)
-        let groupIdData = groupID.data(using: .utf8) ?? Data(groupID.utf8)
+        let groupIdData = groupIDData(groupID)
         let output = try mlsAddMember(client: client, groupId: groupIdData, groupState: state, keyPackageBytes: keyPackage)
         try saveState(output.newGroupState, groupID: groupID)
         return output
@@ -81,7 +81,7 @@ public actor MLSGroupManager {
     /// - Returns: `CommitOutput` with `commitBytes` to broadcast. `welcomeBytes` is always nil.
     public func removeMember(groupID: String, peerID: String) throws -> CommitOutput {
         let state = try loadState(groupID: groupID)
-        let groupIdData = groupID.data(using: .utf8) ?? Data(groupID.utf8)
+        let groupIdData = groupIDData(groupID)
         let output = try mlsRemoveMember(client: client, groupId: groupIdData, groupState: state, peerId: peerID)
         try saveState(output.newGroupState, groupID: groupID)
         return output
@@ -129,7 +129,7 @@ public actor MLSGroupManager {
     /// - Returns: `ProcessedCommit` containing added/removed peerIDs and the new epoch.
     public func processCommit(groupID: String, commitBytes: Data) throws -> ProcessedCommit {
         let state = try loadState(groupID: groupID)
-        let groupIdData = groupID.data(using: .utf8) ?? Data(groupID.utf8)
+        let groupIdData = groupIDData(groupID)
         let result = try mlsProcessCommit(client: client, groupId: groupIdData, groupState: state, commitBytes: commitBytes)
         try saveState(result.newGroupState, groupID: groupID)
         return result
@@ -145,7 +145,7 @@ public actor MLSGroupManager {
     /// - Returns: Opaque MLS ciphertext to broadcast as `MLSApplicationMessage.ciphertext`.
     public func encrypt(groupID: String, plaintext: Data) throws -> Data {
         let state = try loadState(groupID: groupID)
-        let groupIdData = groupID.data(using: .utf8) ?? Data(groupID.utf8)
+        let groupIdData = groupIDData(groupID)
         let output = try mlsEncrypt(client: client, groupId: groupIdData, groupState: state, plaintext: plaintext)
         try saveState(output.newGroupState, groupID: groupID)
         return output.ciphertext
@@ -159,7 +159,7 @@ public actor MLSGroupManager {
     /// - Returns: Decrypted plaintext bytes.
     public func decrypt(groupID: String, ciphertext: Data) throws -> Data {
         let state = try loadState(groupID: groupID)
-        let groupIdData = groupID.data(using: .utf8) ?? Data(groupID.utf8)
+        let groupIdData = groupIDData(groupID)
         let output = try mlsDecrypt(client: client, groupId: groupIdData, groupState: state, ciphertext: ciphertext)
         try saveState(output.newGroupState, groupID: groupID)
         return output.plaintext
@@ -188,5 +188,9 @@ public actor MLSGroupManager {
 
     private func saveState(_ state: Data, groupID: String) throws {
         try keychain.saveMlsGroupState(state, groupID: groupID)
+    }
+
+    private func groupIDData(_ id: String) -> Data {
+        id.data(using: .utf8) ?? Data(id.utf8)
     }
 }
