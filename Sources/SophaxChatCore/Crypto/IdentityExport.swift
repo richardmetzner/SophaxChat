@@ -17,7 +17,7 @@
 // File format (version 2):
 //   "SXID" (4B) | 0x02 (version, 1B) | iterations (4B big-endian UInt32) | salt (32B) | nonce+ciphertext+tag (AES-256-GCM)
 //
-// KDF: PBKDF2-HMAC-SHA256, 600 000 iterations stored in file (minimum 100 000 on import).
+// KDF: PBKDF2-HMAC-SHA256, 720 000 iterations stored in file (minimum 600 000 on import).
 // Minimum passphrase: 16 characters (enforced here and in UI).
 //
 // Security note:
@@ -60,7 +60,7 @@ public final class IdentityExportManager: Sendable {
 
     private static let magic:              [UInt8] = [0x53, 0x58, 0x49, 0x44]  // "SXID"
     private static let fileVersion:        UInt8   = 2
-    private static let pbkdf2Iterations            = 600_000
+    private static let pbkdf2Iterations            = 720_000
     private static let minPassphraseLength         = 16
 
     // MARK: - Export
