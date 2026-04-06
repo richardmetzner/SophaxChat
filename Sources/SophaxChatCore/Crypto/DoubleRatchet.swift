@@ -262,6 +262,11 @@ public final class DoubleRatchet: @unchecked Sendable {
     /// Advance the DH ratchet: rotate header keys, derive new receiving chain,
     /// generate new sending key pair, derive new sending chain.
     private func dhRatchetStep(with remoteRatchetPublicKeyData: Data) throws {
+        // Validate the remote key BEFORE mutating any state. A malicious sender could
+        // send an invalid key that causes this to throw — if state were already mutated
+        // (counters zeroed, header keys rotated) the session would be permanently broken.
+        let remoteKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: remoteRatchetPublicKeyData)
+
         state.previousSendingChainLength = state.sendMessageCount
         state.sendMessageCount           = 0
         state.receiveMessageCount        = 0
@@ -271,7 +276,6 @@ public final class DoubleRatchet: @unchecked Sendable {
         state.receivingHeaderKey = state.nextReceivingHeaderKey
 
         state.receivingRatchetPublicKey = remoteRatchetPublicKeyData
-        let remoteKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: remoteRatchetPublicKeyData)
         let currentSendingKey = try Curve25519.KeyAgreement.PrivateKey(
             rawRepresentation: state.sendingRatchetPrivateKey
         )
