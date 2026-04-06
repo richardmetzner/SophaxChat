@@ -222,7 +222,7 @@ public final class ChatManager: @unchecked Sendable {
     public var deviceLabel: String = "Device"
 
     /// Messages stored on behalf of offline peers (relay-store role).
-    private struct StoredForwardItem {
+    private struct StoredForwardItem: Codable {
         let targetPeerID: String
         let messageID:    String
         let sealed:       SealedMessage
@@ -232,6 +232,7 @@ public final class ChatManager: @unchecked Sendable {
     private static let maxStoredForwardItems    = 300
     private static let maxStoredForwardPerPeer  = 30    // prevents single-peer DoS
     private static let storeAndForwardTTL: TimeInterval = 48 * 60 * 60   // 48 hours
+    private let storedForwardFileName = "stored_forward_items"
 
     /// Dead drops stored at this node — re-broadcast when target peer appears.
     private var deadDrops: [DeadDropEnvelope] = []
@@ -347,6 +348,7 @@ public final class ChatManager: @unchecked Sendable {
         try? preKeys.rotateIfNeeded()
         scheduleExpiryTimer()
         loadPersistedQueue()
+        loadPersistedForwardItems()
         loadSkippedGroupKeyCache()
         loadLinkedDevices()
     }
@@ -360,6 +362,7 @@ public final class ChatManager: @unchecked Sendable {
         expiryTimer?.invalidate()
         expiryTimer = nil
         persistQueue()
+        persistForwardItems()
     }
 
     /// Permanently wipe all data — keys, messages, attachments.
@@ -563,7 +566,9 @@ public final class ChatManager: @unchecked Sendable {
     private func purgeExpiredMessages() {
         messageStore.deleteExpiredMessages()
         let now = Date()
+        let beforeCount = storedForwardItems.count
         storedForwardItems.removeAll { $0.expiresAt <= now }
+        if storedForwardItems.count != beforeCount { persistForwardItems() }
         deadDrops.removeAll { $0.expiresAt <= now }
         seenDeadDropIDs = seenDeadDropIDs.filter { now.timeIntervalSince($0.value) < Self.deadDropDedupeWindow }
     }
@@ -1941,6 +1946,7 @@ public final class ChatManager: @unchecked Sendable {
             sealed:       payload.sealed,
             expiresAt:    clampedExpiry
         ))
+        persistForwardItems()
     }
 
     /// We received stored messages from a relay peer (we are the target).
@@ -1969,6 +1975,7 @@ public final class ChatManager: @unchecked Sendable {
             try? mesh.send(wire, toPeerID: peerID)
         }
         storedForwardItems.removeAll { $0.targetPeerID == peerID }
+        persistForwardItems()
     }
 
     // MARK: - Dead Drop
@@ -2636,6 +2643,17 @@ public final class ChatManager: @unchecked Sendable {
         pendingQueue = decoded.mapValues { items in
             items.map { (wire: $0.wire, messageID: $0.messageID) }
         }
+    }
+
+    private func persistForwardItems() {
+        guard let data = try? JSONEncoder().encode(storedForwardItems) else { return }
+        try? messageStore.saveEncryptedBlob(data, fileName: storedForwardFileName)
+    }
+
+    private func loadPersistedForwardItems() {
+        guard let data = messageStore.loadEncryptedBlob(fileName: storedForwardFileName),
+              let decoded = try? JSONDecoder().decode([StoredForwardItem].self, from: data) else { return }
+        storedForwardItems = decoded.filter { $0.expiresAt > Date() }
     }
 
     /// Load persisted skipped-message-key cache from Keychain into memory.
