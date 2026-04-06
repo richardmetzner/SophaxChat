@@ -1127,6 +1127,27 @@ public final class ChatManager: @unchecked Sendable {
         try? messageStore.deleteConversation(peerID: group.conversationID)
     }
 
+    /// Remove a group from the local device only — no wire message sent.
+    /// Identical crypto cleanup to `leaveGroup()` but silent: other members are
+    /// not notified and continue to list this peer as a group member.
+    public func deleteGroupLocally(_ group: GroupInfo) {
+        joinedGroups.removeValue(forKey: group.id)
+        groupCreators.removeValue(forKey: group.id)
+        groupCoordinators.removeValue(forKey: group.id)
+        keychain.deleteGroupKey(groupID: group.id)
+        keychain.deleteAllSenderKeyStates(groupID: group.id)
+        if group.cryptoVersion == .mls {
+            Task { try? await self.mlsManager?.deleteGroupState(groupID: group.id) }
+        }
+        let prefix = group.id + "/"
+        skippedGroupMessageKeys.keys.filter { $0.hasPrefix(prefix) }.forEach {
+            skippedGroupMessageKeys.removeValue(forKey: $0)
+            skippedGroupMessageKeyDates.removeValue(forKey: $0)
+        }
+        persistSkippedGroupKeyCache()
+        try? messageStore.deleteConversation(peerID: group.conversationID)
+    }
+
     /// Transfer MLS commit coordinator authority to another group member.
     /// Only the current coordinator may call this. Broadcasts to all members so they
     /// update their local `groupCoordinators` record.

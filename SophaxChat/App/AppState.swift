@@ -428,6 +428,14 @@ final class AppState: ObservableObject {
         unreadCounts.removeValue(forKey: group.conversationID)
     }
 
+    func deleteGroupLocally(_ group: GroupInfo) {
+        chatManager?.deleteGroupLocally(group)
+        groups.removeAll { $0.id == group.id }
+        saveGroups()
+        messages.removeValue(forKey: group.conversationID)
+        unreadCounts.removeValue(forKey: group.conversationID)
+    }
+
     func handoffGroupCoordinator(_ group: GroupInfo, to newCoordinatorID: String) {
         chatManager?.handoffCoordinator(group: group, newCoordinatorID: newCoordinatorID)
     }

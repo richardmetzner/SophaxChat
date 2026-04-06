@@ -44,9 +44,10 @@ struct GroupChatView: View {
 
     // UI state
     @State private var showingMemberList    = false
-    @State private var showingLeaveConfirm  = false
-    @State private var showingRotateConfirm = false
-    @State private var showingDeleteConfirm = false
+    @State private var showingLeaveConfirm        = false
+    @State private var showingRotateConfirm       = false
+    @State private var showingDeleteConfirm       = false
+    @State private var showingDeleteLocallyConfirm = false
     @State private var showingMigrationAlert   = false
     @State private var migrationAlertMessage   = ""
 
@@ -92,6 +93,18 @@ struct GroupChatView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("You will no longer receive messages from this group. This cannot be undone.")
+            }
+            .confirmationDialog(
+                "Delete \"\(group.name)\" from your device?",
+                isPresented: $showingDeleteLocallyConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete from My Device", role: .destructive) {
+                    appState.deleteGroupLocally(group); dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Messages will be deleted from your device only. Other members will not be notified.")
             }
             .confirmationDialog(
                 "Delete \"\(group.name)\" for everyone?",
@@ -305,6 +318,10 @@ struct GroupChatView: View {
             if group.creatorID == appState.chatManager?.identity.publicIdentity.peerID {
                 Button(role: .destructive) { showingDeleteConfirm = true } label: {
                     Label("Delete Group", systemImage: "trash")
+                }
+            } else {
+                Button(role: .destructive) { showingDeleteLocallyConfirm = true } label: {
+                    Label("Delete from My Device", systemImage: "trash")
                 }
             }
         } label: {

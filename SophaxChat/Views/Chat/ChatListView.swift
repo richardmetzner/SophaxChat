@@ -15,8 +15,9 @@ struct ChatListView: View {
     @State private var showingCreateGroup = false
     @State private var showingScanner     = false
     @State private var peerToBlock: KnownPeer? = nil
-    @State private var groupToLeave:  GroupInfo? = nil
-    @State private var groupToDelete: GroupInfo? = nil
+    @State private var groupToLeave:        GroupInfo? = nil
+    @State private var groupToDelete:       GroupInfo? = nil
+    @State private var groupToDeleteLocally: GroupInfo? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
     @State private var keyChangePeerID: String? = nil
     @State private var showingAddByLink  = false
@@ -189,6 +190,12 @@ struct ChatListView: View {
                             if group.creatorID == appState.chatManager?.identity.publicIdentity.peerID {
                                 Button(role: .destructive) {
                                     groupToDelete = group
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            } else {
+                                Button(role: .destructive) {
+                                    groupToDeleteLocally = group
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -416,6 +423,19 @@ struct ChatListView: View {
             Button("Cancel", role: .cancel) { groupToDelete = nil }
         } message: {
             Text("All members will lose access to this group immediately. This cannot be undone.")
+        }
+        .confirmationDialog(
+            "Delete \"\(groupToDeleteLocally?.name ?? "")\"?",
+            isPresented: Binding(get: { groupToDeleteLocally != nil }, set: { if !$0 { groupToDeleteLocally = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete from My Device", role: .destructive) {
+                if let g = groupToDeleteLocally { appState.deleteGroupLocally(g) }
+                groupToDeleteLocally = nil
+            }
+            Button("Cancel", role: .cancel) { groupToDeleteLocally = nil }
+        } message: {
+            Text("Messages will be deleted from your device only. Other members will not be notified.")
         }
     }
 
