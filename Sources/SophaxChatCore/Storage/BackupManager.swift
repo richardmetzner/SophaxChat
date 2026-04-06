@@ -117,6 +117,7 @@ public final class BackupManager: Sendable {
         let fileMagic = [UInt8](data[0..<4])
         guard fileMagic == magic else { throw BackupError.corruptFile }
         // version byte at index 4 — reserved for future migration
+        guard data[4] == fileVersion else { throw BackupError.corruptFile }
         let salt     = data[5..<37]
         let combined = data[37...]
 
@@ -143,8 +144,10 @@ public final class BackupManager: Sendable {
     /// PBKDF2-HMAC-SHA256 with 720 000 iterations.
     /// Replaces HKDF (single round, no brute-force resistance) — makes GPU attacks ~600 000× slower.
     private static func deriveKey(passphrase: String, salt: Data) throws -> SymmetricKey {
-        let passData   = Data(passphrase.utf8)
-        var derived    = Data(repeating: 0, count: 32)
+        var passData = Data(passphrase.utf8)
+        defer { passData.resetBytes(in: 0..<passData.count) }
+        var derived = Data(repeating: 0, count: 32)
+        defer { derived.resetBytes(in: 0..<derived.count) }
 
         let status = derived.withUnsafeMutableBytes { derivedPtr in
             salt.withUnsafeBytes { saltPtr in
