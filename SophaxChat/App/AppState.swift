@@ -15,6 +15,15 @@ import ReplayKit
 import UniformTypeIdentifiers
 import SophaxChatCore
 
+/// Notification payload shown to the user when a contact sends an SSS share to hold.
+struct SSSShareNotification: Identifiable {
+    let id = UUID()
+    let shareID: String
+    let fromPeerID: String
+    let threshold: Int
+    let total: Int
+}
+
 @MainActor
 final class AppState: ObservableObject {
 
@@ -63,6 +72,12 @@ final class AppState: ObservableObject {
     @Published var isUnlocking: Bool = false
     /// Non-nil when unlock is rate-limited after too many failures. UI shows a countdown.
     @Published var unlockLockedUntil: Date? = nil
+
+    /// Non-nil when a contact sent us an SSS share request to hold. UI should prompt accept/reject.
+    @Published var pendingSSSShareRequest: SSSShareNotification? = nil
+    /// Non-nil after a successful SSS recovery — 64 raw bytes (Ed25519 || X25519).
+    /// Caller MUST zero this after use.
+    @Published var sssRecoveredSecret: Data? = nil
 
     private var failedUnlockAttempts: Int = 0
 
@@ -1886,5 +1901,21 @@ extension AppState: @preconcurrency ChatManagerDelegate {
             body: "\(peer.username) wants to connect",
             threadKey: "requests"
         )
+    }
+
+    // MARK: - SSS Backup Delegate
+
+    func chatManager(_ manager: ChatManager, didReceiveSSSShare shareID: String,
+                     fromPeerID: String, threshold: Int, total: Int) {
+        // Surface to UI — future: show accept/reject sheet
+        pendingSSSShareRequest = SSSShareNotification(
+            shareID: shareID, fromPeerID: fromPeerID, threshold: threshold, total: total
+        )
+    }
+
+    func chatManager(_ manager: ChatManager, didRecoverSSSSecret secret: Data, shareID: String) {
+        var s = secret
+        defer { s.resetBytes(in: s.startIndex..<s.endIndex) }
+        sssRecoveredSecret = s
     }
 }

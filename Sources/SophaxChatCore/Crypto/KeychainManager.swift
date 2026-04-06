@@ -405,6 +405,51 @@ public final class KeychainManager {
         try delete(account: "mls.state.\(groupID)")
     }
 
+    // MARK: - SSS Backup (Shamir's Secret Sharing)
+
+    /// Store a plaintext SSS share received from a backup creator (holder role).
+    /// Appends to the list of all held shares; safe to call for multiple creators.
+    public func saveSSSShare(_ share: SSSShare) {
+        var shares = loadSSSShares()
+        shares.removeAll { $0.id == share.id }   // replace if re-sent
+        shares.append(share)
+        guard let data = try? JSONEncoder().encode(shares) else { return }
+        try? save(data: data, account: "sss.shares")
+    }
+
+    /// All SSS shares currently held for other users' backup recovery.
+    public func loadSSSShares() -> [SSSShare] {
+        guard let data = try? load(account: "sss.shares"),
+              let shares = try? JSONDecoder().decode([SSSShare].self, from: data) else { return [] }
+        return shares
+    }
+
+    /// Remove a specific share after the creator has confirmed recovery is complete.
+    public func deleteSSSShare(shareID: String) {
+        var shares = loadSSSShares()
+        shares.removeAll { $0.id == shareID }
+        guard let data = try? JSONEncoder().encode(shares) else { return }
+        try? save(data: data, account: "sss.shares")
+    }
+
+    /// Store the creator's backup manifest (which contacts hold which shares).
+    public func saveSSSBackupManifest(_ manifest: SSSBackupManifest) {
+        guard let data = try? JSONEncoder().encode(manifest) else { return }
+        try? save(data: data, account: "sss.manifest")
+    }
+
+    public func loadSSSBackupManifest() -> SSSBackupManifest? {
+        guard let data = try? load(account: "sss.manifest"),
+              let manifest = try? JSONDecoder().decode(SSSBackupManifest.self, from: data) else { return nil }
+        return manifest
+    }
+
+    /// Delete all SSS data — called by wipeAllData().
+    public func deleteAllSSSData() {
+        try? delete(account: "sss.shares")
+        try? delete(account: "sss.manifest")
+    }
+
     // MARK: - Key Transparency Log MAC Key
 
     /// Load or create a stable 256-bit HMAC key used to authenticate the key transparency log.

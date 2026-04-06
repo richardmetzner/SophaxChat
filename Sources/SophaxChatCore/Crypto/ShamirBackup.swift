@@ -43,6 +43,18 @@ public struct SSSShare: Codable, Sendable {
     public let createdAt: Date
 }
 
+/// Creator's record of which trusted contacts hold which shares.
+/// Stored in Keychain so the creator knows who to request recovery from.
+public struct SSSBackupManifest: Codable, Sendable {
+    /// UUID identifying the backup instance (matches `SSSShare.id`).
+    public let shareID: String
+    /// Minimum shares required for recovery.
+    public let threshold: Int
+    /// PeerIDs of share holders, in index order: holderPeerIDs[i] holds share index i+1.
+    public let holderPeerIDs: [String]
+    public let createdAt: Date
+}
+
 public enum ShamirBackupError: Error, LocalizedError {
     case invalidParameters(String)
     case notEnoughShares

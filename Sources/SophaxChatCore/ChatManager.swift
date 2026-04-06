@@ -128,6 +128,12 @@ public protocol ChatManagerDelegate: AnyObject {
     func chatManager(_ manager: ChatManager, didLinkDevice peer: KnownPeer)
     /// A linked device forwarded a message copy. Delegate should store and display it.
     func chatManager(_ manager: ChatManager, didReceiveSyncedMessage message: StoredMessage, conversationID: String)
+    /// A contact sent us one of their SSS backup shares to hold. UI should confirm acceptance.
+    func chatManager(_ manager: ChatManager, didReceiveSSSShare shareID: String,
+                     fromPeerID: String, threshold: Int, total: Int)
+    /// SSS recovery succeeded — `secret` is 64 bytes (Ed25519 || X25519 private keys).
+    /// Caller is responsible for zeroing `secret` after use.
+    func chatManager(_ manager: ChatManager, didRecoverSSSSecret secret: Data, shareID: String)
 }
 
 // MARK: - ChatManager
@@ -239,6 +245,12 @@ public final class ChatManager: @unchecked Sendable {
     private static let maxDeadDrops: Int              = 100
     private static let deadDropDedupeWindow: TimeInterval = 60   // seconds
     private var seenDeadDropIDs: [String: Date]       = [:]      // id → receivedAt
+
+    // MARK: - SSS recovery accumulator
+
+    /// Shares collected during an active recovery session: shareID → [SSSShare].
+    /// When count ≥ threshold the secret is reconstructed.
+    private var pendingRecoveryShares: [String: [SSSShare]] = [:]
 
     // MARK: - Per-peer rate limiter (typing + reaction)
 
@@ -370,6 +382,7 @@ public final class ChatManager: @unchecked Sendable {
     public func wipeAllData() throws {
         stop()
         try keychain.wipeAll()
+        keychain.deleteAllSSSData()
         try messageStore.wipeAll()
         try attachmentStore.wipeAll()
         // KeyTransparencyLog is stored in UserDefaults — cleared by the caller (AppState)
@@ -1151,6 +1164,127 @@ public final class ChatManager: @unchecked Sendable {
         }
         persistSkippedGroupKeyCache()
         try? messageStore.deleteConversation(peerID: group.conversationID)
+    }
+
+    // MARK: - SSS Backup — public API
+
+    /// Split the local identity secret into N Shamir shares and send one ECDH-encrypted
+    /// share to each peer in `holderPeerIDs`. Stores a manifest in Keychain so the
+    /// creator can later initiate recovery by contacting the right peers.
+    ///
+    /// - Parameters:
+    ///   - holderPeerIDs: PeerIDs of trusted contacts who will each hold one share.
+    ///   - threshold:     Minimum shares needed to recover. Must be ≥ 2 and ≤ holderPeerIDs.count.
+    public func distributeSSSBackup(holderPeerIDs: [String], threshold: Int) throws {
+        let myID = identity.publicIdentity.peerID
+        // Build 64-byte secret: Ed25519 || X25519 private keys
+        var secret = try identity.signingPrivateKeyData() + identity.dhPrivateKeyData()
+        defer { secret.resetBytes(in: secret.startIndex..<secret.endIndex) }
+
+        let shares = try ShamirBackup.split(secret: secret, m: threshold, n: holderPeerIDs.count)
+        let shareID = shares[0].id
+
+        for (idx, holderID) in holderPeerIDs.enumerated() {
+            guard let bundle = peerBundles[holderID] else { continue }
+            let share = shares[idx]
+            let (ephKey, ciphertext) = try ShamirBackup.encryptShare(
+                share,
+                recipientDHPublicKey: bundle.dhIdentityKeyPublic
+            )
+            let msg = SSSShareDeliveryMessage(
+                shareID:           shareID,
+                ephemeralPublicKey: ephKey,
+                encryptedShare:    ciphertext,
+                senderPeerID:      myID,
+                threshold:         UInt8(threshold),
+                total:             UInt8(holderPeerIDs.count)
+            )
+            if let wire = try? wireBuilder.build(.sssShareDelivery, payload: msg) {
+                try? sendOrQueue(wire, toPeerID: holderID, messageID: UUID().uuidString)
+            }
+        }
+
+        let manifest = SSSBackupManifest(
+            shareID:       shareID,
+            threshold:     threshold,
+            holderPeerIDs: holderPeerIDs,
+            createdAt:     Date()
+        )
+        keychain.saveSSSBackupManifest(manifest)
+    }
+
+    /// Initiate recovery by requesting shares from all known holders in the manifest.
+    /// Collected shares are accumulated in `pendingRecoveryShares`; once M are received
+    /// the delegate is called with the reconstructed secret.
+    public func initiateSSSRecovery() {
+        guard let manifest = keychain.loadSSSBackupManifest() else { return }
+        pendingRecoveryShares[manifest.shareID] = []
+        let myDHPublicKey = identity.publicIdentity.dhKeyPublic
+        let req = SSSShareRequestMessage(
+            shareID:              manifest.shareID,
+            requesterDHPublicKey: myDHPublicKey
+        )
+        guard let wire = try? wireBuilder.build(.sssShareRequest, payload: req) else { return }
+        for holderID in manifest.holderPeerIDs {
+            try? sendOrQueue(wire, toPeerID: holderID, messageID: UUID().uuidString)
+        }
+    }
+
+    // MARK: - SSS Backup — private handlers
+
+    private func handleSSSShareDelivery(_ payload: SSSShareDeliveryMessage) {
+        guard let dhPrivKey = try? keychain.loadDHIdentityKey() else { return }
+        guard let share = try? ShamirBackup.decryptShare(
+            ephPublicKey:   payload.ephemeralPublicKey,
+            ciphertext:     payload.encryptedShare,
+            myDHPrivateKey: dhPrivKey
+        ) else { return }
+        keychain.saveSSSShare(share)
+        delegate?.chatManager(self, didReceiveSSSShare: payload.shareID,
+                              fromPeerID: payload.senderPeerID,
+                              threshold: Int(payload.threshold),
+                              total: Int(payload.total))
+    }
+
+    private func handleSSSShareRequest(_ payload: SSSShareRequestMessage, requesterPeerID: String) {
+        let allShares = keychain.loadSSSShares()
+        guard let share = allShares.first(where: { $0.id == payload.shareID }) else { return }
+        guard let (ephKey, ciphertext) = try? ShamirBackup.encryptShare(
+            share,
+            recipientDHPublicKey: payload.requesterDHPublicKey
+        ) else { return }
+        let resp = SSSShareResponseMessage(
+            shareID:           payload.shareID,
+            ephemeralPublicKey: ephKey,
+            encryptedShare:    ciphertext
+        )
+        if let wire = try? wireBuilder.build(.sssShareResponse, payload: resp) {
+            try? sendOrQueue(wire, toPeerID: requesterPeerID, messageID: UUID().uuidString)
+        }
+    }
+
+    private func handleSSSShareResponse(_ payload: SSSShareResponseMessage) {
+        guard let dhPrivKey = try? keychain.loadDHIdentityKey() else { return }
+        guard let share = try? ShamirBackup.decryptShare(
+            ephPublicKey:   payload.ephemeralPublicKey,
+            ciphertext:     payload.encryptedShare,
+            myDHPrivateKey: dhPrivKey
+        ) else { return }
+
+        var collected = pendingRecoveryShares[payload.shareID, default: []]
+        guard !collected.contains(where: { $0.index == share.index }) else { return }
+        collected.append(share)
+        pendingRecoveryShares[payload.shareID] = collected
+
+        let threshold = Int(share.threshold)
+        guard collected.count >= threshold else { return }
+
+        // Attempt reconstruction
+        guard var secret = try? ShamirBackup.reconstruct(shares: collected) else { return }
+        defer { secret.resetBytes(in: secret.startIndex..<secret.endIndex) }
+
+        pendingRecoveryShares.removeValue(forKey: payload.shareID)
+        delegate?.chatManager(self, didRecoverSSSSecret: secret, shareID: payload.shareID)
     }
 
     /// Transfer MLS commit coordinator authority to another group member.
@@ -2536,6 +2670,21 @@ public final class ChatManager: @unchecked Sendable {
             if let payload = try? wireBuilder.decodePayload(DeviceSyncMessage.self, from: message) {
                 handleDeviceSyncMessage(payload, fromPeer: message.senderID)
             }
+
+        case .sssShareDelivery:
+            if let payload = try? wireBuilder.decodePayload(SSSShareDeliveryMessage.self, from: message) {
+                handleSSSShareDelivery(payload)
+            }
+
+        case .sssShareRequest:
+            if let payload = try? wireBuilder.decodePayload(SSSShareRequestMessage.self, from: message) {
+                handleSSSShareRequest(payload, requesterPeerID: message.senderID)
+            }
+
+        case .sssShareResponse:
+            if let payload = try? wireBuilder.decodePayload(SSSShareResponseMessage.self, from: message) {
+                handleSSSShareResponse(payload)
+            }
         }
     }
 
@@ -2950,6 +3099,21 @@ extension ChatManager: MeshManagerDelegate {
             case .deviceSyncMessage:
                 if let payload = try? wireBuilder.decodePayload(DeviceSyncMessage.self, from: message) {
                     handleDeviceSyncMessage(payload, fromPeer: message.senderID)
+                }
+
+            case .sssShareDelivery:
+                if let payload = try? wireBuilder.decodePayload(SSSShareDeliveryMessage.self, from: message) {
+                    handleSSSShareDelivery(payload)
+                }
+
+            case .sssShareRequest:
+                if let payload = try? wireBuilder.decodePayload(SSSShareRequestMessage.self, from: message) {
+                    handleSSSShareRequest(payload, requesterPeerID: message.senderID)
+                }
+
+            case .sssShareResponse:
+                if let payload = try? wireBuilder.decodePayload(SSSShareResponseMessage.self, from: message) {
+                    handleSSSShareResponse(payload)
                 }
             }
         } catch SophaxError.sessionStateCorrupted {

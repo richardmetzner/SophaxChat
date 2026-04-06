@@ -144,6 +144,16 @@ public enum WireMessageType: String, Codable, Sendable {
     case deviceLinkRequest
     /// Forwarded copy of a message from the primary device to a linked device.
     case deviceSyncMessage
+
+    // MARK: Shamir Secret Sharing backup
+
+    /// Creator distributes one ECDH-encrypted SSS share to a trusted contact.
+    /// DR-encrypted unicast so relay nodes cannot read share index or ciphertext.
+    case sssShareDelivery
+    /// Recovery: requester asks a contact to return their stored share.
+    case sssShareRequest
+    /// Contact responds with the stored share re-encrypted for the requester.
+    case sssShareResponse
 }
 
 // MARK: - MLS Wire Messages
@@ -1059,4 +1069,43 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         avatarData          = try c.decodeIfPresent(Data.self,   forKey: .avatarData)
         trustLevel          = try c.decodeIfPresent(PeerTrustLevel.self, forKey: .trustLevel) ?? .accepted
     }
+}
+
+// MARK: - SSS Backup Wire Messages
+
+/// Creator → trusted contact: one ECDH-encrypted SSS share.
+/// Sent via DR-encrypted unicast so only the intended holder can read it.
+public struct SSSShareDeliveryMessage: Codable, Sendable {
+    /// UUID identifying the backup instance — links all N shares together.
+    public let shareID: String
+    /// Ephemeral X25519 public key used for ECDH-encryption of this share.
+    public let ephemeralPublicKey: Data
+    /// ChaChaPoly ciphertext of the JSON-encoded SSSShare.
+    public let encryptedShare: Data
+    /// peerID of the creator — lets holder verify on response.
+    public let senderPeerID: String
+    /// Informational: minimum shares required (M).
+    public let threshold: UInt8
+    /// Informational: total shares created (N).
+    public let total: UInt8
+}
+
+/// Recovery requester → holder: ask to return a stored share.
+/// Sent via DR-encrypted unicast. Includes requester's current DH public key
+/// so the holder can re-encrypt the share for the requester.
+public struct SSSShareRequestMessage: Codable, Sendable {
+    /// ID of the backup instance to recover.
+    public let shareID: String
+    /// Requester's X25519 DH public key (32B) for response encryption.
+    public let requesterDHPublicKey: Data
+}
+
+/// Holder → requester: the stored share, re-encrypted for the requester.
+public struct SSSShareResponseMessage: Codable, Sendable {
+    /// Must match the shareID from the corresponding SSSShareRequestMessage.
+    public let shareID: String
+    /// Ephemeral public key used to ECDH-encrypt the share for the requester.
+    public let ephemeralPublicKey: Data
+    /// ChaChaPoly ciphertext of the JSON-encoded SSSShare.
+    public let encryptedShare: Data
 }
