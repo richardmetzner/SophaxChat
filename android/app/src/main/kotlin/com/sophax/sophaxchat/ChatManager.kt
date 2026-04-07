@@ -539,6 +539,10 @@ class ChatManager(
             WireMessageType.typing.name            -> handleTyping(message)
             WireMessageType.reaction.name          -> handleReaction(message)
             WireMessageType.groupReaction.name     -> handleGroupReaction(message)
+            WireMessageType.senderKeyRequest.name  -> handleSenderKeyRequest(message)
+            // readReceipt, groupReadReceipt, editMessage, groupEditMessage,
+            // deadDrop, storeAndForward, storeAndForwardDelivery, channelAnnouncement
+            // are accepted but not yet acted upon — prevents unknown-type drops.
         }
     }
 
@@ -745,12 +749,43 @@ class ChatManager(
             // Destined for us — process inner message
             handleIncomingWireMessage(envelope.message, fromTransportID, isTCP)
         } else {
-            // Forward
+            // Forward: prefer Nearby (GMS), fall back to TCP broadcast (non-GMS / mDNS peers)
             val forwarded = envelope.forwarded()
             val forwardedWire = builder().build(WireMessageType.relay.name, forwarded)
-            val fromEndpoint = if (isTCP) null else fromTransportID
-            nearby.broadcast(forwardedWire, excluding = fromEndpoint)
+            if (nearby != null) {
+                val fromEndpoint = if (isTCP) null else fromTransportID
+                nearby.broadcast(forwardedWire, excluding = fromEndpoint)
+            } else {
+                // Non-GMS path: relay over TCP connections (Wi-Fi Direct / mDNS)
+                tcp.broadcast(forwardedWire, excluding = if (isTCP) fromTransportID else null)
+            }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Sender key request — re-distribute our current sender key for a group
+    // -----------------------------------------------------------------------
+
+    private fun handleSenderKeyRequest(message: WireMessage) {
+        val req = try { json.decodeFromString<SenderKeyRequestMessage>(String(message.payload)) }
+                  catch (e: Exception) { return }
+        val myID = identity.publicIdentity.peerID
+        // Only respond if the request targets us
+        if (req.targetPeerID != myID) return
+        val group = groups[req.groupID] ?: return
+        val state = loadSenderKey(req.groupID, myID) ?: return
+
+        val invite = GroupInvitePayload(
+            groupID = group.id,
+            groupName = group.name,
+            memberIDs = group.memberIDs,
+            creatorID = group.creatorID,
+            senderChainKey = state.chainKey,
+            senderIteration = state.iteration
+        )
+        val wire = buildOutboundGroupInvite(message.senderID, json.encodeToString(invite).toByteArray())
+            ?: return
+        sendOrRoute(wire, message.senderID)
     }
 
     // -----------------------------------------------------------------------
