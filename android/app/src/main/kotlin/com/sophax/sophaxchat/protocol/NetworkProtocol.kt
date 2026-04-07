@@ -63,7 +63,12 @@ enum class WireMessageType {
     hello, initiateSession, message, ack, relay, typing,
     sealed, readReceipt, reaction,
     groupMessage, groupReaction, groupMemberLeft, groupDeleted, groupReadReceipt,
-    storeAndForward, storeAndForwardDelivery, channelAnnouncement
+    storeAndForward, storeAndForwardDelivery, channelAnnouncement,
+    // Added to match iOS wire protocol:
+    deadDrop,          // sealed mesh flood for offline recipient
+    editMessage,       // author edits a 1:1 message in-place
+    groupEditMessage,  // author edits a group message, fanned out to members
+    senderKeyRequest   // request peer to re-send their SenderKeyDistributionMessage
 }
 
 @Serializable
@@ -282,6 +287,57 @@ data class ChannelAnnouncement(
     val creatorID: String,
     val memberCount: Int,
     val timestamp: SerDate
+)
+
+// ---------------------------------------------------------------------------
+// Sender key request (matches iOS SenderKeyRequestMessage)
+// ---------------------------------------------------------------------------
+
+/** Sent to a group member whose sender key is missing or stale.
+ *  The recipient responds by re-sending their current SenderKeyDistributionMessage. */
+@Serializable
+data class SenderKeyRequestMessage(
+    val groupID: String,
+    val targetPeerID: String
+)
+
+// ---------------------------------------------------------------------------
+// Edit message (matches iOS EditMessagePayload)
+// ---------------------------------------------------------------------------
+
+/** Sent when the author edits a previously-sent 1:1 message. DR-encrypted. */
+@Serializable
+data class EditMessagePayload(
+    val messageID: String,
+    val newBody: String,
+    val editedAt: SerDate
+)
+
+// ---------------------------------------------------------------------------
+// Group edit message (matches iOS GroupEditMessagePayload)
+// ---------------------------------------------------------------------------
+
+/** Fanned out to all group members when the original author edits a message. */
+@Serializable
+data class GroupEditMessagePayload(
+    val groupID: String,
+    val messageID: String,
+    val newBody: String,
+    val editedAt: SerDate
+)
+
+// ---------------------------------------------------------------------------
+// Dead drop (matches iOS DeadDropEnvelope)
+// ---------------------------------------------------------------------------
+
+/** Sealed message flooded over the mesh for an offline recipient.
+ *  Relay nodes see only targetPeerID and expiresAt; content is sealed. */
+@Serializable
+data class DeadDropEnvelope(
+    val id: String,
+    val targetPeerID: String,
+    val sealed: SealedMessage,
+    val expiresAt: SerDate
 )
 
 // ---------------------------------------------------------------------------
