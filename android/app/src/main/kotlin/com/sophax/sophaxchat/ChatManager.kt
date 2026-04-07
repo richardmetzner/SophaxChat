@@ -83,6 +83,101 @@ class ChatManager(
     // Known peer identities (verified)
     private val knownPeers   = ConcurrentHashMap<String, KnownPeer>()
 
+    // -----------------------------------------------------------------------
+    // Linked devices — peerIDs of other devices belonging to the same user.
+    // Persisted in EncryptedSharedPreferences as a JSON string list.
+    // -----------------------------------------------------------------------
+    val linkedDeviceIDs = ConcurrentHashMap<String, Boolean>()
+    private val LINKED_DEVICES_KEY = "linked_device_ids"
+
+    private fun saveLinkedDevices() {
+        val ids = linkedDeviceIDs.keys().toList()
+        groupPrefs.edit().putString(LINKED_DEVICES_KEY, json.encodeToString(ids)).apply()
+    }
+
+    private fun loadLinkedDevices() {
+        val raw = groupPrefs.getString(LINKED_DEVICES_KEY, null) ?: return
+        val ids = try { json.decodeFromString<List<String>>(raw) } catch (e: Exception) { return }
+        ids.forEach { linkedDeviceIDs[it] = true }
+    }
+
+    /** Unlink a device — it will no longer receive message copies. */
+    fun unlinkDevice(peerID: String) {
+        linkedDeviceIDs.remove(peerID)
+        saveLinkedDevices()
+    }
+
+    /** Returns the list of KnownPeer objects for linked devices. */
+    fun linkedDevicesList(): List<KnownPeer> =
+        linkedDeviceIDs.keys().toList().mapNotNull { knownPeers[it] }
+
+    /**
+     * Generate a JSON payload (base64) that encodes this device's PreKeyBundle.
+     * Encode as a QR code on screen; the other device scans it.
+     */
+    fun generateDeviceLinkPayload(): ByteArray {
+        val bundle  = preKeys.generateBundle(myTCPAddress)
+        val msg     = DeviceLinkRequestMessage(
+            deviceLabel = android.os.Build.MODEL,
+            bundle      = bundle
+        )
+        return json.encodeToString(msg).toByteArray()
+    }
+
+    /**
+     * Accept a device link from scanned QR data.
+     * Parses the DeviceLinkRequestMessage, stores the bundle, registers as linked,
+     * then sends a reciprocal deviceLinkRequest so the other device gets our bundle too.
+     */
+    fun acceptDeviceLink(data: ByteArray) {
+        val msg = try { json.decodeFromString<DeviceLinkRequestMessage>(String(data)) }
+                  catch (e: Exception) { return }
+        val bundle = msg.bundle
+        val peerID = bundle.peerID
+
+        peerBundles[peerID] = bundle
+
+        val peer = KnownPeer(
+            id = peerID, username = msg.deviceLabel,
+            signingKeyPublic = bundle.signingKeyPublic,
+            dhKeyPublic      = bundle.dhIdentityKeyPublic,
+            safetyNumber     = IdentityManager.safetyNumber(
+                identity.publicIdentity.signingKeyPublic, bundle.signingKeyPublic,
+                identity.publicIdentity.dhKeyPublic, bundle.dhIdentityKeyPublic
+            ),
+            lastSeen = Date(), isOnline = false
+        )
+        knownPeers[peerID] = peer
+        linkedDeviceIDs[peerID] = true
+        saveLinkedDevices()
+        delegate?.didDiscoverPeer(peer)
+
+        // Send reciprocal link request
+        val myMsg  = DeviceLinkRequestMessage(
+            deviceLabel = android.os.Build.MODEL,
+            bundle      = preKeys.generateBundle(myTCPAddress)
+        )
+        val wire = builder().build(WireMessageType.deviceLinkRequest.name, myMsg)
+        sendOrRoute(wire, peerID)
+    }
+
+    // -----------------------------------------------------------------------
+    // Store-and-forward queue — holds sealed messages for offline peers.
+    // Key = targetPeerID. Max 50 messages/peer, TTL 48h.
+    // -----------------------------------------------------------------------
+    private val storeAndForwardQueue = ConcurrentHashMap<String, MutableList<StoreAndForwardRequest>>()
+    private val SAF_MAX_PER_PEER = 50
+    private val SAF_TTL_MS = 48L * 60 * 60 * 1000  // 48 hours in ms
+
+    // -----------------------------------------------------------------------
+    // Dead drops — sealed mesh-flood messages for offline recipients.
+    // seenDeadDropIDs: id → received-at epoch ms (for dedup + expiry).
+    // -----------------------------------------------------------------------
+    private val deadDrops          = mutableListOf<DeadDropEnvelope>()
+    private val deadDropLock       = Any()
+    private val seenDeadDropIDs    = ConcurrentHashMap<String, Long>()
+
+
     // Received peer bundles (for initiating X3DH)
     private val peerBundles  = ConcurrentHashMap<String, PreKeyBundle>()
 
@@ -183,6 +278,7 @@ class ChatManager(
 
     fun start() {
         preKeys.rotateIfNeeded()
+        loadLinkedDevices()
         val myPeerID = identity.publicIdentity.peerID
         val displayName = "sx-${myPeerID.take(12)}"
         nearby?.start(displayName) ?: wifiDirect?.start(myPeerID)
@@ -544,10 +640,14 @@ class ChatManager(
             WireMessageType.typing.name            -> handleTyping(message)
             WireMessageType.reaction.name          -> handleReaction(message)
             WireMessageType.groupReaction.name     -> handleGroupReaction(message)
-            WireMessageType.senderKeyRequest.name  -> handleSenderKeyRequest(message)
+            WireMessageType.senderKeyRequest.name          -> handleSenderKeyRequest(message)
+            WireMessageType.storeAndForward.name           -> handleStoreAndForward(message)
+            WireMessageType.storeAndForwardDelivery.name   -> handleStoreAndForwardDelivery(message, fromTransportID, isTCP)
+            WireMessageType.deadDrop.name                  -> handleDeadDrop(message, fromTransportID, isTCP)
+            WireMessageType.deviceLinkRequest.name         -> handleDeviceLinkRequest(message)
+            WireMessageType.deviceSyncMessage.name         -> handleDeviceSyncMessage(message)
             // readReceipt, groupReadReceipt, editMessage, groupEditMessage,
-            // deadDrop, storeAndForward, storeAndForwardDelivery, channelAnnouncement
-            // are accepted but not yet acted upon — prevents unknown-type drops.
+            // channelAnnouncement are accepted but not yet acted upon.
         }
     }
 
@@ -643,6 +743,7 @@ class ChatManager(
             )
             messageStore.store(stored)
             delegate?.didReceiveMessage(stored, peerID)
+            forwardToLinkedDevices(stored)
 
             // Send ACK
             val ack = AckMessage(messageID = stored.id, status = "delivered")
@@ -703,6 +804,7 @@ class ChatManager(
             )
             messageStore.store(stored)
             delegate?.didReceiveMessage(stored, peerID)
+            forwardToLinkedDevices(stored)
 
             // ACK
             val ack = AckMessage(messageID = payload.messageID, status = "delivered")
@@ -801,6 +903,200 @@ class ChatManager(
         val wire = buildOutboundGroupInvite(message.senderID, json.encodeToString(invite).toByteArray())
             ?: return
         sendOrRoute(wire, message.senderID)
+    }
+
+    // -----------------------------------------------------------------------
+    // Device link — incoming link request (other device scanned our QR)
+    // -----------------------------------------------------------------------
+
+    private fun handleDeviceLinkRequest(message: WireMessage) {
+        val msg = try { json.decodeFromString<DeviceLinkRequestMessage>(String(message.payload)) }
+                  catch (e: Exception) { return }
+        val bundle = msg.bundle
+        val peerID = bundle.peerID
+
+        peerBundles[peerID] = bundle
+
+        val existing = knownPeers[peerID]
+        if (existing == null) {
+            val peer = KnownPeer(
+                id = peerID, username = msg.deviceLabel,
+                signingKeyPublic = bundle.signingKeyPublic,
+                dhKeyPublic      = bundle.dhIdentityKeyPublic,
+                safetyNumber     = IdentityManager.safetyNumber(
+                    identity.publicIdentity.signingKeyPublic, bundle.signingKeyPublic,
+                    identity.publicIdentity.dhKeyPublic, bundle.dhIdentityKeyPublic
+                ),
+                lastSeen = Date(), isOnline = true
+            )
+            knownPeers[peerID] = peer
+            delegate?.didDiscoverPeer(peer)
+        } else {
+            knownPeers[peerID] = existing.copy(isOnline = true, lastSeen = Date())
+        }
+
+        linkedDeviceIDs[peerID] = true
+        saveLinkedDevices()
+
+        // Send a reciprocal link so the initiator knows us too
+        val reply = DeviceLinkRequestMessage(
+            deviceLabel = android.os.Build.MODEL,
+            bundle      = preKeys.generateBundle(myTCPAddress)
+        )
+        val wire = builder().build(WireMessageType.deviceLinkRequest.name, reply)
+        sendOrRoute(wire, peerID)
+    }
+
+    /** Receive a device-sync message from a linked device and store it locally. */
+    private fun handleDeviceSyncMessage(message: WireMessage) {
+        // Only accept from devices we explicitly linked
+        if (!linkedDeviceIDs.containsKey(message.senderID)) return
+        val sync = try { json.decodeFromString<DeviceSyncMessage>(String(message.payload)) }
+                   catch (e: Exception) { return }
+        val stored = try { json.decodeFromString<StoredMessage>(String(sync.messageJSON)) }
+                     catch (e: Exception) { return }
+        // Dedup
+        if (messageStore.loadMessages(stored.peerID).any { it.id == stored.id }) return
+        messageStore.store(stored)
+        delegate?.didReceiveMessage(stored, stored.peerID)
+    }
+
+    /**
+     * Forward a message to all linked devices for cross-device sync.
+     * Skips forwarding if the message came from a linked device (loop prevention).
+     */
+    private fun forwardToLinkedDevices(stored: StoredMessage) {
+        if (linkedDeviceIDs.isEmpty()) return
+        // Don't re-forward messages that originated from a linked device
+        if (linkedDeviceIDs.containsKey(stored.peerID)) return
+        val msgJson = json.encodeToString(stored).toByteArray()
+        val sync    = DeviceSyncMessage(messageJSON = msgJson)
+        val wire    = builder().build(WireMessageType.deviceSyncMessage.name, sync)
+        linkedDeviceIDs.keys().toList().forEach { deviceID ->
+            sendOrRoute(wire, deviceID)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Store-and-forward
+    // -----------------------------------------------------------------------
+
+    /** Receive a store-and-forward request: store the sealed message for later delivery. */
+    private fun handleStoreAndForward(message: WireMessage) {
+        val req = try { json.decodeFromString<StoreAndForwardRequest>(String(message.payload)) }
+                  catch (e: Exception) { return }
+
+        // Drop already-expired requests
+        if (req.expiresAt.time < System.currentTimeMillis()) return
+
+        val queue = storeAndForwardQueue.getOrPut(req.targetPeerID) {
+            java.util.Collections.synchronizedList(mutableListOf())
+        }
+        synchronized(queue) {
+            // Dedup by messageID
+            if (queue.any { it.messageID == req.messageID }) return
+            // Enforce per-peer cap
+            if (queue.size >= SAF_MAX_PER_PEER) queue.removeAt(0)
+            queue.add(req)
+        }
+    }
+
+    /** Receive a store-and-forward delivery: process each contained sealed message. */
+    private fun handleStoreAndForwardDelivery(message: WireMessage, fromTransportID: String, isTCP: Boolean) {
+        val delivery = try { json.decodeFromString<StoreAndForwardDelivery>(String(message.payload)) }
+                       catch (e: Exception) { return }
+        delivery.items.forEach { item ->
+            val innerPayload = json.encodeToString(item.sealed).toByteArray()
+            val inner = WireMessage(
+                type      = WireMessageType.sealed.name,
+                payload   = innerPayload,
+                senderID  = message.senderID,
+                timestamp = message.timestamp,
+                signature = message.signature
+            )
+            handleIncomingWireMessage(inner, fromTransportID, isTCP)
+        }
+    }
+
+    /** Receive a dead-drop: dedup, store, flood forward, and deliver if addressed to us. */
+    private fun handleDeadDrop(message: WireMessage, fromTransportID: String, isTCP: Boolean) {
+        val envelope = try { json.decodeFromString<DeadDropEnvelope>(String(message.payload)) }
+                       catch (e: Exception) { return }
+
+        // Drop expired
+        if (envelope.expiresAt.time < System.currentTimeMillis()) return
+
+        // Dedup
+        val now = System.currentTimeMillis()
+        if (seenDeadDropIDs.putIfAbsent(envelope.id, now) != null) return
+
+        // Store for later delivery to offline peers
+        synchronized(deadDropLock) { deadDrops.add(envelope) }
+
+        // Flood to other connected peers (TTL is tracked externally via expiresAt)
+        val forwardWire = builder().build(WireMessageType.deadDrop.name, envelope)
+        if (nearby != null) {
+            val fromEndpoint = if (isTCP) null else fromTransportID
+            nearby.broadcast(forwardWire, excluding = fromEndpoint)
+        } else {
+            tcp.broadcast(forwardWire, excluding = if (isTCP) fromTransportID else null)
+        }
+
+        // Deliver if addressed to us
+        val myPeerID = identity.publicIdentity.peerID
+        if (envelope.targetPeerID == myPeerID) {
+            val inner = WireMessage(
+                type      = WireMessageType.sealed.name,
+                payload   = json.encodeToString(envelope.sealed).toByteArray(),
+                senderID  = message.senderID,
+                timestamp = message.timestamp,
+                signature = message.signature
+            )
+            handleIncomingWireMessage(inner, fromTransportID, isTCP)
+        }
+    }
+
+    /**
+     * Called when a peer connects (after Hello).
+     * Drains the store-and-forward queue and dead drops addressed to this peer.
+     */
+    private fun deliverQueuedMessages(peerID: String) {
+        // --- Store-and-forward queue ---
+        val items = storeAndForwardQueue.remove(peerID)
+        if (!items.isNullOrEmpty()) {
+            val deliveryItems = items.map { req ->
+                StoreAndForwardItem(messageID = req.messageID, sealed = req.sealed)
+            }
+            val delivery = StoreAndForwardDelivery(items = deliveryItems)
+            val wire = builder().build(WireMessageType.storeAndForwardDelivery.name, delivery)
+            sendOrRoute(wire, peerID)
+        }
+
+        // --- Dead drops ---
+        val now = System.currentTimeMillis()
+        val toDeliver = synchronized(deadDropLock) {
+            deadDrops.filter { it.targetPeerID == peerID && it.expiresAt.time > now }
+        }
+        toDeliver.forEach { envelope ->
+            val wire = builder().build(WireMessageType.deadDrop.name, envelope)
+            sendOrRoute(wire, peerID)
+        }
+    }
+
+    /** Remove expired store-and-forward items and dead drops. Call periodically. */
+    private fun purgeExpiredQueueItems() {
+        val now = System.currentTimeMillis()
+        // Store-and-forward
+        storeAndForwardQueue.forEach { (peerID, queue) ->
+            synchronized(queue) { queue.removeAll { it.expiresAt.time <= now } }
+            if (queue.isEmpty()) storeAndForwardQueue.remove(peerID)
+        }
+        // Dead drops
+        synchronized(deadDropLock) {
+            deadDrops.removeAll { it.expiresAt.time <= now }
+        }
+        // Seen IDs older than SAF_TTL_MS
+        seenDeadDropIDs.entries.removeAll { (_, ts) -> now - ts > SAF_TTL_MS }
     }
 
     // -----------------------------------------------------------------------

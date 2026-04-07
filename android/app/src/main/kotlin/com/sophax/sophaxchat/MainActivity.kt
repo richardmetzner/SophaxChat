@@ -25,6 +25,7 @@ import com.sophax.sophaxchat.ui.chat.GroupChatScreen
 import com.sophax.sophaxchat.ui.onboarding.OnboardingScreen
 import com.sophax.sophaxchat.ui.settings.BackupScreen
 import com.sophax.sophaxchat.ui.settings.DuressPinScreen
+import com.sophax.sophaxchat.ui.settings.LinkedDevicesScreen
 import com.sophax.sophaxchat.ui.settings.SettingsScreen
 import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 
@@ -194,15 +195,23 @@ private fun AppNavigation(appState: AppState) {
 
         composable("settings") {
             SettingsScreen(
-                appState    = appState,
-                onBack      = { navController.popBackStack() },
-                onBackup    = { navController.navigate("backup") },
-                onDuressPin = { navController.navigate("duress_pin") }
+                appState        = appState,
+                onBack          = { navController.popBackStack() },
+                onBackup        = { navController.navigate("backup") },
+                onDuressPin     = { navController.navigate("duress_pin") },
+                onLinkedDevices = { navController.navigate("linked_devices") }
             )
         }
 
         composable("duress_pin") {
             DuressPinScreen(
+                appState = appState,
+                onBack   = { navController.popBackStack() }
+            )
+        }
+
+        composable("linked_devices") {
+            LinkedDevicesScreen(
                 appState = appState,
                 onBack   = { navController.popBackStack() }
             )

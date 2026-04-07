@@ -65,10 +65,12 @@ enum class WireMessageType {
     groupMessage, groupReaction, groupMemberLeft, groupDeleted, groupReadReceipt,
     storeAndForward, storeAndForwardDelivery, channelAnnouncement,
     // Added to match iOS wire protocol:
-    deadDrop,          // sealed mesh flood for offline recipient
-    editMessage,       // author edits a 1:1 message in-place
-    groupEditMessage,  // author edits a group message, fanned out to members
-    senderKeyRequest   // request peer to re-send their SenderKeyDistributionMessage
+    deadDrop,           // sealed mesh flood for offline recipient
+    editMessage,        // author edits a 1:1 message in-place
+    groupEditMessage,   // author edits a group message, fanned out to members
+    senderKeyRequest,   // request peer to re-send their SenderKeyDistributionMessage
+    deviceLinkRequest,  // QR-based device link: share PreKeyBundle with other device
+    deviceSyncMessage   // forward a received/sent message to all linked devices
 }
 
 @Serializable
@@ -338,6 +340,33 @@ data class DeadDropEnvelope(
     val targetPeerID: String,
     val sealed: SealedMessage,
     val expiresAt: SerDate
+)
+
+// ---------------------------------------------------------------------------
+// Device linking (multi-device)
+// ---------------------------------------------------------------------------
+
+/**
+ * QR payload: device A broadcasts its PreKeyBundle so device B can open a DR session.
+ * Transmitted via the `deviceLinkRequest` wire message type.
+ */
+@Serializable
+data class DeviceLinkRequestMessage(
+    /** Human-readable label for this device, e.g. "Pixel 9 Pro" */
+    val deviceLabel: String,
+    /** The full PreKeyBundle of this device for X3DH session initiation */
+    val bundle: PreKeyBundle
+)
+
+/**
+ * Forwarded copy of a message from one linked device to all others.
+ * The raw message JSON is serialised so both sides can decode it without
+ * re-running the original crypto.
+ */
+@Serializable
+data class DeviceSyncMessage(
+    /** JSON-encoded StoredMessage (avoids re-running crypto) */
+    val messageJSON: ByteArrayBase64
 )
 
 // ---------------------------------------------------------------------------

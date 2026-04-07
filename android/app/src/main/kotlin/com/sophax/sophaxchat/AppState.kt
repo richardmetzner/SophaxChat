@@ -221,6 +221,32 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     // -----------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Linked Devices — multi-device sync
+    // -----------------------------------------------------------------------
+
+    private val _linkedDevices = MutableStateFlow<List<KnownPeer>>(emptyList())
+    val linkedDevices: StateFlow<List<KnownPeer>> = _linkedDevices.asStateFlow()
+
+    /** Returns JSON bytes encoding this device's PreKeyBundle, suitable for a QR code. */
+    fun generateDeviceLinkQR(): ByteArray? = _chatManager?.generateDeviceLinkPayload()
+
+    /** Process a scanned QR payload from another device and establish a link. */
+    fun acceptDeviceLink(data: ByteArray) {
+        _chatManager?.acceptDeviceLink(data)
+        refreshLinkedDevices()
+    }
+
+    fun unlinkDevice(peer: KnownPeer) {
+        _chatManager?.unlinkDevice(peer.id)
+        refreshLinkedDevices()
+    }
+
+    private fun refreshLinkedDevices() {
+        _linkedDevices.value = _chatManager?.linkedDevicesList() ?: emptyList()
+    }
+
+    // -----------------------------------------------------------------------
     // Duress PIN — silent decoy mode on coercion
     // -----------------------------------------------------------------------
 
@@ -441,6 +467,7 @@ class AppState(application: Application) : AndroidViewModel(application) {
         }
         _chatManager = mgr
         _groups.value = mgr.groupsList()
+        _linkedDevices.value = mgr.linkedDevicesList()
         mgr.start()
     }
 

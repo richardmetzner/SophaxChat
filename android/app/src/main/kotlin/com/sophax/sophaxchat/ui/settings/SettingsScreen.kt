@@ -22,7 +22,8 @@ fun SettingsScreen(
     appState: AppState,
     onBack: () -> Unit,
     onBackup: () -> Unit = {},
-    onDuressPin: () -> Unit = {}
+    onDuressPin: () -> Unit = {},
+    onLinkedDevices: () -> Unit = {}
 ) {
     val username     by appState.username.collectAsState()
     val tcpEnabled   by appState.tcpEnabled.collectAsState()
@@ -188,6 +189,14 @@ fun SettingsScreen(
                         appState.setAppLockEnabled(it)
                     }
                 )
+            }
+
+            // Linked Devices
+            OutlinedButton(
+                onClick = onLinkedDevices,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Linked Devices")
             }
 
             // Duress PIN
