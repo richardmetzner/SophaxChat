@@ -225,12 +225,11 @@ class ChatManager(
         val contentBytes = json.encodeToString(content).toByteArray()
 
         // Case 1: existing DR session
+        // encrypt() mutates DR state — hold the lock for the entire operation.
         synchronized(sessionLock) { sessions[peerID] }?.let { dr ->
             return try {
-                val payload = ChatMessagePayload(
-                    ratchetMessage = dr.encrypt(contentBytes).toWire(),
-                    messageID = messageID
-                )
+                val ratchetMessage = synchronized(sessionLock) { dr.encrypt(contentBytes) }.toWire()
+                val payload = ChatMessagePayload(ratchetMessage = ratchetMessage, messageID = messageID)
                 builder().build(WireMessageType.message.name, payload)
             } catch (e: Exception) { delegate?.didEncounterError(e); null }
         }
@@ -391,8 +390,9 @@ class ChatManager(
         val bytes = json.encodeToString(reaction).toByteArray()
         synchronized(sessionLock) { sessions[peerID] }?.let { dr ->
             return try {
+                val ratchetMessage = synchronized(sessionLock) { dr.encrypt(bytes) }.toWire()
                 val payload = ChatMessagePayload(
-                    ratchetMessage = dr.encrypt(bytes).toWire(),
+                    ratchetMessage = ratchetMessage,
                     messageID = UUID.randomUUID().toString()
                 )
                 builder().build(WireMessageType.reaction.name, payload)
@@ -494,8 +494,9 @@ class ChatManager(
         val contentBytes = json.encodeToString(content).toByteArray()
         return synchronized(sessionLock) { sessions[peerID] }?.let { dr ->
             try {
+                val ratchetMessage = synchronized(sessionLock) { dr.encrypt(contentBytes) }.toWire()
                 val payload = ChatMessagePayload(
-                    ratchetMessage = dr.encrypt(contentBytes).toWire(),
+                    ratchetMessage = ratchetMessage,
                     messageID = UUID.randomUUID().toString()
                 )
                 builder().build(WireMessageType.message.name, payload)
@@ -650,7 +651,7 @@ class ChatManager(
         val dr = synchronized(sessionLock) { sessions[peerID] } ?: return
 
         try {
-            val plaintext = dr.decrypt(payload.ratchetMessage.fromWire())
+            val plaintext = synchronized(sessionLock) { dr.decrypt(payload.ratchetMessage.fromWire()) }
             val content   = json.decodeFromString<MessageContent>(String(plaintext))
 
             // Group invite — parse and register, do not display as chat message
@@ -723,7 +724,7 @@ class ChatManager(
         val dr = synchronized(sessionLock) { sessions[senderID] } ?: return
         val plain = try {
             val payload = json.decodeFromString<ChatMessagePayload>(String(message.payload))
-            dr.decrypt(payload.ratchetMessage.fromWire())
+            synchronized(sessionLock) { dr.decrypt(payload.ratchetMessage.fromWire()) }
         } catch (e: Exception) { return }
         val r = try { json.decodeFromString<ReactionMessage>(String(plain)) } catch (e: Exception) { return }
         delegate?.didReceiveReaction(senderID, r.targetMessageID, r.emoji)
