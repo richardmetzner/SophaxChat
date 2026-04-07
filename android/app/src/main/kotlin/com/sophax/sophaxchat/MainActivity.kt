@@ -30,7 +30,16 @@ import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 class MainActivity : FragmentActivity() {
 
     private val appState: AppState by viewModels()
-    private var wasBackgrounded = false
+
+    // Timestamp (ms) when the activity moved to background. Used to distinguish
+    // a genuine background event from transient focus losses caused by system
+    // overlays (permission dialogs, biometric prompts, file pickers, etc.).
+    private var backgroundedAt: Long = 0L
+
+    // Minimum time in background before the app lock triggers.
+    // Short system dialogs are typically resolved in < 2 seconds; real
+    // background events (home button, task switcher) take longer.
+    private val lockThresholdMs = 2_000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,17 +92,20 @@ class MainActivity : FragmentActivity() {
 
     override fun onPause() {
         super.onPause()
-        wasBackgrounded = true
+        backgroundedAt = System.currentTimeMillis()
     }
 
     override fun onResume() {
         super.onResume()
-        // Only lock when genuinely returning from background, not when coming back
-        // from the biometric prompt (which also triggers onResume).
-        if (wasBackgrounded) {
-            wasBackgrounded = false
+        val elapsed = System.currentTimeMillis() - backgroundedAt
+        // Only lock when the app was genuinely in the background long enough to
+        // distinguish a real background event from a transient system overlay
+        // (biometric prompt, permission dialog, file picker) which also triggers
+        // onPause/onResume but resolves in well under lockThresholdMs.
+        if (backgroundedAt > 0L && elapsed >= lockThresholdMs) {
             appState.lockApp()
         }
+        backgroundedAt = 0L
     }
 
     override fun onNewIntent(intent: Intent) {
