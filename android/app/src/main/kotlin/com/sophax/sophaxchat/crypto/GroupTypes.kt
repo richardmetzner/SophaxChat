@@ -61,16 +61,22 @@ data class SenderKeyState(
     /**
      * Fast-forward to a target iteration (for out-of-order messages).
      * Returns the message key at `targetIteration` and the state after it.
+     *
+     * The chain must be advanced PAST the target: the while loop brings
+     * [state.iteration] up to [targetIteration], then one final ratchet()
+     * call produces the message key FOR that iteration — matching iOS:
+     *   while senderState.iteration < iteration { advance, cache skipped }
+     *   let (messageKey, nextCK) = senderKeyRatchetStep(senderState.chainKey)
      */
     fun advanceTo(targetIteration: Long): Pair<ByteArray, SenderKeyState> {
         var state = this
-        var mk    = chainKey
         while (state.iteration < targetIteration) {
-            val (m, next) = state.ratchet()
-            mk    = m
+            val (_, next) = state.ratchet()
             state = next
         }
-        return Pair(mk, state)
+        // state.iteration == targetIteration; derive the message key for this step
+        val (mk, next) = state.ratchet()
+        return Pair(mk, next)
     }
 
     private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
