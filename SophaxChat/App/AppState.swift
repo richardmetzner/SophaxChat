@@ -1918,4 +1918,31 @@ extension AppState: @preconcurrency ChatManagerDelegate {
         defer { s.resetBytes(in: s.startIndex..<s.endIndex) }
         sssRecoveredSecret = s
     }
+
+    func chatManagerDidReceiveRemoteWipeRequest(_ manager: ChatManager) {
+        wipeAccount()
+    }
+}
+
+// MARK: - Remote Wipe helpers (public surface for SettingsView)
+
+extension AppState {
+    var trustedWipePeers: [KnownPeer] {
+        let ids = chatManager?.trustedWipePeers ?? []
+        return ids.compactMap { id in knownPeers.first { $0.id == id } }
+    }
+
+    func addTrustedWipePeer(_ peer: KnownPeer) {
+        chatManager?.addTrustedWipePeer(peer.id)
+        objectWillChange.send()
+    }
+
+    func removeTrustedWipePeer(_ peerID: String) {
+        chatManager?.removeTrustedWipePeer(peerID)
+        objectWillChange.send()
+    }
+
+    func sendRemoteWipe(toPeerID: String) {
+        chatManager?.sendRemoteWipe(toPeerID: toPeerID)
+    }
 }

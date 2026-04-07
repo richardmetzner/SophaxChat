@@ -247,6 +247,27 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     // -----------------------------------------------------------------------
+    // Remote Wipe — trusted peers that can trigger a remote wipe
+    // -----------------------------------------------------------------------
+
+    fun trustedWipePeersList(): List<KnownPeer> {
+        val ids = _chatManager?.trustedWipePeersList() ?: return emptyList()
+        return _peers.value.filter { it.id in ids }
+    }
+
+    fun addTrustedWipePeer(peer: KnownPeer) {
+        _chatManager?.addTrustedWipePeer(peer.id)
+    }
+
+    fun removeTrustedWipePeer(peerID: String) {
+        _chatManager?.removeTrustedWipePeer(peerID)
+    }
+
+    fun sendRemoteWipe(toPeerID: String) {
+        _chatManager?.sendRemoteWipe(toPeerID)
+    }
+
+    // -----------------------------------------------------------------------
     // Duress PIN — silent decoy mode on coercion
     // -----------------------------------------------------------------------
 
@@ -463,6 +484,21 @@ class AppState(application: Application) : AndroidViewModel(application) {
             }
             override fun didReceiveAvatarData(data: ByteArray, fromPeerID: String) {
                 _peerAvatarData.value = _peerAvatarData.value + (fromPeerID to data)
+            }
+
+            override fun didReceiveRemoteWipeRequest() {
+                viewModelScope.launch {
+                    // Clear all persisted data
+                    prefs.edit().clear().apply()
+                    messageStore.deleteAllMessages()
+                    getApplication<Application>().getExternalFilesDir(null)?.deleteRecursively()
+                    getApplication<Application>().filesDir.deleteRecursively()
+                    // Reset in-memory state and return to onboarding
+                    _chatManager?.stop()
+                    _chatManager = null
+                    clearInMemoryState()
+                    _isSetupComplete.value = false
+                }
             }
         }
         _chatManager = mgr

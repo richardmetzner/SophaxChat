@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var showingPINSetup: Bool    = false
     @State private var showingDuressSetup: Bool = false
     @State private var showingCrashLog: Bool    = false
+    @State private var showAddTrustedWipePeer: Bool = false
 
     private var trimmedTCPAddress: String {
         tcpConnectAddress.trimmingCharacters(in: .whitespaces)
@@ -46,6 +47,7 @@ struct SettingsView: View {
                 backupSection
                 helpSection
                 blockedSection
+                remoteWipeSection
                 dangerSection
             }
             .navigationTitle("Settings")
@@ -565,6 +567,50 @@ struct SettingsView: View {
             }
         } header: {
             Text("Help & About")
+        }
+    }
+
+    @ViewBuilder
+    private var remoteWipeSection: some View {
+        Section {
+            ForEach(appState.trustedWipePeers, id: \.id) { peer in
+                Label(peer.username, systemImage: "person.badge.shield.checkmark.fill")
+                    .swipeActions {
+                        Button("Remove", role: .destructive) {
+                            appState.removeTrustedWipePeer(peer.id)
+                        }
+                    }
+            }
+            Button {
+                showAddTrustedWipePeer = true
+            } label: {
+                Label("Add trusted peer…", systemImage: "plus.circle")
+            }
+        } header: {
+            Text("Remote Wipe")
+        } footer: {
+            Text("Peers listed here can trigger a remote wipe of your account. Only add people you fully trust.")
+        }
+        .sheet(isPresented: $showAddTrustedWipePeer) {
+            // Peer picker: list knownPeers not already trusted
+            NavigationStack {
+                List {
+                    ForEach(appState.knownPeers.filter { p in
+                        !appState.trustedWipePeers.contains(where: { $0.id == p.id })
+                    }) { peer in
+                        Button(peer.username) {
+                            appState.addTrustedWipePeer(peer)
+                            showAddTrustedWipePeer = false
+                        }
+                    }
+                }
+                .navigationTitle("Add Trusted Peer")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showAddTrustedWipePeer = false }
+                    }
+                }
+            }
         }
     }
 

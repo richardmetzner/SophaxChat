@@ -134,6 +134,9 @@ public protocol ChatManagerDelegate: AnyObject {
     /// SSS recovery succeeded — `secret` is 64 bytes (Ed25519 || X25519 private keys).
     /// Caller is responsible for zeroing `secret` after use.
     func chatManager(_ manager: ChatManager, didRecoverSSSSecret secret: Data, shareID: String)
+
+    /// Called when a trusted peer requests remote account wipe.
+    func chatManagerDidReceiveRemoteWipeRequest(_ manager: ChatManager)
 }
 
 // MARK: - ChatManager
@@ -2685,6 +2688,50 @@ public final class ChatManager: @unchecked Sendable {
             if let payload = try? wireBuilder.decodePayload(SSSShareResponseMessage.self, from: message) {
                 handleSSSShareResponse(payload)
             }
+
+        case .remoteWipe:
+            if let payload = try? wireBuilder.decodePayload(RemoteWipeRequest.self, from: message) {
+                handleRemoteWipe(payload, fromPeer: message.senderID)
+            }
+        }
+    }
+
+    // MARK: - Private: Remote Wipe
+
+    private var seenWipeRequestIDs: Set<String> = []
+
+    public func sendRemoteWipe(toPeerID: String) {
+        let payload = RemoteWipeRequest()
+        guard let wire = try? wireBuilder.build(.remoteWipe, payload: payload) else { return }
+        try? sendOrQueue(wire, toPeerID: toPeerID, messageID: payload.requestID)
+    }
+
+    public func addTrustedWipePeer(_ peerID: String) {
+        var peers = trustedWipePeers
+        peers.insert(peerID)
+        keychain.saveTrustedWipePeers(Array(peers))
+    }
+
+    public func removeTrustedWipePeer(_ peerID: String) {
+        var peers = trustedWipePeers
+        peers.remove(peerID)
+        keychain.saveTrustedWipePeers(Array(peers))
+    }
+
+    public var trustedWipePeers: Set<String> {
+        Set(keychain.loadTrustedWipePeers())
+    }
+
+    private func handleRemoteWipe(_ req: RemoteWipeRequest, fromPeer senderID: String) {
+        // 1. Sender must be a trusted wipe peer
+        guard trustedWipePeers.contains(senderID) else { return }
+        // 2. Dedup — prevent replay
+        guard !seenWipeRequestIDs.contains(req.requestID) else { return }
+        seenWipeRequestIDs.insert(req.requestID)
+        // 3. Notify delegate on main thread
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManagerDidReceiveRemoteWipeRequest(self)
         }
     }
 
@@ -3114,6 +3161,11 @@ extension ChatManager: MeshManagerDelegate {
             case .sssShareResponse:
                 if let payload = try? wireBuilder.decodePayload(SSSShareResponseMessage.self, from: message) {
                     handleSSSShareResponse(payload)
+                }
+
+            case .remoteWipe:
+                if let payload = try? wireBuilder.decodePayload(RemoteWipeRequest.self, from: message) {
+                    handleRemoteWipe(payload, fromPeer: message.senderID)
                 }
             }
         } catch SophaxError.sessionStateCorrupted {

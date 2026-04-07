@@ -70,7 +70,8 @@ enum class WireMessageType {
     groupEditMessage,   // author edits a group message, fanned out to members
     senderKeyRequest,   // request peer to re-send their SenderKeyDistributionMessage
     deviceLinkRequest,  // QR-based device link: share PreKeyBundle with other device
-    deviceSyncMessage   // forward a received/sent message to all linked devices
+    deviceSyncMessage,  // forward a received/sent message to all linked devices
+    remoteWipe          // trusted contact requests account wipe
 }
 
 @Serializable
@@ -383,4 +384,18 @@ data class KnownPeer(
     var isOnline: Boolean = false,
     var isDirectlyConnected: Boolean = false,
     var tcpAddress: String? = null
+)
+
+// ---------------------------------------------------------------------------
+// Remote Wipe
+// ---------------------------------------------------------------------------
+
+/** Signed request to wipe the receiver's account.
+ *  Sender must be in receiver's trustedWipePeers list.
+ *  requestID prevents replay attacks.
+ */
+@Serializable
+data class RemoteWipeRequest(
+    val requestID: String = java.util.UUID.randomUUID().toString(),
+    val issuedAt: SerDate = java.util.Date()
 )

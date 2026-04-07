@@ -154,6 +154,12 @@ public enum WireMessageType: String, Codable, Sendable {
     case sssShareRequest
     /// Contact responds with the stored share re-encrypted for the requester.
     case sssShareResponse
+
+    // MARK: Remote Wipe
+
+    /// A trusted contact requests remote account wipe.
+    /// Receiver verifies Ed25519 signature and that sender is in trustedWipePeers.
+    case remoteWipe
 }
 
 // MARK: - MLS Wire Messages
@@ -1108,4 +1114,20 @@ public struct SSSShareResponseMessage: Codable, Sendable {
     public let ephemeralPublicKey: Data
     /// ChaChaPoly ciphertext of the JSON-encoded SSSShare.
     public let encryptedShare: Data
+}
+
+// MARK: - Remote Wipe
+
+/// Signed request to wipe the receiver's account.
+/// The receiver verifies: (1) Ed25519 signature via normal wire dispatch,
+/// (2) sender is in trustedWipePeers.
+public struct RemoteWipeRequest: Codable, Sendable {
+    /// UUID — prevents replay attacks.
+    public let requestID: String
+    public let issuedAt:  Date
+
+    public init(requestID: String = UUID().uuidString, issuedAt: Date = Date()) {
+        self.requestID = requestID
+        self.issuedAt  = issuedAt
+    }
 }

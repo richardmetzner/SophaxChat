@@ -51,6 +51,8 @@ interface ChatManagerDelegate {
     fun groupDeletedWithID(groupID: String)
     /** A group message carried avatar data for a peer not yet in the avatar cache. */
     fun didReceiveAvatarData(data: ByteArray, fromPeerID: String)
+    /** A trusted peer requested a remote account wipe. */
+    fun didReceiveRemoteWipeRequest()
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +179,12 @@ class ChatManager(
     private val deadDropLock       = Any()
     private val seenDeadDropIDs    = ConcurrentHashMap<String, Long>()
 
+    // -----------------------------------------------------------------------
+    // Remote Wipe — trusted peers can request account wipe.
+    // Persisted in groupPrefs under "trusted_wipe_peers".
+    // -----------------------------------------------------------------------
+    private val trustedWipePeers: MutableSet<String> = loadTrustedWipePeers()
+    private val seenWipeRequestIDs = ConcurrentHashMap<String, Boolean>()
 
     // Received peer bundles (for initiating X3DH)
     private val peerBundles  = ConcurrentHashMap<String, PreKeyBundle>()
@@ -646,6 +654,7 @@ class ChatManager(
             WireMessageType.deadDrop.name                  -> handleDeadDrop(message, fromTransportID, isTCP)
             WireMessageType.deviceLinkRequest.name         -> handleDeviceLinkRequest(message)
             WireMessageType.deviceSyncMessage.name         -> handleDeviceSyncMessage(message)
+            WireMessageType.remoteWipe.name                -> handleRemoteWipe(message)
             // readReceipt, groupReadReceipt, editMessage, groupEditMessage,
             // channelAnnouncement are accepted but not yet acted upon.
         }
@@ -1097,6 +1106,47 @@ class ChatManager(
         }
         // Seen IDs older than SAF_TTL_MS
         seenDeadDropIDs.entries.removeAll { (_, ts) -> now - ts > SAF_TTL_MS }
+    }
+
+    // -----------------------------------------------------------------------
+    // Remote Wipe
+    // -----------------------------------------------------------------------
+
+    fun addTrustedWipePeer(peerID: String) {
+        trustedWipePeers.add(peerID)
+        saveTrustedWipePeers()
+    }
+
+    fun removeTrustedWipePeer(peerID: String) {
+        trustedWipePeers.remove(peerID)
+        saveTrustedWipePeers()
+    }
+
+    fun trustedWipePeersList(): List<String> = trustedWipePeers.toList()
+
+    fun sendRemoteWipe(toPeerID: String) {
+        val wire = builder().build(WireMessageType.remoteWipe.name, RemoteWipeRequest())
+        sendOrRoute(wire, toPeerID)
+    }
+
+    private fun loadTrustedWipePeers(): MutableSet<String> {
+        val raw = groupPrefs.getString("trusted_wipe_peers", null) ?: return mutableSetOf()
+        return try { json.decodeFromString<List<String>>(raw).toMutableSet() }
+               catch (_: Exception) { mutableSetOf() }
+    }
+
+    private fun saveTrustedWipePeers() {
+        groupPrefs.edit().putString("trusted_wipe_peers", json.encodeToString(trustedWipePeers.toList())).apply()
+    }
+
+    private fun handleRemoteWipe(message: WireMessage) {
+        // Only accept from trusted peers
+        if (!trustedWipePeers.contains(message.senderID)) return
+        val req = try { json.decodeFromString<RemoteWipeRequest>(String(message.payload)) }
+                  catch (_: Exception) { return }
+        // Dedup — prevent replay
+        if (seenWipeRequestIDs.putIfAbsent(req.requestID, true) != null) return
+        delegate?.didReceiveRemoteWipeRequest()
     }
 
     // -----------------------------------------------------------------------

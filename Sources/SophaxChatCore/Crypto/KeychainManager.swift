@@ -564,6 +564,20 @@ public final class KeychainManager {
 
     // MARK: - Wipe (for account deletion / security)
 
+    // MARK: - Trusted Wipe Peers
+
+    /// Save the list of peerIDs that are authorised to trigger a remote wipe.
+    public func saveTrustedWipePeers(_ peers: [String]) {
+        let data = (try? JSONEncoder().encode(peers)) ?? Data()
+        try? save(data: data, account: "trustedWipePeers")
+    }
+
+    /// Load the list of peerIDs authorised to trigger a remote wipe.
+    public func loadTrustedWipePeers() -> [String] {
+        guard let data = try? load(account: "trustedWipePeers") else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
     public func wipeAll() throws {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
