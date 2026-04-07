@@ -251,11 +251,14 @@ class DoubleRatchet(private var state: RatchetSessionState) {
 
     private fun skipMessageKeys(target: Long) {
         val ck = state.receivingChainKey ?: return
-        val totalSkipped = (target - state.receiveMessageCount).toInt()
-        if (totalSkipped <= 0) return
+        // Use Long arithmetic throughout to avoid Int overflow when the gap
+        // exceeds Int.MAX_VALUE (a malicious peer could otherwise bypass the
+        // bounds check by sending a message with a very large message number).
+        val totalSkipped = target - state.receiveMessageCount
+        if (totalSkipped <= 0L) return
 
-        val totalStored = state.skippedKeyBundles.values.sumOf { it.size }
-        if (totalStored + totalSkipped > CryptoConstants.MAX_SKIPPED_MESSAGES) {
+        val totalStored = state.skippedKeyBundles.values.sumOf { it.size }.toLong()
+        if (totalStored + totalSkipped > CryptoConstants.MAX_SKIPPED_MESSAGES.toLong()) {
             throw SophaxError.DecryptionFailed("too many skipped messages")
         }
 
