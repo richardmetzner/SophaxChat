@@ -444,9 +444,10 @@ class AppState(application: Application) : AndroidViewModel(application) {
     // Group helpers
     // -----------------------------------------------------------------------
 
-    fun createGroup(name: String, memberPeerIDs: List<String>): GroupInfo {
-        val group = _chatManager!!.createGroup(name, memberPeerIDs)
-        _groups.value = _chatManager!!.groupsList()
+    fun createGroup(name: String, memberPeerIDs: List<String>): GroupInfo? {
+        val mgr = _chatManager ?: return null
+        val group = mgr.createGroup(name, memberPeerIDs)
+        _groups.value = mgr.groupsList()
         return group
     }
 

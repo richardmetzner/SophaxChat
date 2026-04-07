@@ -75,6 +75,7 @@ fun CreateGroupScreen(
             Button(
                 onClick = {
                     val group = appState.createGroup(groupName.trim(), selected.toList())
+                        ?: return@Button
                     onGroupCreated(group.id)
                 },
                 enabled = groupName.isNotBlank() && selected.isNotEmpty(),
