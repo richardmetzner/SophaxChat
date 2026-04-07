@@ -99,6 +99,10 @@ class ChatManager(
     // TCP connection: peerID → address (already tracked by TcpTransport)
     private val tcpPeerIDs = ConcurrentHashMap<String, Boolean>()
 
+    // Tracks when each DR session was established (epoch ms).
+    // Used to reject replayed or duplicate initiateSession messages.
+    private val sessionCreatedAt = ConcurrentHashMap<String, Long>()
+
     // -----------------------------------------------------------------------
     // Group state (EncryptedSharedPreferences)
     // -----------------------------------------------------------------------
@@ -602,6 +606,12 @@ class ChatManager(
                   catch (e: Exception) { return }
         val peerID = msg.senderBundle.peerID
 
+        // Reject replayed or duplicate initiateSession: only accept if the incoming
+        // message is strictly newer than the session we already have.
+        val incomingTs = message.timestamp.time
+        val existingTs = sessionCreatedAt[peerID]
+        if (existingTs != null && incomingTs <= existingTs) return
+
         try {
             // Consume OTP if used
             val otpk: DHKeyPair? = msg.usedOneTimePreKeyId?.let { preKeys.consumeOneTimePreKey(it) }
@@ -616,11 +626,15 @@ class ChatManager(
             )
 
             val dr = DoubleRatchet.initAsResponder(sharedSecret, preKeys.signedPreKeyPair)
-            synchronized(sessionLock) { sessions[peerID] = dr }
+            synchronized(sessionLock) {
+                sessions[peerID] = dr
+                sessionCreatedAt[peerID] = incomingTs
+            }
 
-            // Decrypt the first message
+            // Decrypt the first message — hold the lock so concurrent sends cannot
+            // race against the freshly installed session state.
             val ratchetMsg = msg.initialMessage.fromWire()
-            val plaintext  = dr.decrypt(ratchetMsg)
+            val plaintext  = synchronized(sessionLock) { dr.decrypt(ratchetMsg) }
             val content    = json.decodeFromString<MessageContent>(String(plaintext))
 
             val stored = StoredMessage(
