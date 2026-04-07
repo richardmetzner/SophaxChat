@@ -17,7 +17,7 @@ Android port of SophaxChat. Uses the same wire protocol as iOS — messages betw
 | iOS ↔ Android cross-platform messaging | ✅ Done |
 | Group messaging (Sender Keys) | ✅ Done |
 | Encrypted attachment store (images, audio) | ✅ Done |
-| Jetpack Compose UI | 🚧 In progress |
+| Jetpack Compose UI | ✅ Done |
 
 ## Cross-platform interoperability
 
