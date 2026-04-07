@@ -28,7 +28,13 @@ object ByteArraySerializer : KSerializer<ByteArray> {
         Base64.decode(decoder.decodeString(), Base64.NO_WRAP)
 }
 
-/** Serializes Date as ISO8601 string — matches Swift's .iso8601 date strategy. */
+/** Serializes Date as ISO8601 string — matches Swift's .iso8601 date strategy.
+ *
+ *  Swift JSONEncoder emits the UTC suffix as literal "Z" (e.g. "2024-01-15T10:30:00Z").
+ *  Java SimpleDateFormat pattern "Z" matches "+0000" but NOT the literal "Z", so we
+ *  normalise the incoming string before parsing: replace a trailing "Z" with "+0000".
+ *  Output always uses "+0000" which is valid ISO8601 and round-trips correctly.
+ */
 object DateSerializer : KSerializer<Date> {
     private val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US).also {
         it.timeZone = TimeZone.getTimeZone("UTC")
@@ -37,8 +43,13 @@ object DateSerializer : KSerializer<Date> {
         PrimitiveSerialDescriptor("Date", PrimitiveKind.STRING)
     override fun serialize(encoder: Encoder, value: Date) =
         encoder.encodeString(fmt.format(value))
-    override fun deserialize(decoder: Decoder): Date =
-        fmt.parse(decoder.decodeString()) ?: Date()
+    override fun deserialize(decoder: Decoder): Date {
+        // Normalise "Z" → "+0000" so SimpleDateFormat can parse Swift-generated timestamps.
+        val raw = decoder.decodeString().let {
+            if (it.endsWith("Z")) it.dropLast(1) + "+0000" else it
+        }
+        return fmt.parse(raw) ?: Date()
+    }
 }
 
 typealias ByteArrayBase64 = @Serializable(ByteArraySerializer::class) ByteArray
