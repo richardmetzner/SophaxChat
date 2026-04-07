@@ -18,7 +18,12 @@ import com.sophax.sophaxchat.network.TorState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(appState: AppState, onBack: () -> Unit, onBackup: () -> Unit = {}) {
+fun SettingsScreen(
+    appState: AppState,
+    onBack: () -> Unit,
+    onBackup: () -> Unit = {},
+    onDuressPin: () -> Unit = {}
+) {
     val username     by appState.username.collectAsState()
     val tcpEnabled   by appState.tcpEnabled.collectAsState()
     val blockedPeers by appState.blockedPeers.collectAsState()
@@ -183,6 +188,14 @@ fun SettingsScreen(appState: AppState, onBack: () -> Unit, onBackup: () -> Unit 
                         appState.setAppLockEnabled(it)
                     }
                 )
+            }
+
+            // Duress PIN
+            OutlinedButton(
+                onClick = onDuressPin,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Duress PIN")
             }
 
             OutlinedButton(

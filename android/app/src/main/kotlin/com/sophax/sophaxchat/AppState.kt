@@ -221,6 +221,64 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     // -----------------------------------------------------------------------
+    // Duress PIN — silent decoy mode on coercion
+    // -----------------------------------------------------------------------
+
+    /** State: true while the app is showing the decoy (duress) UI. */
+    private val _isDuressActive = MutableStateFlow(false)
+    val isDuressActive: StateFlow<Boolean> = _isDuressActive.asStateFlow()
+
+    /** Save a duress PIN (4–8 digits). Must differ from the real lock PIN. */
+    fun setDuressPIN(pin: String) {
+        require(pin.length in 4..8 && pin.all { it.isDigit() }) {
+            "Duress PIN must be 4–8 digits."
+        }
+        prefs.edit().putString("duress_pin", pin).apply()
+    }
+
+    /** Remove the duress PIN (disables duress mode). */
+    fun clearDuressPIN() {
+        prefs.edit().remove("duress_pin").apply()
+    }
+
+    /** Returns true when a duress PIN has been configured. */
+    fun hasDuressPIN(): Boolean = prefs.getString("duress_pin", null) != null
+
+    /** Returns true when the supplied PIN matches the stored duress PIN. */
+    fun verifyDuressPIN(pin: String): Boolean =
+        prefs.getString("duress_pin", null)?.let { it == pin } ?: false
+
+    /**
+     * Activate duress mode:
+     * – stops ChatManager (drops all in-memory state)
+     * – sets isDuressActive = true so the UI shows an empty decoy
+     * – does NOT wipe persisted data — the real app is intact after a real unlock
+     */
+    fun activateDuress() {
+        _chatManager?.stop()
+        _chatManager = null
+        clearInMemoryState()
+        _isDuressActive.value = true
+        _isAppLocked.value = false   // unlock the lock screen; show decoy
+    }
+
+    /** Called when the user unlocks the real app after duress mode was active. */
+    fun deactivateDuress() {
+        _isDuressActive.value = false
+        startIfReady()
+    }
+
+    /** Clears all in-memory collections — used by both lockApp() and activateDuress(). */
+    private fun clearInMemoryState() {
+        _peers.value   = emptyList()
+        _messages.value = emptyMap()
+        _groups.value  = emptyList()
+        _unreadCounts.value = emptyMap()
+        _typingPeers.value  = emptySet()
+        _peerAvatarData.value = emptyMap()
+    }
+
+    // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
 

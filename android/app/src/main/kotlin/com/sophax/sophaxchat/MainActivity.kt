@@ -24,6 +24,7 @@ import com.sophax.sophaxchat.ui.chat.CreateGroupScreen
 import com.sophax.sophaxchat.ui.chat.GroupChatScreen
 import com.sophax.sophaxchat.ui.onboarding.OnboardingScreen
 import com.sophax.sophaxchat.ui.settings.BackupScreen
+import com.sophax.sophaxchat.ui.settings.DuressPinScreen
 import com.sophax.sophaxchat.ui.settings.SettingsScreen
 import com.sophax.sophaxchat.ui.theme.SophaxChatTheme
 
@@ -68,7 +69,10 @@ class MainActivity : FragmentActivity() {
 
                     // App Lock overlay — rendered on top of everything when locked
                     if (isAppLocked) {
-                        AppLockScreen(onUnlocked = { appState.unlockApp() })
+                        AppLockScreen(
+                            appState  = appState,
+                            onUnlocked = { appState.unlockApp() }
+                        )
                     }
                 }
 
@@ -190,9 +194,17 @@ private fun AppNavigation(appState: AppState) {
 
         composable("settings") {
             SettingsScreen(
+                appState    = appState,
+                onBack      = { navController.popBackStack() },
+                onBackup    = { navController.navigate("backup") },
+                onDuressPin = { navController.navigate("duress_pin") }
+            )
+        }
+
+        composable("duress_pin") {
+            DuressPinScreen(
                 appState = appState,
-                onBack   = { navController.popBackStack() },
-                onBackup = { navController.navigate("backup") }
+                onBack   = { navController.popBackStack() }
             )
         }
 
