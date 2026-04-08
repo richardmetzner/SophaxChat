@@ -368,6 +368,8 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 loadAllMessages()
             }
         }
+        // Bind the hidden service address to the identity key before Tor starts.
+        torManager.configureHiddenService(identity.signingPrivateKeySeed)
         // Start embedded Tor immediately — proxy auto-configured on bootstrap
         torManager.start()
         observeTorState()
@@ -378,6 +380,17 @@ class AppState(application: Application) : AndroidViewModel(application) {
             torManager.state.collect { torState ->
                 if (torState is TorState.Ready && _socksProxy.value.isEmpty()) {
                     setSocksProxy(TorManager.SOCKS_PROXY)
+                }
+            }
+        }
+        // When the hidden service hostname is confirmed by Tor, set myTCPAddress.
+        viewModelScope.launch {
+            torManager.hiddenServiceHostname.collect { hostname ->
+                hostname ?: return@collect
+                val addr = "$hostname:${TorManager.HS_PORT}"
+                val mgr = _chatManager ?: return@collect
+                if (mgr.myTCPAddress == null || mgr.myTCPAddress == addr) {
+                    mgr.myTCPAddress = addr
                 }
             }
         }

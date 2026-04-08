@@ -33,7 +33,7 @@ class TorManager(private val context: Context) {
         const val SOCKS_HOST  = "127.0.0.1"
         const val SOCKS_PORT  = 9050
         const val SOCKS_PROXY = "$SOCKS_HOST:$SOCKS_PORT"
-        private const val HS_PORT = 25519
+        const val HS_PORT     = 25519
     }
 
     private val _state = MutableStateFlow<TorState>(TorState.Stopped)
