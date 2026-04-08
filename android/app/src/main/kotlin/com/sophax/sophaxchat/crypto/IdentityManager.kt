@@ -25,13 +25,17 @@ data class PublicIdentity(
     val dhKeyPublic: ByteArray,        // X25519, 32 bytes
     val safetyNumber: String,
 ) {
-    /** Deterministic peer ID — matches iOS: hex(SHA256(signing || dh))[0..15] */
-    val peerID: String get() {
+    /** Full 256-bit SHA256(signing || dh) — Kademlia DHT node ID for XOR-distance routing.
+     *  The first 16 hex characters equal [peerID]. */
+    val dhtNodeID: ByteArray get() {
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(signingKeyPublic)
         digest.update(dhKeyPublic)
-        return digest.digest().toHex().take(16)
+        return digest.digest()  // 32 bytes
     }
+
+    /** Deterministic peer ID — matches iOS: hex(SHA256(signing || dh))[0..15] */
+    val peerID: String get() = dhtNodeID.toHex().take(16)
 
     override fun equals(other: Any?) = other is PublicIdentity && peerID == other.peerID
     override fun hashCode() = peerID.hashCode()
@@ -59,6 +63,8 @@ class IdentityManager(context: Context) {
     val dhIdentityKeyPair: DHKeyPair get() = dhKeyPair
     val signingKeyPairInternal: SigningKeyPair get() = signingKeyPair
     val username: String get() = prefs.getString(KEY_USERNAME, "anonymous") ?: "anonymous"
+    /** 32-byte Ed25519 private key seed (first half of the stored 64-byte key pair). */
+    val signingPrivateKeySeed: ByteArray get() = signingKeyPair.privateKeyBytes.copyOfRange(0, 32)
 
     // -----------------------------------------------------------------------
     // Username
