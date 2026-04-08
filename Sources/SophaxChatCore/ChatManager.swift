@@ -292,6 +292,16 @@ public final class ChatManager: @unchecked Sendable {
     /// Fires every 60 seconds to purge messages whose expiresAt has passed.
     private var expiryTimer: Timer?
 
+    // MARK: - DHT peer discovery
+
+    private var dhtEngine:  DHTEngine?
+    private var dhtStorage: DHTStorage?
+    /// DHT messages queued for peers not yet TCP-connected.
+    /// Keyed by "host.onion:port" — flushed in tcpTransport(_:didConnectToPeer:address:).
+    private var pendingDHTMessages: [String: [WireMessage]] = [:]
+    /// Rate limiter: max 30 DHT requests/min per sender.
+    private var dhtRateLimiters: [String: TokenBucket] = [:]
+
     public weak var delegate: ChatManagerDelegate?
 
     // MARK: - TCP transport (optional internet layer)
@@ -405,12 +415,98 @@ public final class ChatManager: @unchecked Sendable {
     public func stopTCP() {
         tcpTransport?.stop()
         tcpTransport = nil
+        if let engine = dhtEngine {
+            Task { await engine.stop() }
+        }
+        dhtEngine = nil
+    }
+
+    /// Start the DHT engine. Call after TCP transport is up and myTCPAddress is set.
+    public func startDHT() {
+        guard dhtEngine == nil else { return }
+        let storage = DHTStorage(messageStore: messageStore)
+        dhtStorage = storage
+
+        let sendBlock: DHTSendBlock = { [weak self] message, contact in
+            guard let self else { return }
+            self.sendDHTMessage(message, to: contact)
+        }
+
+        guard let engine = try? DHTEngine(
+            identity:    identity,
+            wireBuilder: wireBuilder,
+            send:        sendBlock
+        ) else { return }
+        dhtEngine = engine
+
+        // Bootstrap priority: (1) persisted k-buckets, (2) knownPeers with TCP address,
+        // (3) hardcoded bootstrap nodes.
+        var bootstrapContacts = storage.load()
+        let fromKnown: [DHTContact] = knownPeers.values.compactMap { peer in
+            guard let addr = peer.tcpAddress else { return nil }
+            let nodeIDData = peer.signingKeyPublic + peer.dhKeyPublic
+            let nodeID = Data(SHA256.hash(data: nodeIDData)).hexString
+            let parts  = addr.split(separator: ":").map(String.init)
+            guard parts.count == 2, parts[0].hasSuffix(".onion"),
+                  let port = UInt16(parts[1]) else { return nil }
+            return DHTContact(nodeID: nodeID, onionAddress: parts[0], port: port)
+        }
+        bootstrapContacts.append(contentsOf: fromKnown)
+        if bootstrapContacts.isEmpty { bootstrapContacts = DHTBootstrap.nodes }
+
+        Task { await engine.start(bootstrapContacts: bootstrapContacts) }
+
+        // Schedule k-bucket snapshot every 30 minutes
+        Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self, weak engine] _ in
+            guard let self, let engine else { return }
+            Task {
+                let snap = await engine.table.snapshot()
+                self.dhtStorage?.save(snapshot: snap)
+            }
+        }
     }
 
     /// Initiate an outbound TCP connection to `address` ("host:port").
     public func connectViaTCP(address: String) throws {
         guard let tcp = tcpTransport else { return }
         try tcp.connect(to: address)
+    }
+
+    // MARK: - DHT send helper
+
+    /// Sends a DHT WireMessage to a contact. Connects if not already connected;
+    /// queues the message and flushes it in tcpTransport(_:didConnectToPeer:address:).
+    private func sendDHTMessage(_ message: WireMessage, to contact: DHTContact) {
+        guard let tcp = tcpTransport else { return }
+        let address = contact.tcpAddress
+        if tcp.connectedPeerIDs.contains(where: { knownPeers[$0]?.tcpAddress == address }) {
+            // Already connected — find the peerID and send
+            if let peerID = tcp.connectedPeerIDs.first(where: { knownPeers[$0]?.tcpAddress == address }) {
+                try? tcp.send(message, toPeerID: peerID)
+            }
+        } else {
+            // Queue and connect
+            pendingDHTMessages[address, default: []].append(message)
+            try? tcp.connect(to: address)
+        }
+    }
+
+    // MARK: - DHT peer lookup
+
+    /// Lookup a peer by their 16-char peerID via the DHT.
+    /// Resolves their PreKeyBundle, connects TCP, and returns a KnownPeer.
+    public func lookupPeer(peerID: String) async throws -> KnownPeer {
+        guard let engine = dhtEngine else { throw SophaxError.invalidMessageFormat("DHT not running") }
+
+        let (_, bundle) = try await engine.lookup(peerID: peerID)
+
+        let safetyNumber = generateSafetyNumber(for: bundle)
+        let peer = KnownPeer(from: bundle, safetyNumber: safetyNumber, trustLevel: .pending)
+
+        knownPeers[peerID] = peer
+        if let addr = bundle.tcpAddress { try? connectViaTCP(address: addr) }
+
+        return peer
     }
 
     // MARK: - Public: Identity broadcast
@@ -559,10 +655,23 @@ public final class ChatManager: @unchecked Sendable {
         expiryTimer?.invalidate()
         // Run on main runloop — safe since all ChatManager state is on main
         expiryTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.purgeExpiredMessages()
+            guard let self else { return }
+            self.purgeExpiredMessages()
+            // Republish our DHT bundle every 24h (approx — timer fires every 60s,
+            // DHTEngine.publishInterval guards the actual frequency inside the engine).
+            self.publishDHTBundleIfNeeded()
         }
         // Fire once immediately to clean up any stale messages from previous sessions
         purgeExpiredMessages()
+    }
+
+    private var lastDHTPublish: Date = .distantPast
+    private func publishDHTBundleIfNeeded() {
+        guard let engine = dhtEngine,
+              Date().timeIntervalSince(lastDHTPublish) > DHTEngine.publishInterval else { return }
+        lastDHTPublish = Date()
+        guard let bundle = try? preKeys.generateBundle(tcpAddress: myTCPAddress) else { return }
+        Task { await engine.publishSelf(bundle: bundle) }
     }
 
     /// Executes a Keychain save, logging failures in debug builds.
@@ -2696,8 +2805,14 @@ public final class ChatManager: @unchecked Sendable {
 
         case .dhtPing, .dhtPong, .dhtFindNode, .dhtFindNodeResp,
              .dhtStore, .dhtFindValue, .dhtFindValueResp:
-            // Routed to DHTEngine — handled in Fáze 5.
-            break
+            if dhtRateLimiters[message.senderID] == nil {
+                dhtRateLimiters[message.senderID] = TokenBucket(capacity: 30, windowSeconds: 60)
+            }
+            guard dhtRateLimiters[message.senderID]!.consume() else { break }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.dhtEngine?.handleMessage(message, fromPeer: message.senderID)
+            }
         }
     }
 
@@ -3359,6 +3474,11 @@ extension ChatManager: TCPTransportDelegate {
     public func tcpTransport(
         _ transport: TCPTransport, didConnectToPeer peerID: String, address: String
     ) {
+        // Flush any DHT messages queued for this address
+        if let queued = pendingDHTMessages.removeValue(forKey: address) {
+            for msg in queued { try? transport.send(msg, toPeerID: peerID) }
+        }
+
         // Mark TCP address for this peer if we know them
         knownPeers[peerID]?.tcpAddress       = address
         knownPeers[peerID]?.isOnline          = true
