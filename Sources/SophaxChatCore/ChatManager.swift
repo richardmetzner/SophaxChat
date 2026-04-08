@@ -2693,6 +2693,11 @@ public final class ChatManager: @unchecked Sendable {
             if let payload = try? wireBuilder.decodePayload(RemoteWipeRequest.self, from: message) {
                 handleRemoteWipe(payload, fromPeer: message.senderID)
             }
+
+        case .dhtPing, .dhtPong, .dhtFindNode, .dhtFindNodeResp,
+             .dhtStore, .dhtFindValue, .dhtFindValueResp:
+            // Routed to DHTEngine — handled in Fáze 5.
+            break
         }
     }
 
@@ -3167,6 +3172,11 @@ extension ChatManager: MeshManagerDelegate {
                 if let payload = try? wireBuilder.decodePayload(RemoteWipeRequest.self, from: message) {
                     handleRemoteWipe(payload, fromPeer: message.senderID)
                 }
+
+            case .dhtPing, .dhtPong, .dhtFindNode, .dhtFindNodeResp,
+                 .dhtStore, .dhtFindValue, .dhtFindValueResp:
+                // Routed to DHTEngine — handled in Fáze 5.
+                break
             }
         } catch SophaxError.sessionStateCorrupted {
             // The persisted DR session blob was malformed (e.g. crashed mid-write).

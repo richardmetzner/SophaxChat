@@ -160,6 +160,23 @@ public enum WireMessageType: String, Codable, Sendable {
     /// A trusted contact requests remote account wipe.
     /// Receiver verifies Ed25519 signature and that sender is in trustedWipePeers.
     case remoteWipe
+
+    // MARK: Kademlia DHT (peer discovery over Tor)
+
+    /// Liveness check — sent to a DHT contact to verify it's still reachable.
+    case dhtPing
+    /// Reply to dhtPing.
+    case dhtPong
+    /// Iterative lookup: return up to k nodes closest to targetNodeID.
+    case dhtFindNode
+    /// Response to dhtFindNode — contains up to k closest known contacts.
+    case dhtFindNodeResp
+    /// Store a PreKeyBundle at this node (we are among the k closest to the key).
+    case dhtStore
+    /// Lookup: return stored PreKeyBundle for targetNodeID, or closest nodes if unknown.
+    case dhtFindValue
+    /// Response to dhtFindValue — contains the bundle (if found) or closest nodes.
+    case dhtFindValueResp
 }
 
 // MARK: - MLS Wire Messages
@@ -1129,5 +1146,88 @@ public struct RemoteWipeRequest: Codable, Sendable {
     public init(requestID: String = UUID().uuidString, issuedAt: Date = Date()) {
         self.requestID = requestID
         self.issuedAt  = issuedAt
+    }
+}
+
+// MARK: - Kademlia DHT Payloads
+
+/// Contact info published in DHT routing tables and lookup responses.
+/// Field names must match Android counterpart exactly for cross-platform JSON interop.
+public struct DHTNodeInfo: Codable, Sendable {
+    /// Full 256-bit SHA256(signingKey || dhKey) as lowercase hex (64 chars).
+    public let nodeID: String
+    /// Tor v3 .onion hostname without port (62 chars, ending in ".onion").
+    public let onionAddress: String
+    /// TCP port — always 25519 in practice.
+    public let port: UInt16
+
+    public init(nodeID: String, onionAddress: String, port: UInt16 = 25519) {
+        self.nodeID       = nodeID
+        self.onionAddress = onionAddress
+        self.port         = port
+    }
+}
+
+public struct DHTPingPayload: Codable, Sendable {
+    public let senderNodeID: String
+    public init(senderNodeID: String) { self.senderNodeID = senderNodeID }
+}
+
+public struct DHTPongPayload: Codable, Sendable {
+    public let senderNodeID: String
+    public init(senderNodeID: String) { self.senderNodeID = senderNodeID }
+}
+
+/// Ask the receiver for up to k nodes closest to targetNodeID.
+public struct DHTFindNodePayload: Codable, Sendable {
+    public let targetNodeID: String
+    public init(targetNodeID: String) { self.targetNodeID = targetNodeID }
+}
+
+/// Up to k closest DHT contacts known to the responder.
+public struct DHTFindNodeRespPayload: Codable, Sendable {
+    public let closestNodes: [DHTNodeInfo]
+    public init(closestNodes: [DHTNodeInfo]) { self.closestNodes = closestNodes }
+}
+
+/// Ask the receiver to store a PreKeyBundle (we computed they are among the k closest).
+public struct DHTStorePayload: Codable, Sendable {
+    /// Full 256-bit node ID (hex 64 chars) — the DHT key under which the bundle is stored.
+    public let nodeID:    String
+    public let bundle:    PreKeyBundle
+    /// Bundle expires and should be dropped after this date (typically now + 25h).
+    public let expiresAt: Date
+
+    public init(nodeID: String, bundle: PreKeyBundle, expiresAt: Date) {
+        self.nodeID    = nodeID
+        self.bundle    = bundle
+        self.expiresAt = expiresAt
+    }
+}
+
+/// Lookup a stored PreKeyBundle by full nodeID or 16-char peerID prefix.
+public struct DHTFindValuePayload: Codable, Sendable {
+    /// Full 256-bit node ID (hex) — used for XOR routing to the correct bucket.
+    public let targetNodeID: String
+    /// Optional 16-char prefix for prefix-based search when full ID is unknown.
+    /// Receivers scan their local DHTStore for entries whose nodeID starts with this prefix.
+    public let peerIDPrefix: String?
+
+    public init(targetNodeID: String, peerIDPrefix: String? = nil) {
+        self.targetNodeID = targetNodeID
+        self.peerIDPrefix = peerIDPrefix
+    }
+}
+
+/// Response to dhtFindValue: either the bundle (hit) or the k closest nodes (miss).
+public struct DHTFindValueRespPayload: Codable, Sendable {
+    /// Non-nil when the receiver holds the bundle for the requested node.
+    public let bundle:       PreKeyBundle?
+    /// Populated when bundle is nil — k closest nodes for the requester to query next.
+    public let closestNodes: [DHTNodeInfo]
+
+    public init(bundle: PreKeyBundle?, closestNodes: [DHTNodeInfo] = []) {
+        self.bundle       = bundle
+        self.closestNodes = closestNodes
     }
 }
