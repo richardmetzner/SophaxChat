@@ -1191,6 +1191,7 @@ final class AppState: ObservableObject {
     private func startTCPTransport(on manager: ChatManager) {
         let transport = TCPTransport(config: makeTCPConfig())
         manager.startTCP(transport)
+        manager.startDHT()
     }
 
     private func applyTCPConfig() {
