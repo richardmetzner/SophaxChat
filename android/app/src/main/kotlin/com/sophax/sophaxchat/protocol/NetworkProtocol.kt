@@ -71,7 +71,15 @@ enum class WireMessageType {
     senderKeyRequest,   // request peer to re-send their SenderKeyDistributionMessage
     deviceLinkRequest,  // QR-based device link: share PreKeyBundle with other device
     deviceSyncMessage,  // forward a received/sent message to all linked devices
-    remoteWipe          // trusted contact requests account wipe
+    remoteWipe,         // trusted contact requests account wipe
+    // Kademlia DHT (peer discovery over Tor)
+    dhtPing,            // liveness check
+    dhtPong,            // reply to dhtPing
+    dhtFindNode,        // iterative lookup: return k closest nodes to targetNodeID
+    dhtFindNodeResp,    // response with up to k closest known contacts
+    dhtStore,           // store a PreKeyBundle at this node
+    dhtFindValue,       // lookup: return stored bundle or closest nodes
+    dhtFindValueResp    // response: bundle (hit) or closest nodes (miss)
 }
 
 @Serializable
@@ -398,4 +406,57 @@ data class KnownPeer(
 data class RemoteWipeRequest(
     val requestID: String = java.util.UUID.randomUUID().toString(),
     val issuedAt: SerDate = java.util.Date()
+)
+
+// ---------------------------------------------------------------------------
+// Kademlia DHT payloads
+// Field names must match iOS counterparts exactly for cross-platform JSON interop.
+// ---------------------------------------------------------------------------
+
+/** Contact info published in DHT routing tables and lookup responses. */
+@Serializable
+data class DHTNodeInfo(
+    /** Full 256-bit SHA256(signingKey || dhKey) as lowercase hex (64 chars). */
+    val nodeID: String,
+    /** Tor v3 .onion hostname without port (62 chars). */
+    val onionAddress: String,
+    /** TCP port — always 25519 in practice. */
+    val port: Int = 25519
+)
+
+@Serializable data class DHTPingPayload(val senderNodeID: String)
+@Serializable data class DHTPongPayload(val senderNodeID: String)
+
+/** Ask the receiver for up to k nodes closest to targetNodeID. */
+@Serializable data class DHTFindNodePayload(val targetNodeID: String)
+
+/** Up to k closest DHT contacts known to the responder. */
+@Serializable data class DHTFindNodeRespPayload(val closestNodes: List<DHTNodeInfo>)
+
+/** Ask the receiver to store a PreKeyBundle (we computed they are among the k closest). */
+@Serializable
+data class DHTStorePayload(
+    /** Full 256-bit node ID (hex 64 chars) — DHT key under which the bundle is stored. */
+    val nodeID: String,
+    val bundle: PreKeyBundle,
+    /** Bundle expires after this date (typically now + 25h). */
+    val expiresAt: SerDate
+)
+
+/** Lookup a stored PreKeyBundle by full nodeID or 16-char peerID prefix. */
+@Serializable
+data class DHTFindValuePayload(
+    /** Full 256-bit node ID (hex) for XOR routing. */
+    val targetNodeID: String,
+    /** Optional 16-char prefix when full ID is unknown — receivers scan local store. */
+    val peerIDPrefix: String? = null
+)
+
+/** Response to dhtFindValue: bundle (hit) or k closest nodes (miss). */
+@Serializable
+data class DHTFindValueRespPayload(
+    /** Non-null when the receiver holds the bundle for the requested node. */
+    val bundle: PreKeyBundle?,
+    /** Populated when bundle is null — k closest nodes to query next. */
+    val closestNodes: List<DHTNodeInfo> = emptyList()
 )
