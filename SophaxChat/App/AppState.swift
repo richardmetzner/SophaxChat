@@ -220,6 +220,12 @@ final class AppState: ObservableObject {
             if let username {
                 try identity.setUsername(username)
             }
+            // Bind the Tor hidden service address to the identity key so .onion == identity.
+            #if !targetEnvironment(macCatalyst)
+            if let seed = try? identity.signingPrivateKeyData() {
+                TorManager.shared.configureHiddenService(ed25519PrivateKeySeed: seed)
+            }
+            #endif
             let preKeys      = try PreKeyManager(identity: identity, keychain: keychain)
             let mesh         = MeshManager(localIdentityHash: identity.publicIdentity.peerID)
             let store        = try MessageStore(keychain: keychain)
@@ -1239,6 +1245,19 @@ final class AppState: ObservableObject {
                     }
                 default:
                     break
+                }
+            }
+        }
+        // When the hidden service hostname is confirmed by Tor, auto-populate myTCPAddress.
+        Task { [weak self] in
+            for await hostname in TorManager.shared.$hiddenServiceHostname.values {
+                guard let self, let hostname else { continue }
+                let port = self.tcpPort.isEmpty ? "25519" : self.tcpPort
+                let addr = "\(hostname):\(port)"
+                // Only overwrite if empty or already matches our identity-derived address
+                // (i.e. don't clobber a user-set custom address).
+                if self.myTCPAddress.isEmpty || self.myTCPAddress == addr {
+                    self.myTCPAddress = addr
                 }
             }
         }

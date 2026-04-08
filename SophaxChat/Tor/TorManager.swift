@@ -36,8 +36,6 @@ final class TorManager: ObservableObject {
     private var thread: TorThread?
     private var controller: TorController?
     private var statusObserver: Any?
-    /// 32-byte Ed25519 private key seed — stored only long enough to write the HS key file.
-    private var pendingIdentitySeed: Data? = nil
 
     private var torDataDir: URL {
         let app = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -56,10 +54,12 @@ final class TorManager: ObservableObject {
 
     private init() {}
 
-    /// Call before `start()` to bind the hidden service address to the user's identity key.
-    /// If not called, Tor generates a random hidden service key on first run.
+    /// Writes the deterministic hidden service key file from the user's Ed25519 identity seed.
+    /// Call once after identity is loaded — safe to call repeatedly (idempotent write).
+    /// If not called before `start()`, Tor generates a random hidden service key on first run.
     func configureHiddenService(ed25519PrivateKeySeed seed: Data) {
-        pendingIdentitySeed = seed
+        try? FileManager.default.createDirectory(at: torDataDir, withIntermediateDirectories: true)
+        try? HiddenServiceKeyWriter.write(to: hiddenServiceDir, seed: seed)
     }
 
     /// Starts embedded Tor. Safe to call multiple times — no-op if already starting/ready.
@@ -71,12 +71,6 @@ final class TorManager: ObservableObject {
 
         // Create data dir
         try? FileManager.default.createDirectory(at: torDataDir, withIntermediateDirectories: true)
-
-        // Write deterministic hidden service key file so .onion == identity key.
-        if let seed = pendingIdentitySeed {
-            try? HiddenServiceKeyWriter.write(to: hiddenServiceDir, seed: seed)
-            pendingIdentitySeed = nil
-        }
 
         // Configure Tor
         let config = TorConfiguration()
