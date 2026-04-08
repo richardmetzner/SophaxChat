@@ -39,12 +39,18 @@ public final class IdentityManager: @unchecked Sendable {
             try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: dhKeyPublic)
         }
 
+        /// Full 256-bit SHA256 hash of signingKeyPublic || dhKeyPublic.
+        /// Used as the Kademlia DHT node ID for XOR-distance routing.
+        /// The first 16 hex characters equal `peerID`.
+        public var dhtNodeID: Data {
+            let combined = signingKeyPublic + dhKeyPublic
+            return Data(SHA256.hash(data: combined))
+        }
+
         /// A stable, unique peer identifier derived from the identity keys.
         /// Used as the MultipeerConnectivity display name and as Keychain account suffix.
         public var peerID: String {
-            let combined = signingKeyPublic + dhKeyPublic
-            let hash = SHA256.hash(data: combined)
-            return Data(hash).prefix(16).hexString
+            dhtNodeID.prefix(8).hexString
         }
     }
 
