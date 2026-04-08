@@ -24,6 +24,9 @@ final class TorManager: ObservableObject {
 
     @Published private(set) var state: TorState = .stopped
     @Published private(set) var bootstrapProgress: Int = 0
+    /// Hostname of our v3 hidden service (without port), set once Tor reaches 100% bootstrap.
+    /// Equals `OnionAddress.from(ed25519PublicKey:)` when started with an identity seed.
+    @Published private(set) var hiddenServiceHostname: String? = nil
 
     /// SOCKS5 proxy string to pass to TCPTransport when ready.
     static let socksProxy = "127.0.0.1:9050"
@@ -33,10 +36,16 @@ final class TorManager: ObservableObject {
     private var thread: TorThread?
     private var controller: TorController?
     private var statusObserver: Any?
+    /// 32-byte Ed25519 private key seed — stored only long enough to write the HS key file.
+    private var pendingIdentitySeed: Data? = nil
 
     private var torDataDir: URL {
         let app = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return app.appendingPathComponent("tor_data", isDirectory: true)
+    }
+
+    private var hiddenServiceDir: URL {
+        torDataDir.appendingPathComponent("hidden_service", isDirectory: true)
     }
 
     private var controlSocketURL: URL {
@@ -47,25 +56,41 @@ final class TorManager: ObservableObject {
 
     private init() {}
 
+    /// Call before `start()` to bind the hidden service address to the user's identity key.
+    /// If not called, Tor generates a random hidden service key on first run.
+    func configureHiddenService(ed25519PrivateKeySeed seed: Data) {
+        pendingIdentitySeed = seed
+    }
+
     /// Starts embedded Tor. Safe to call multiple times — no-op if already starting/ready.
     func start() {
         guard state == .stopped else { return }
         state = .starting
         bootstrapProgress = 0
+        hiddenServiceHostname = nil
 
         // Create data dir
         try? FileManager.default.createDirectory(at: torDataDir, withIntermediateDirectories: true)
 
+        // Write deterministic hidden service key file so .onion == identity key.
+        if let seed = pendingIdentitySeed {
+            try? HiddenServiceKeyWriter.write(to: hiddenServiceDir, seed: seed)
+            pendingIdentitySeed = nil
+        }
+
         // Configure Tor
         let config = TorConfiguration()
-        config.dataDirectory       = torDataDir
-        config.cacheDirectory      = torDataDir
-        config.controlSocket       = controlSocketURL
+        config.dataDirectory        = torDataDir
+        config.cacheDirectory       = torDataDir
+        config.controlSocket        = controlSocketURL
         config.cookieAuthentication = true
-        config.clientOnly          = true
-        config.avoidDiskWrites     = false
-        config.socksPort           = 9050
-        config.ignoreMissingTorrc  = true
+        config.avoidDiskWrites      = false
+        config.socksPort            = 9050
+        config.ignoreMissingTorrc   = true
+        // Hidden service: serve on port 25519, forward to local TCP listener.
+        config.hiddenServiceDirectory = hiddenServiceDir
+        config.options["HiddenServicePort"]    = "25519 127.0.0.1:25519"
+        config.options["HiddenServiceVersion"] = "3"
 
         // Start Tor thread
         let t = TorThread(configuration: config)
@@ -134,7 +159,10 @@ final class TorManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.bootstrapProgress = progress
-                if progress >= 100 { self.state = .ready }
+                if progress >= 100 {
+                    self.readHiddenServiceHostname()
+                    self.state = .ready
+                }
             }
             return true
         })
@@ -146,9 +174,21 @@ final class TorManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.bootstrapProgress = max(self.bootstrapProgress, progress)
-                if progress >= 100 { self.state = .ready }
+                if progress >= 100 {
+                    self.readHiddenServiceHostname()
+                    self.state = .ready
+                }
             }
         }
+    }
+
+    /// Reads the `.onion` hostname from the hidden service directory once Tor has written it.
+    private func readHiddenServiceHostname() {
+        let hostnameURL = hiddenServiceDir.appendingPathComponent("hostname")
+        guard let raw = try? String(contentsOf: hostnameURL, encoding: .utf8) else { return }
+        let hostname = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hostname.hasSuffix(".onion"), hostname.count == 62 else { return }
+        hiddenServiceHostname = hostname
     }
 
     // MARK: - Helpers
