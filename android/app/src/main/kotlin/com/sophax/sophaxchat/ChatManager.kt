@@ -779,6 +779,7 @@ class ChatManager(
             WireMessageType.remoteWipe.name                -> handleRemoteWipe(message)
             WireMessageType.readReceipt.name               -> handleReadReceipt(message)
             WireMessageType.editMessage.name               -> handleEditMessage(message)
+            WireMessageType.groupEditMessage.name          -> handleGroupEditMessage(message)
             // DHT messages — rate-limited, dispatched to DHTEngine
             WireMessageType.dhtPing.name,
             WireMessageType.dhtPong.name,
@@ -1029,6 +1030,24 @@ class ChatManager(
         val wire = builder().build(WireMessageType.editMessage.name, encrypted)
         messageStore.editMessage(messageID, toPeerID, newBody, editedAt.time)
         sendOrRoute(wire, toPeerID)
+    }
+
+    /** Fan out an in-place edit to all group members. Plaintext — matches iOS GroupEditMessagePayload. */
+    fun sendGroupEditMessage(group: GroupInfo, messageID: String, newBody: String) {
+        val editedAt = Date()
+        val payload  = GroupEditMessagePayload(groupID = group.id, messageID = messageID, newBody = newBody, editedAt = editedAt)
+        val wire     = builder().build(WireMessageType.groupEditMessage.name, payload)
+        messageStore.editMessage(messageID, group.conversationID, newBody, editedAt.time)
+        group.memberIDs.filter { it != identity.publicIdentity.peerID }
+            .forEach { peerID -> sendOrRoute(wire, peerID) }
+    }
+
+    private fun handleGroupEditMessage(message: WireMessage) {
+        val payload = try { json.decodeFromString<GroupEditMessagePayload>(String(message.payload)) }
+                      catch (e: Exception) { return }
+        val group = groups[payload.groupID] ?: return
+        messageStore.editMessage(payload.messageID, group.conversationID, payload.newBody, payload.editedAt.time)
+        delegate?.didEditMessage(group.conversationID)
     }
 
     private fun handleEditMessage(message: WireMessage) {

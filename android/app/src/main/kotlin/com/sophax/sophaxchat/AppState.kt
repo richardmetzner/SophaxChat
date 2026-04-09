@@ -358,6 +358,16 @@ class AppState(application: Application) : AndroidViewModel(application) {
         addReaction(if (isGroup && groupID != null) groupID else toPeerID, messageID, myPeerID, emoji)
     }
 
+    fun sendGroupEditMessage(group: GroupInfo, messageID: String, newBody: String) {
+        _chatManager?.sendGroupEditMessage(group, messageID, newBody)
+        val convID  = group.conversationID
+        val updated = (_messages.value[convID] ?: emptyList()).map { msg ->
+            if (msg.id == messageID) msg.copy(body = newBody, editedAt = System.currentTimeMillis())
+            else msg
+        }
+        updateMessages(convID, updated)
+    }
+
     fun sendEditMessage(toPeerID: String, messageID: String, newBody: String) {
         _chatManager?.sendEditMessage(toPeerID, messageID, newBody)
         // Reflect edit locally

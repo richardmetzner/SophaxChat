@@ -60,6 +60,7 @@ fun GroupChatScreen(
 
     var inputText       by remember { mutableStateOf("") }
     var replyTo         by remember { mutableStateOf<StoredMessage?>(null) }
+    var editingMsg      by remember { mutableStateOf<StoredMessage?>(null) }
     var showMemberSheet by remember { mutableStateOf(false) }
     val listState  = rememberLazyListState()
     var prevSize   by remember { mutableIntStateOf(0) }
@@ -127,6 +128,13 @@ fun GroupChatScreen(
                 tonalElevation = 2.dp,
                 onSend = {
                     if (inputText.isNotBlank()) {
+                        val editing = editingMsg
+                        if (editing != null) {
+                            appState.sendGroupEditMessage(group, editing.id, inputText.trim())
+                            editingMsg = null
+                            inputText  = ""
+                            return@SharedInputBar
+                        }
                         val body = if (replyTo != null)
                             "> ${replyTo!!.body.take(60).replace("\n", " ")}\n${inputText.trim()}"
                         else inputText.trim()
@@ -159,7 +167,10 @@ fun GroupChatScreen(
                         { appState.blockPeer(msg.peerID) }
                     } else null,
                     onReply    = { replyTo = msg },
-                    onReact    = { emoji -> appState.sendReaction(group.id, msg.id, emoji, isGroup = true, groupID = group.id) }
+                    onReact    = { emoji -> appState.sendReaction(group.id, msg.id, emoji, isGroup = true, groupID = group.id) },
+                    onEdit     = if (msg.direction == MessageDirection.sent.name) {
+                        { editingMsg = msg; inputText = msg.body }
+                    } else null
                 )
             }
         }
@@ -208,7 +219,8 @@ private fun GroupMessageBubble(
     onDelete: () -> Unit = {},
     onBlock: (() -> Unit)? = null,
     onReply: () -> Unit = {},
-    onReact: ((String) -> Unit)? = null
+    onReact: ((String) -> Unit)? = null,
+    onEdit: (() -> Unit)? = null
 ) {
     val isMe = message.direction == MessageDirection.sent.name
     var showMenu by remember { mutableStateOf(false) }
@@ -265,7 +277,8 @@ private fun GroupMessageBubble(
                     onReply   = onReply,
                     onDelete  = onDelete,
                     onBlock   = onBlock,
-                    onReact   = onReact
+                    onReact   = onReact,
+                    onEdit    = onEdit
                 )
             }
             // Reaction pills
