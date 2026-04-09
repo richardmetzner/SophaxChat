@@ -775,6 +775,7 @@ class ChatManager(
             WireMessageType.deviceLinkRequest.name         -> handleDeviceLinkRequest(message)
             WireMessageType.deviceSyncMessage.name         -> handleDeviceSyncMessage(message)
             WireMessageType.remoteWipe.name                -> handleRemoteWipe(message)
+            WireMessageType.readReceipt.name               -> handleReadReceipt(message)
             // DHT messages — rate-limited, dispatched to DHTEngine
             WireMessageType.dhtPing.name,
             WireMessageType.dhtPong.name,
@@ -983,6 +984,30 @@ class ChatManager(
                   catch (e: Exception) { return }
         messageStore.updateStatus(ack.messageID, message.senderID, MessageStatus.delivered)
         delegate?.messageDelivered(ack.messageID, message.senderID)
+    }
+
+    // -----------------------------------------------------------------------
+    // Read receipts
+    // -----------------------------------------------------------------------
+
+    /** Mark all received messages in [peerID]'s conversation as read and notify the sender. */
+    fun markAsRead(peerID: String) {
+        val unread = messageStore.loadMessages(peerID).filter {
+            it.direction == "received" && it.status != MessageStatus.read.name
+        }
+        if (unread.isEmpty()) return
+        messageStore.markAllRead(peerID)
+        val receipt = ReadReceiptMessage(messageIDs = unread.map { it.id })
+        val wire = builder().build(WireMessageType.readReceipt.name, receipt)
+        sendOrRoute(wire, peerID)
+    }
+
+    private fun handleReadReceipt(message: WireMessage) {
+        val receipt = try { json.decodeFromString<ReadReceiptMessage>(String(message.payload)) }
+                      catch (e: Exception) { return }
+        receipt.messageIDs.forEach { msgID ->
+            messageStore.updateStatus(msgID, message.senderID, MessageStatus.read)
+        }
     }
 
     // -----------------------------------------------------------------------

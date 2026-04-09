@@ -128,7 +128,8 @@ class AppState(application: Application) : AndroidViewModel(application) {
     val unreadCounts: StateFlow<Map<String, Int>> = _unreadCounts.asStateFlow()
 
     fun markAsRead(conversationID: String) {
-        messageStore.markAllRead(conversationID)
+        _chatManager?.markAsRead(conversationID)   // sends read receipt + updates store
+            ?: messageStore.markAllRead(conversationID)  // fallback if manager not ready
         _unreadCounts.value = _unreadCounts.value - conversationID
     }
 
