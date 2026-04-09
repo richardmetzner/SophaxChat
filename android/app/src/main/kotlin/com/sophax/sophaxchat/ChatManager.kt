@@ -778,6 +778,7 @@ class ChatManager(
             WireMessageType.deviceSyncMessage.name         -> handleDeviceSyncMessage(message)
             WireMessageType.remoteWipe.name                -> handleRemoteWipe(message)
             WireMessageType.readReceipt.name               -> handleReadReceipt(message)
+            WireMessageType.groupReadReceipt.name          -> handleGroupReadReceipt(message)
             WireMessageType.editMessage.name               -> handleEditMessage(message)
             WireMessageType.groupEditMessage.name          -> handleGroupEditMessage(message)
             // DHT messages — rate-limited, dispatched to DHTEngine
@@ -1030,6 +1031,17 @@ class ChatManager(
         val wire = builder().build(WireMessageType.editMessage.name, encrypted)
         messageStore.editMessage(messageID, toPeerID, newBody, editedAt.time)
         sendOrRoute(wire, toPeerID)
+    }
+
+    // -----------------------------------------------------------------------
+    // Group read receipts
+    // -----------------------------------------------------------------------
+
+    private fun handleGroupReadReceipt(message: WireMessage) {
+        val receipt = try { json.decodeFromString<GroupReadReceiptMessage>(String(message.payload)) }
+                      catch (e: Exception) { return }
+        val group = groups[receipt.groupID] ?: return
+        messageStore.updateStatus(receipt.targetMessageID, group.conversationID, MessageStatus.read)
     }
 
     /** Fan out an in-place edit to all group members. Plaintext — matches iOS GroupEditMessagePayload. */
