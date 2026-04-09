@@ -518,6 +518,7 @@ class AppState(application: Application) : AndroidViewModel(application) {
         _groups.value = mgr.groupsList()
         _linkedDevices.value = mgr.linkedDevicesList()
         mgr.start()
+        mgr.startDHT()
     }
 
     // -----------------------------------------------------------------------

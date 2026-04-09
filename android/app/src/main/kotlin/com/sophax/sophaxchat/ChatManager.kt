@@ -13,6 +13,11 @@ import com.sophax.sophaxchat.crypto.PreKeyManager
 import com.sophax.sophaxchat.crypto.SenderKeyState
 import com.sophax.sophaxchat.crypto.X3DH
 import com.sophax.sophaxchat.crypto.PreKeyBundleLocal
+import com.sophax.sophaxchat.crypto.toHex
+import com.sophax.sophaxchat.network.DHTBootstrap
+import com.sophax.sophaxchat.network.DHTContact
+import com.sophax.sophaxchat.network.DHTEngine
+import com.sophax.sophaxchat.network.DHTStorage
 import com.sophax.sophaxchat.network.LanDiscovery
 import com.sophax.sophaxchat.network.LanDiscoveryListener
 import com.sophax.sophaxchat.network.NearbyManager
@@ -26,6 +31,11 @@ import com.sophax.sophaxchat.storage.MessageDirection
 import com.sophax.sophaxchat.storage.MessageStatus
 import com.sophax.sophaxchat.storage.MessageStore
 import com.sophax.sophaxchat.storage.StoredMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
@@ -84,6 +94,19 @@ class ChatManager(
 
     // Known peer identities (verified)
     private val knownPeers   = ConcurrentHashMap<String, KnownPeer>()
+
+    // -----------------------------------------------------------------------
+    // DHT engine (Kademlia peer discovery over Tor)
+    // -----------------------------------------------------------------------
+
+    private var dhtEngine: DHTEngine? = null
+    private val dhtStorage by lazy { DHTStorage(context) }
+    private val dhtScope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** address → queued DHT messages waiting for TCP connection. */
+    private val pendingDHTMessages = ConcurrentHashMap<String, ArrayDeque<WireMessage>>()
+    /** senderID → (windowStart, count) for 30 DHT req/min rate limit. */
+    private val dhtRateLimiters = ConcurrentHashMap<String, Pair<Long, Int>>()
+    private var lastDHTPublish: Long = 0L
 
     // -----------------------------------------------------------------------
     // Linked devices — peerIDs of other devices belonging to the same user.
@@ -201,6 +224,8 @@ class ChatManager(
 
     // TCP connection: peerID → address (already tracked by TcpTransport)
     private val tcpPeerIDs = ConcurrentHashMap<String, Boolean>()
+    /** address → peerID, populated when TCP handshake completes. */
+    private val tcpAddressToPeerID = ConcurrentHashMap<String, String>()
 
     // Tracks when each DR session was established (epoch ms).
     // Used to reject replayed or duplicate initiateSession messages.
@@ -298,6 +323,86 @@ class ChatManager(
         nearby?.stop() ?: wifiDirect?.stop()
         tcp.stop()
         lan.stop()
+        stopDHT()
+    }
+
+    // -----------------------------------------------------------------------
+    // DHT lifecycle
+    // -----------------------------------------------------------------------
+
+    fun startDHT() {
+        val wireBuilder = WireMessageBuilder(identity)
+        val engine = DHTEngine(
+            identity    = identity,
+            wireBuilder = wireBuilder,
+            scope       = dhtScope,
+            send        = { msg, contact -> sendDHTMessage(msg, contact) }
+        )
+        dhtEngine = engine
+
+        // Bootstrap priority: (1) persisted k-buckets, (2) knownPeers with tcpAddress,
+        // (3) hardcoded DHTBootstrap.nodes
+        val persisted = dhtStorage.load()
+        val fromPeers = knownPeers.values.mapNotNull { peer ->
+            val addr = peer.tcpAddress ?: return@mapNotNull null
+            val host = addr.substringBeforeLast(':')
+            if (!host.endsWith(".onion")) return@mapNotNull null
+            val port = addr.substringAfterLast(':').toIntOrNull() ?: return@mapNotNull null
+            DHTContact(
+                nodeID       = peer.id.padEnd(64, '0'),
+                onionAddress = host,
+                port         = port
+            )
+        }
+        val bootstrapContacts = (persisted + fromPeers + DHTBootstrap.nodes).distinctBy { it.nodeID }
+        engine.start(bootstrapContacts)
+
+        // Schedule k-bucket snapshot every 30 minutes
+        dhtScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(30L * 60 * 1000)
+                dhtEngine?.let { eng ->
+                    val snapshot = eng.table.snapshot()
+                    dhtStorage.save(snapshot)
+                }
+            }
+        }
+    }
+
+    private fun stopDHT() {
+        dhtEngine?.stop()
+        dhtEngine = null
+        dhtScope.cancel()
+    }
+
+    private suspend fun sendDHTMessage(msg: WireMessage, contact: DHTContact) {
+        val address = "${contact.onionAddress}:${contact.port}"
+        val peerID  = tcpAddressToPeerID[address]
+        if (peerID != null && tcp.isConnected(peerID)) {
+            runCatching { tcp.send(msg, peerID) }
+        } else {
+            pendingDHTMessages.getOrPut(address) { ArrayDeque() }.addLast(msg)
+            tcp.connect(address)
+        }
+    }
+
+    /** Lookup a peer by their 16-char peerID via DHT.
+     *  Returns a KnownPeer populated from the discovered PreKeyBundle, or null. */
+    suspend fun lookupPeer(peerID: String): KnownPeer? {
+        val engine = dhtEngine ?: return null
+        val (_, bundle) = engine.lookup(peerID) ?: return null
+        val existing = knownPeers[bundle.peerID]
+        if (existing != null) return existing
+        val peer = KnownPeer(
+            id               = bundle.peerID,
+            username         = bundle.username,
+            signingKeyPublic = bundle.signingKeyPublic,
+            dhKeyPublic      = bundle.dhIdentityKeyPublic,
+            safetyNumber     = bundle.peerID,
+            tcpAddress       = bundle.tcpAddress
+        )
+        knownPeers[peer.id] = peer
+        return peer
     }
 
     // -----------------------------------------------------------------------
@@ -655,8 +760,39 @@ class ChatManager(
             WireMessageType.deviceLinkRequest.name         -> handleDeviceLinkRequest(message)
             WireMessageType.deviceSyncMessage.name         -> handleDeviceSyncMessage(message)
             WireMessageType.remoteWipe.name                -> handleRemoteWipe(message)
+            // DHT messages — rate-limited, dispatched to DHTEngine
+            WireMessageType.dhtPing.name,
+            WireMessageType.dhtPong.name,
+            WireMessageType.dhtFindNode.name,
+            WireMessageType.dhtFindNodeResp.name,
+            WireMessageType.dhtStore.name,
+            WireMessageType.dhtFindValue.name,
+            WireMessageType.dhtFindValueResp.name -> {
+                if (isDHTRateLimitOk(message.senderID)) {
+                    val engine = dhtEngine
+                    if (engine != null) {
+                        dhtScope.launch { engine.handleMessage(message, message.senderID) }
+                    }
+                }
+            }
             // readReceipt, groupReadReceipt, editMessage, groupEditMessage,
             // channelAnnouncement are accepted but not yet acted upon.
+        }
+    }
+
+    private fun isDHTRateLimitOk(senderID: String): Boolean {
+        val now = System.currentTimeMillis()
+        val windowMs = 60_000L
+        val maxPerWindow = 30
+        val (windowStart, count) = dhtRateLimiters[senderID] ?: Pair(now, 0)
+        return if (now - windowStart > windowMs) {
+            dhtRateLimiters[senderID] = Pair(now, 1)
+            true
+        } else if (count < maxPerWindow) {
+            dhtRateLimiters[senderID] = Pair(windowStart, count + 1)
+            true
+        } else {
+            false
         }
     }
 
@@ -1190,9 +1326,19 @@ class ChatManager(
     // -----------------------------------------------------------------------
 
     private val tcpListener = object : TcpTransportListener {
-        override fun didConnect(peerID: String, address: String) {}
+        override fun didConnect(peerID: String, address: String) {
+            if (address.isNotEmpty()) tcpAddressToPeerID[address] = peerID
+            // Flush any queued DHT messages for this address
+            val queued = pendingDHTMessages.remove(address) ?: return
+            dhtScope.launch {
+                for (msg in queued) {
+                    runCatching { tcp.send(msg, peerID) }
+                }
+            }
+        }
         override fun didDisconnect(peerID: String) {
             tcpPeerIDs.remove(peerID)
+            tcpAddressToPeerID.entries.removeIf { it.value == peerID }
             knownPeers[peerID] = knownPeers[peerID]?.copy(isOnline = false) ?: return
             delegate?.peerDidDisconnect(peerID)
         }
