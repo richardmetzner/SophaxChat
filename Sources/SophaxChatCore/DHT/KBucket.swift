@@ -181,6 +181,12 @@ public actor KBucketTable {
         buckets.flatMap { $0 }
     }
 
+    /// Returns the contact in `bucketIdx` with the oldest `lastSeen` date, or nil if empty.
+    public func leastRecentlySeen(in bucketIdx: Int) -> DHTContact? {
+        guard bucketIdx >= 0, bucketIdx < buckets.count else { return nil }
+        return buckets[bucketIdx].min(by: { $0.lastSeen < $1.lastSeen })
+    }
+
     // MARK: - Persistence
 
     public func snapshot() -> [[DHTContact]] { buckets }

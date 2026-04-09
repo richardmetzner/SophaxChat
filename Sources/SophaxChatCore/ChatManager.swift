@@ -454,7 +454,12 @@ public final class ChatManager: @unchecked Sendable {
         bootstrapContacts.append(contentsOf: fromKnown)
         if bootstrapContacts.isEmpty { bootstrapContacts = DHTBootstrap.nodes }
 
-        Task { await engine.start(bootstrapContacts: bootstrapContacts) }
+        Task {
+            await engine.start(bootstrapContacts: bootstrapContacts)
+            // Publish our bundle immediately after bootstrap so peers can find us
+            // without waiting for the 60s expiry-timer tick.
+            self.publishDHTBundleIfNeeded()
+        }
 
         // Schedule k-bucket snapshot every 30 minutes
         Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self, weak engine] _ in

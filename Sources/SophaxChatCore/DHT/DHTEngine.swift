@@ -417,7 +417,13 @@ public actor DHTEngine {
             while true {
                 try? await Task.sleep(nanoseconds: UInt64(DHTEngine.refreshInterval * 1_000_000_000))
                 guard let self, await !self.stopped else { return }
-                // Refresh one bucket per hour by looking up a random target in its ID space
+                // 1. Ping the least-recently-seen node in this bucket (liveness check).
+                //    Unresponsive nodes accumulate failCount and are evicted at 3.
+                if let lrs = await self.table.leastRecentlySeen(in: bucketIdx) {
+                    await self.pingForRefresh(lrs)
+                }
+                // 2. FIND_NODE to a random target in this bucket's ID space —
+                //    discovers new nodes and fills sparse buckets.
                 let nodeID = await self.localNodeID
                 if let target = Self.randomTargetInBucket(bucketIdx, localNodeID: nodeID) {
                     _ = try? await self.iterativeLookup(target: target, wantValue: false)
@@ -425,6 +431,34 @@ public actor DHTEngine {
                 bucketIdx = (bucketIdx + 1) % 256
             }
         }
+    }
+
+    /// Sends a dhtPing to `contact` and registers a timeout.
+    /// On pong, `resolvePendingQuery` cancels the timeout via the normal path.
+    /// On timeout, `queryTimedOut` calls `table.markFailed` — eviction after 3 strikes.
+    private func pingForRefresh(_ contact: DHTContact) async {
+        // Re-use the pendingQueries mechanism with a sentinel lookupID that has no
+        // corresponding activeLookup entry — resolvePendingQuery gracefully no-ops for
+        // the lookup advancement but still cancels the timeout task.
+        let sentinelID = "ping_\(contact.nodeID)"
+        guard pendingQueries[contact.nodeID] == nil else { return }  // already in-flight
+
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(DHTEngine.queryTimeout * 1_000_000_000))
+            guard let self else { return }
+            await self.queryTimedOut(peerNodeID: contact.nodeID, lookupID: sentinelID)
+        }
+        pendingQueries[contact.nodeID] = PendingQuery(
+            lookupID: sentinelID, wantValue: false, timeoutTask: timeoutTask
+        )
+
+        let payload = DHTPingPayload(senderNodeID: localNodeID.hexString)
+        guard let msg = try? wireBuilder.build(.dhtPing, payload: payload) else {
+            pendingQueries.removeValue(forKey: contact.nodeID)
+            timeoutTask.cancel()
+            return
+        }
+        await send(msg, contact)
     }
 
     // MARK: - Helpers
