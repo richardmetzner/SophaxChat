@@ -20,9 +20,11 @@ struct ChatListView: View {
     @State private var groupToDeleteLocally: GroupInfo? = nil
     @State private var reconnectBannerPeer: KnownPeer? = nil
     @State private var keyChangePeerID: String? = nil
-    @State private var showingAddByLink  = false
-    @State private var pastedInviteLink  = ""
+    @State private var showingAddByLink    = false
+    @State private var pastedInviteLink    = ""
     @State private var inviteLinkError: String? = nil
+    @State private var showingFindByPeerID = false
+    @State private var dhtFoundPeer: KnownPeer? = nil
 
     private var showGettingStartedCard: Bool {
         appState.peers.filter({ !appState.isBlocked($0.id) }).isEmpty
@@ -289,6 +291,11 @@ struct ChatListView: View {
                     } label: {
                         Image(systemName: "link.badge.plus")
                     }
+                    Button {
+                        showingFindByPeerID = true
+                    } label: {
+                        Image(systemName: "person.badge.magnifyingglass")
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -374,6 +381,17 @@ struct ChatListView: View {
         }
         .sheet(isPresented: $showingAddByLink) {
             addByLinkSheet
+        }
+        .sheet(isPresented: $showingFindByPeerID) {
+            FindByPeerIDView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sophaxOpenChat)) { note in
+            if let peer = note.object as? KnownPeer {
+                dhtFoundPeer = peer
+            }
+        }
+        .navigationDestination(item: $dhtFoundPeer) { peer in
+            ChatView(peer: peer)
         }
         .alert("Error", isPresented: Binding(
             get: { appState.errorMessage != nil },

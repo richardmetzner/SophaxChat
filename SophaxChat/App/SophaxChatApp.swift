@@ -10,6 +10,7 @@ import UIKit
 
 extension Notification.Name {
     static let sophaxShowSettings = Notification.Name("com.sophax.showSettings")
+    static let sophaxOpenChat     = Notification.Name("com.sophax.openChat")
 }
 
 @main
