@@ -369,6 +369,20 @@ class AppState(application: Application) : AndroidViewModel(application) {
         updateMessages(convID, updated)
     }
 
+    /** DHT lookup: resolve a peerID to a KnownPeer via the Kademlia network.
+     *  Returns the peer on success, throws on failure. */
+    suspend fun lookupPeerViaDHT(peerID: String): KnownPeer {
+        val manager = _chatManager ?: throw IllegalStateException("Not connected")
+        val peer = manager.lookupPeer(peerID) ?: throw NoSuchElementException("Peer not found")
+        // Merge into published peers list if not already present
+        val current = _peers.value.toMutableList()
+        if (current.none { it.id == peer.id }) {
+            current.add(peer)
+            _peers.value = current
+        }
+        return peer
+    }
+
     // -----------------------------------------------------------------------
     // Notifications
     // -----------------------------------------------------------------------
