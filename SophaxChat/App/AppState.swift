@@ -1351,6 +1351,21 @@ final class AppState: ObservableObject {
         pendingDeepLink = PendingDeepLink(peerID: peerID, address: address, onionHost: onionHost)
     }
 
+    /// DHT lookup: resolve a peerID to a KnownPeer via the Kademlia network.
+    /// Returns the peer on success, throws on failure. @MainActor-safe.
+    func lookupPeerViaDHT(peerID: String) async throws -> KnownPeer {
+        guard let manager = chatManager else {
+            throw SophaxError.invalidMessageFormat("Not connected")
+        }
+        let peer = try await manager.lookupPeer(peerID: peerID)
+        // Merge into published peers list if not already present
+        if !peers.contains(where: { $0.id == peer.id }) {
+            peers.append(peer)
+            savePeers()
+        }
+        return peer
+    }
+
     /// Called when the user taps "Add" in the deep-link confirmation alert.
     func confirmDeepLink() {
         guard let pending = pendingDeepLink else { return }
