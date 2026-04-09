@@ -357,6 +357,16 @@ class ChatManager(
         val bootstrapContacts = (persisted + fromPeers + DHTBootstrap.nodes).distinctBy { it.nodeID }
         engine.start(bootstrapContacts)
 
+        // Publish our PreKeyBundle immediately after bootstrap so peers can find us,
+        // then re-publish every 24 hours.
+        dhtScope.launch {
+            publishDHTBundle(engine)
+            while (true) {
+                kotlinx.coroutines.delay(DHTEngine.PUBLISH_INTERVAL)
+                publishDHTBundle(engine)
+            }
+        }
+
         // Schedule k-bucket snapshot every 30 minutes
         dhtScope.launch {
             while (true) {
@@ -367,6 +377,11 @@ class ChatManager(
                 }
             }
         }
+    }
+
+    private suspend fun publishDHTBundle(engine: DHTEngine) {
+        val bundle = runCatching { preKeys.generateBundle(myTCPAddress) }.getOrNull() ?: return
+        engine.publishSelf(bundle)
     }
 
     private fun stopDHT() {

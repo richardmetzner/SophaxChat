@@ -172,6 +172,12 @@ class KBucketTable(private val localNodeID: DHTNodeID) {
         buckets.flatMap { it.toList() }
     }
 
+    /** Returns the contact in [bucketIdx] with the oldest lastSeen timestamp, or null if empty. */
+    suspend fun leastRecentlySeen(bucketIdx: Int): DHTContact? = mutex.withLock {
+        if (bucketIdx < 0 || bucketIdx >= BUCKET_COUNT) return@withLock null
+        buckets[bucketIdx].minByOrNull { it.lastSeen }
+    }
+
     // MARK: - Persistence
 
     suspend fun snapshot(): List<List<DHTContact>> = mutex.withLock {

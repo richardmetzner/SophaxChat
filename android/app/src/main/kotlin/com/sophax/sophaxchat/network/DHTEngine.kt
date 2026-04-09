@@ -384,11 +384,42 @@ class DHTEngine(
             var bucketIdx = 0
             while (!stopped) {
                 delay(REFRESH_INTERVAL)
+                // 1. Ping the least-recently-seen node in this bucket (liveness check).
+                val lrs = table.leastRecentlySeen(bucketIdx)
+                if (lrs != null) pingForRefresh(lrs)
+                // 2. FIND_NODE to a random target — discovers new nodes, fills sparse buckets.
                 val target = randomTargetInBucket(bucketIdx, localNodeID)
                 if (target != null) iterativeLookup(target, wantValue = false)
                 bucketIdx = (bucketIdx + 1) % 256
             }
         }
+    }
+
+    /** Sends a dhtPing to [contact] and registers a timeout via the pendingQueries mechanism.
+     *  On pong, the timeout is cancelled via the normal resolvePendingQuery path.
+     *  On timeout, queryTimedOut calls table.markFailed — eviction after 3 strikes. */
+    private suspend fun pingForRefresh(contact: DHTContact) {
+        val sentinelID = "ping_${contact.nodeID}"
+        val alreadyInFlight = stateMutex.withLock { pendingQueries.containsKey(contact.nodeID) }
+        if (alreadyInFlight) return
+
+        val timeoutJob = scope.launch {
+            delay(QUERY_TIMEOUT)
+            table.markFailed(contact.nodeID)
+            resolvePendingQuery(contact.nodeID, emptyList(), null)
+        }
+        stateMutex.withLock {
+            pendingQueries[contact.nodeID] = PendingQuery(sentinelID, wantValue = false, timeoutJob)
+        }
+
+        val payload = DHTPingPayload(senderNodeID = localContact.nodeID)
+        val msg = runCatching { wireBuilder.build(WireMessageType.dhtPing.name, payload) }.getOrNull()
+        if (msg == null) {
+            stateMutex.withLock { pendingQueries.remove(contact.nodeID) }
+            timeoutJob.cancel()
+            return
+        }
+        scope.launch { send(msg, contact) }
     }
 
     // MARK: - Helpers
