@@ -38,7 +38,8 @@ fun ChatListScreen(
     onPeerTap: (String) -> Unit = {},
     onGroupTap: (String) -> Unit = {},
     onNewGroup: () -> Unit = {},
-    onSettingsTap: () -> Unit = {}
+    onSettingsTap: () -> Unit = {},
+    onFindByPeerID: () -> Unit = {}
 ) {
     val peers        by appState.peers.collectAsState()
     val groups       by appState.groups.collectAsState()
@@ -55,6 +56,9 @@ fun ChatListScreen(
                     Text("SophaxChat", fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 },
                 actions = {
+                    IconButton(onClick = onFindByPeerID) {
+                        Icon(Icons.Default.Person, contentDescription = "Find by Peer ID")
+                    }
                     IconButton(onClick = onNewGroup) {
                         Icon(Icons.Default.Add, contentDescription = "New Group")
                     }

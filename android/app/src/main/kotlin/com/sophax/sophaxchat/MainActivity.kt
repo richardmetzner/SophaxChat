@@ -21,6 +21,7 @@ import com.sophax.sophaxchat.ui.SafetyNumberScreen
 import com.sophax.sophaxchat.ui.chat.ChatListScreen
 import com.sophax.sophaxchat.ui.chat.ChatScreen
 import com.sophax.sophaxchat.ui.chat.CreateGroupScreen
+import com.sophax.sophaxchat.ui.chat.FindByPeerIDScreen
 import com.sophax.sophaxchat.ui.chat.GroupChatScreen
 import com.sophax.sophaxchat.ui.onboarding.OnboardingScreen
 import com.sophax.sophaxchat.ui.settings.BackupScreen
@@ -130,10 +131,23 @@ private fun AppNavigation(appState: AppState) {
         composable("chat_list") {
             ChatListScreen(
                 appState = appState,
-                onPeerTap     = { peerID   -> navController.navigate("chat/$peerID") },
-                onGroupTap    = { groupID  -> navController.navigate("group_chat/$groupID") },
-                onNewGroup    = { navController.navigate("create_group") },
-                onSettingsTap = { navController.navigate("settings") }
+                onPeerTap        = { peerID  -> navController.navigate("chat/$peerID") },
+                onGroupTap       = { groupID -> navController.navigate("group_chat/$groupID") },
+                onNewGroup       = { navController.navigate("create_group") },
+                onSettingsTap    = { navController.navigate("settings") },
+                onFindByPeerID   = { navController.navigate("find_peer") }
+            )
+        }
+
+        composable("find_peer") {
+            FindByPeerIDScreen(
+                appState    = appState,
+                onBack      = { navController.popBackStack() },
+                onStartChat = { peerID ->
+                    navController.navigate("chat/$peerID") {
+                        popUpTo("find_peer") { inclusive = true }
+                    }
+                }
             )
         }
 
