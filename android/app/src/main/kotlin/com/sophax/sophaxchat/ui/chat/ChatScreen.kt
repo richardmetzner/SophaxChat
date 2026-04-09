@@ -1,9 +1,12 @@
 package com.sophax.sophaxchat.ui.chat
 
+import android.content.Intent
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +17,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timer
@@ -29,10 +33,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.sophax.sophaxchat.storage.AttachmentStore
 import com.sophax.sophaxchat.storage.MessageDirection
 import com.sophax.sophaxchat.storage.MessageStatus
 import com.sophax.sophaxchat.storage.StoredMessage
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -55,12 +61,14 @@ fun ChatScreen(
     onBlockPeer: (peerID: String) -> Unit = {},
     onSafetyNumber: () -> Unit = {},
     onReact: ((messageID: String, emoji: String) -> Unit)? = null,
+    onEdit: ((messageID: String, newBody: String) -> Unit)? = null,
     onRename: ((alias: String) -> Unit)? = null,
     disappearingMs: Long = 0L,
     onSetDisappearing: ((Long) -> Unit)? = null
 ) {
     var inputText    by remember { mutableStateOf("") }
     var replyTo      by remember { mutableStateOf<StoredMessage?>(null) }
+    var editingMsg   by remember { mutableStateOf<StoredMessage?>(null) }
     var searchOpen   by remember { mutableStateOf(false) }
     var searchQuery  by remember { mutableStateOf("") }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -159,6 +167,13 @@ fun ChatScreen(
                 onSendImage   = onSendImage,
                 onSend = {
                     if (inputText.isNotBlank()) {
+                        val editing = editingMsg
+                        if (editing != null) {
+                            onEdit?.invoke(editing.id, inputText.trim())
+                            editingMsg = null
+                            inputText  = ""
+                            return@SharedInputBar
+                        }
                         val body = if (replyTo != null)
                             "> ${replyTo!!.body.take(60).replace("\n", " ")}\n${inputText.trim()}"
                         else inputText.trim()
@@ -193,7 +208,10 @@ fun ChatScreen(
                         onDelete = { onDeleteMessage(message.id) },
                         onBlock  = if (!message.isSent) ({ onBlockPeer(message.peerID) }) else null,
                         onReply  = { replyTo = message },
-                        onReact  = if (onReact != null) { emoji -> onReact(message.id, emoji) } else null
+                        onReact  = if (onReact != null) { emoji -> onReact(message.id, emoji) } else null,
+                        onEdit   = if (onEdit != null && message.isSent) {
+                            { editingMsg = message; inputText = message.body }
+                        } else null
                     )
                 }
             }
@@ -257,7 +275,8 @@ private fun MessageBubble(
     onDelete: () -> Unit = {},
     onBlock: (() -> Unit)? = null,
     onReply: () -> Unit = {},
-    onReact: ((String) -> Unit)? = null
+    onReact: ((String) -> Unit)? = null,
+    onEdit: (() -> Unit)? = null
 ) {
     val isSent = message.direction == MessageDirection.sent.name
     var showMenu by remember { mutableStateOf(false) }
@@ -291,32 +310,87 @@ private fun MessageBubble(
                         )
                         .padding(horizontal = 14.dp, vertical = 9.dp)
                 ) {
-                    if (message.attachmentMimeType?.startsWith("image/") == true) {
-                        val attachmentStore = remember { AttachmentStore(context) }
-                        val bitmap = remember(message.id) {
-                            try {
-                                val bytes = attachmentStore.load(message.id)
-                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            } catch (_: Exception) { null }
+                    when {
+                        message.attachmentMimeType?.startsWith("image/") == true -> {
+                            val attachmentStore = remember { AttachmentStore(context) }
+                            val bitmap = remember(message.id) {
+                                try {
+                                    val bytes = attachmentStore.load(message.id)
+                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                } catch (_: Exception) { null }
+                            }
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Image",
+                                    modifier = Modifier
+                                        .sizeIn(maxWidth = 200.dp, maxHeight = 200.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                            } else {
+                                Text(text = "[image]", color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface)
+                            }
                         }
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Image",
+                        message.attachmentMimeType != null &&
+                        !message.attachmentMimeType.startsWith("audio/") -> {
+                            // Generic file bubble
+                            val attachmentStore = remember { AttachmentStore(context) }
+                            val filename = message.body.substringAfterLast(":").trimEnd(']')
+                                .takeIf { it.isNotBlank() } ?: "file"
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .sizeIn(maxWidth = 200.dp, maxHeight = 200.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                            )
-                        } else {
-                            Text(text = "[image]", color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface)
+                                    .clickable {
+                                        try {
+                                            val bytes = attachmentStore.load(message.id)
+                                            val tmp = File(context.cacheDir, filename)
+                                            tmp.writeBytes(bytes)
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                tmp
+                                            )
+                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, message.attachmentMimeType)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(intent, "Open with"))
+                                        } catch (_: Exception) {}
+                                    }
+                                    .padding(4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Description,
+                                    contentDescription = "File",
+                                    tint = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        filename,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 14.sp,
+                                        maxLines = 2
+                                    )
+                                    Text(
+                                        message.attachmentMimeType,
+                                        fontSize = 11.sp,
+                                        color = if (isSent) Color.White.copy(alpha = 0.7f)
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                    )
+                                }
+                            }
                         }
-                    } else {
-                        Text(
-                            text  = message.body,
-                            color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
-                            fontSize = 16.sp,
-                            lineHeight = 22.sp
-                        )
+                        else -> {
+                            Text(
+                                text  = message.body,
+                                color = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 16.sp,
+                                lineHeight = 22.sp
+                            )
+                        }
                     }
                 }
                 MessageContextMenu(
@@ -326,7 +400,8 @@ private fun MessageBubble(
                     onReply   = onReply,
                     onDelete  = onDelete,
                     onBlock   = onBlock,
-                    onReact   = onReact
+                    onReact   = onReact,
+                    onEdit    = onEdit
                 )
             }
 
@@ -359,6 +434,13 @@ private fun MessageBubble(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                if (message.editedAt != null) {
+                    Text(
+                        "edited",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                    )
+                }
                 Text(
                     timeFmt.format(message.timestamp),
                     fontSize = 11.sp,

@@ -28,7 +28,8 @@ data class StoredMessage(
     val replyToID: String? = null,
     val attachmentMimeType: String? = null,
     val expiresAt: Long? = null,
-    val reactions: Map<String, String> = emptyMap()  // senderID -> emoji
+    val reactions: Map<String, String> = emptyMap(),  // senderID -> emoji
+    val editedAt: Long? = null
 ) {
     val timestamp: Date get() = Date(timestampMs)
     val isSent: Boolean get() = direction == MessageDirection.sent.name
@@ -60,6 +61,15 @@ class MessageStore(context: Context) {
         prefs.edit()
             .putString(key(message.peerID), json.encodeToString(trimmed))
             .apply()
+    }
+
+    fun editMessage(messageID: String, peerID: String, newBody: String, editedAt: Long) {
+        val messages = loadMessages(peerID).toMutableList()
+        val index = messages.indexOfFirst { it.id == messageID }
+        if (index >= 0) {
+            messages[index] = messages[index].copy(body = newBody, editedAt = editedAt)
+            prefs.edit().putString(key(peerID), json.encodeToString(messages)).apply()
+        }
     }
 
     fun updateStatus(messageID: String, peerID: String, status: MessageStatus) {

@@ -358,6 +358,17 @@ class AppState(application: Application) : AndroidViewModel(application) {
         addReaction(if (isGroup && groupID != null) groupID else toPeerID, messageID, myPeerID, emoji)
     }
 
+    fun sendEditMessage(toPeerID: String, messageID: String, newBody: String) {
+        _chatManager?.sendEditMessage(toPeerID, messageID, newBody)
+        // Reflect edit locally
+        val convID = toPeerID
+        val updated = (_messages.value[convID] ?: emptyList()).map { msg ->
+            if (msg.id == messageID) msg.copy(body = newBody, editedAt = System.currentTimeMillis())
+            else msg
+        }
+        updateMessages(convID, updated)
+    }
+
     // -----------------------------------------------------------------------
     // Notifications
     // -----------------------------------------------------------------------
@@ -510,6 +521,10 @@ class AppState(application: Application) : AndroidViewModel(application) {
             }
             override fun didReceiveAvatarData(data: ByteArray, fromPeerID: String) {
                 _peerAvatarData.value = _peerAvatarData.value + (fromPeerID to data)
+            }
+
+            override fun didEditMessage(conversationID: String) {
+                updateMessages(conversationID, messageStore.loadMessages(conversationID))
             }
 
             override fun didReceiveRemoteWipeRequest() {

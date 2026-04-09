@@ -61,6 +61,8 @@ interface ChatManagerDelegate {
     fun groupDeletedWithID(groupID: String)
     /** A group message carried avatar data for a peer not yet in the avatar cache. */
     fun didReceiveAvatarData(data: ByteArray, fromPeerID: String)
+    /** An incoming editMessage updated a stored message body. */
+    fun didEditMessage(conversationID: String)
     /** A trusted peer requested a remote account wipe. */
     fun didReceiveRemoteWipeRequest()
 }
@@ -776,6 +778,7 @@ class ChatManager(
             WireMessageType.deviceSyncMessage.name         -> handleDeviceSyncMessage(message)
             WireMessageType.remoteWipe.name                -> handleRemoteWipe(message)
             WireMessageType.readReceipt.name               -> handleReadReceipt(message)
+            WireMessageType.editMessage.name               -> handleEditMessage(message)
             // DHT messages — rate-limited, dispatched to DHTEngine
             WireMessageType.dhtPing.name,
             WireMessageType.dhtPong.name,
@@ -1008,6 +1011,36 @@ class ChatManager(
         receipt.messageIDs.forEach { msgID ->
             messageStore.updateStatus(msgID, message.senderID, MessageStatus.read)
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Edit message
+    // -----------------------------------------------------------------------
+
+    /** Send an in-place edit of a previously sent 1:1 message. */
+    fun sendEditMessage(toPeerID: String, messageID: String, newBody: String) {
+        val dr = synchronized(sessionLock) { sessions[toPeerID] } ?: return
+        val editedAt = Date()
+        val payload = EditMessagePayload(messageID = messageID, newBody = newBody, editedAt = editedAt)
+        val encrypted = try {
+            val plain = json.encodeToString(payload).toByteArray()
+            json.encodeToString(ChatMessagePayload(ratchetMessage = synchronized(sessionLock) { dr.encrypt(plain) }.toWire()))
+        } catch (e: Exception) { return }
+        val wire = builder().build(WireMessageType.editMessage.name, encrypted)
+        messageStore.editMessage(messageID, toPeerID, newBody, editedAt.time)
+        sendOrRoute(wire, toPeerID)
+    }
+
+    private fun handleEditMessage(message: WireMessage) {
+        val senderID = message.senderID
+        val dr = synchronized(sessionLock) { sessions[senderID] } ?: return
+        val payload = try {
+            val chatPayload = json.decodeFromString<ChatMessagePayload>(String(message.payload))
+            val plain = synchronized(sessionLock) { dr.decrypt(chatPayload.ratchetMessage.fromWire()) }
+            json.decodeFromString<EditMessagePayload>(String(plain))
+        } catch (e: Exception) { return }
+        messageStore.editMessage(payload.messageID, senderID, payload.newBody, payload.editedAt.time)
+        delegate?.didEditMessage(senderID)
     }
 
     // -----------------------------------------------------------------------

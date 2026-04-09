@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -48,7 +49,8 @@ fun MessageContextMenu(
     onReply: () -> Unit,
     onDelete: () -> Unit,
     onBlock: (() -> Unit)? = null,
-    onReact: ((String) -> Unit)? = null
+    onReact: ((String) -> Unit)? = null,
+    onEdit: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
@@ -71,6 +73,12 @@ fun MessageContextMenu(
             text = { Text("Reply") },
             onClick = { onDismiss(); onReply() }
         )
+        if (onEdit != null) {
+            DropdownMenuItem(
+                text = { Text("Edit") },
+                onClick = { onDismiss(); onEdit() }
+            )
+        }
         DropdownMenuItem(
             text = { Text("Copy") },
             onClick = { onDismiss(); copyToClipboard(context, body) }
@@ -88,12 +96,16 @@ fun MessageContextMenu(
     }
 }
 
+/** Called when the user picks a file to send: (bytes, mimeType, filename) */
+typealias FileSendCallback = (ByteArray, String, String) -> Unit
+
 @Composable
 fun SharedInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onSendImage: ((ByteArray) -> Unit)? = null,
+    onSendFile: FileSendCallback? = null,
     placeholder: String = "Message",
     maxLines: Int = 5,
     tonalElevation: Dp = 3.dp,
@@ -149,6 +161,29 @@ fun SharedInputBar(
                         Icon(
                             Icons.Default.AttachFile,
                             contentDescription = "Attach image",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (onSendFile != null) {
+                    val context = LocalContext.current
+                    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                        uri ?: return@rememberLauncherForActivityResult
+                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: return@rememberLauncherForActivityResult
+                        if (bytes.size > 10 * 1024 * 1024) return@rememberLauncherForActivityResult
+                        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                        val filename = uri.lastPathSegment ?: "file"
+                        onSendFile(bytes, mime, filename)
+                    }
+                    IconButton(
+                        onClick = { filePicker.launch("*/*") },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.UploadFile,
+                            contentDescription = "Attach file",
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }

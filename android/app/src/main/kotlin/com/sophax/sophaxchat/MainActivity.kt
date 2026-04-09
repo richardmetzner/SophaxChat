@@ -164,6 +164,7 @@ private fun AppNavigation(appState: AppState) {
                 onBlockPeer       = { appState.blockPeer(it) },
                 onSafetyNumber    = { navController.navigate("safety_number/$peerID") },
                 onReact           = { msgID, emoji -> appState.sendReaction(peerID, msgID, emoji) },
+                onEdit            = { msgID, newBody -> appState.sendEditMessage(peerID, msgID, newBody) },
                 onRename          = { alias -> appState.renamePeer(peerID, alias) },
                 disappearingMs    = disappearTimers[peerID] ?: 0L,
                 onSetDisappearing = { ms -> appState.setDisappearingTimer(peerID, ms) }
