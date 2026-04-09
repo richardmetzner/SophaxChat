@@ -6,6 +6,9 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import java.util.concurrent.ConcurrentHashMap
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -360,6 +363,15 @@ class AppState(application: Application) : AndroidViewModel(application) {
 
     init {
         NotificationHelper.createChannel(getApplication())
+        // Start/stop background service when the app moves to/from background
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) {
+                SophaxForegroundService.start(getApplication())
+            }
+            override fun onStart(owner: LifecycleOwner) {
+                SophaxForegroundService.stop(getApplication())
+            }
+        })
         // Cleanup expired messages every 10s
         viewModelScope.launch {
             while (true) {

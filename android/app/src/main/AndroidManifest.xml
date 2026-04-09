@@ -46,6 +46,12 @@
             android:exported="false"
             android:foregroundServiceType="networkProcess" />
 
+        <!-- Background connection service — keeps TCP transport alive when app is not in foreground -->
+        <service
+            android:name=".SophaxForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="networkProcess" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
