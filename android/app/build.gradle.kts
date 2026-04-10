@@ -100,5 +100,8 @@ dependencies {
     // Embedded Tor (Guardian Project — no Orbot required)
     implementation(libs.tor.android)
 
+    // WorkManager — periodic watchdog to revive foreground service on aggressive OEM ROMs
+    implementation(libs.androidx.work.runtime.ktx)
+
     debugImplementation(libs.androidx.ui.tooling)
 }

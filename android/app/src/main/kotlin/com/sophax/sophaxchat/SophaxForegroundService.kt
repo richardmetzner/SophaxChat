@@ -20,8 +20,19 @@ import androidx.core.app.NotificationCompat
 class SophaxForegroundService : Service() {
 
     companion object {
-        const val CHANNEL_ID    = "sophaxchat_background"
+        const val CHANNEL_ID      = "sophaxchat_background"
         const val NOTIFICATION_ID = 1001
+
+        /** True while the service is in a started state (between onCreate and onDestroy). */
+        @Volatile var isRunning: Boolean = false
+            private set
+
+        /**
+         * True once the service has been started at least once in this process lifetime.
+         * Used by SophaxRestartWorker to avoid launching the service before setup is done.
+         */
+        @Volatile var hasEverStarted: Boolean = false
+            private set
 
         fun start(context: Context) {
             val intent = Intent(context, SophaxForegroundService::class.java)
@@ -35,6 +46,8 @@ class SophaxForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning      = true
+        hasEverStarted = true
         createChannel()
     }
 
@@ -64,6 +77,7 @@ class SophaxForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isRunning = false
         super.onDestroy()
         stopForeground(STOP_FOREGROUND_REMOVE)
     }

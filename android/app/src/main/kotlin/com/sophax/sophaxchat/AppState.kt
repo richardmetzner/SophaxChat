@@ -408,6 +408,9 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 SophaxForegroundService.stop(getApplication())
             }
         })
+        // WorkManager watchdog — revives foreground service on aggressive OEM ROMs
+        // (Xiaomi MIUI, Huawei EMUI, etc.) that ignore START_STICKY.
+        SophaxRestartWorker.schedule(getApplication())
         // Cleanup expired messages every 10s
         viewModelScope.launch {
             while (true) {
@@ -558,6 +561,8 @@ class AppState(application: Application) : AndroidViewModel(application) {
                     messageStore.deleteAllMessages()
                     getApplication<Application>().getExternalFilesDir(null)?.deleteRecursively()
                     getApplication<Application>().filesDir.deleteRecursively()
+                    // Cancel WorkManager watchdog — no service should run after wipe
+                    SophaxRestartWorker.cancel(getApplication())
                     // Reset in-memory state and return to onboarding
                     _chatManager?.stop()
                     _chatManager = null
