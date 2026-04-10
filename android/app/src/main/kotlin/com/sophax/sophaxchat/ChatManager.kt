@@ -1046,10 +1046,19 @@ class ChatManager(
 
     /** Fan out an in-place edit to all group members. Plaintext — matches iOS GroupEditMessagePayload. */
     fun sendGroupEditMessage(group: GroupInfo, messageID: String, newBody: String) {
+        val trimmed = newBody.trim()
+        if (trimmed.isEmpty()) return
+
+        val convID   = group.conversationID
+        val existing = messageStore.loadMessages(convID).firstOrNull { it.id == messageID } ?: return
+        if (existing.direction != MessageDirection.sent.name) return        // only own messages
+        if (existing.attachmentMimeType != null) return                     // no attachment edits
+        if (System.currentTimeMillis() - existing.timestampMs > 5 * 60 * 1000) return  // 5-min window
+
         val editedAt = Date()
-        val payload  = GroupEditMessagePayload(groupID = group.id, messageID = messageID, newBody = newBody, editedAt = editedAt)
+        val payload  = GroupEditMessagePayload(groupID = group.id, messageID = messageID, newBody = trimmed, editedAt = editedAt)
         val wire     = builder().build(WireMessageType.groupEditMessage.name, payload)
-        messageStore.editMessage(messageID, group.conversationID, newBody, editedAt.time)
+        messageStore.editMessage(messageID, convID, trimmed, editedAt.time)
         group.memberIDs.filter { it != identity.publicIdentity.peerID }
             .forEach { peerID -> sendOrRoute(wire, peerID) }
     }
