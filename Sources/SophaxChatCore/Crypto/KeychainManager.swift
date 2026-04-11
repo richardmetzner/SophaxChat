@@ -244,29 +244,21 @@ public final class KeychainManager {
     /// Save all peer sender key states for a group as a single JSON blob.
     /// Key: peerID → SenderKeyState.
     public func savePeerSenderKeyStates(_ states: [String: SenderKeyState], groupID: String) throws {
-        let data = try JSONEncoder().encode(states)
-        try save(data: data, account: "skd.peers.\(groupID)")
+        try saveJSON(states, account: "skd.peers.\(groupID)")
     }
 
     /// Load peer sender key states; returns empty dict if none stored yet.
     public func loadPeerSenderKeyStates(groupID: String) -> [String: SenderKeyState] {
-        guard let data   = try? load(account: "skd.peers.\(groupID)"),
-              let states = try? JSONDecoder().decode([String: SenderKeyState].self, from: data)
-        else { return [:] }
-        return states
+        loadJSON([String: SenderKeyState].self, account: "skd.peers.\(groupID)") ?? [:]
     }
 
     public func saveMySenderKeyState(_ state: SenderKeyState, groupID: String) throws {
-        let data = try JSONEncoder().encode(state)
-        try save(data: data, account: "skd.mine.\(groupID)")
+        try saveJSON(state, account: "skd.mine.\(groupID)")
     }
 
     /// Returns nil if no sender key has been generated for this group yet.
     public func loadMySenderKeyState(groupID: String) -> SenderKeyState? {
-        guard let data  = try? load(account: "skd.mine.\(groupID)"),
-              let state = try? JSONDecoder().decode(SenderKeyState.self, from: data)
-        else { return nil }
-        return state
+        loadJSON(SenderKeyState.self, account: "skd.mine.\(groupID)")
     }
 
     // MARK: - Skipped group message keys (out-of-order persistence)
@@ -286,15 +278,12 @@ public final class KeychainManager {
             try? delete(account: "skd.skipped.all")
             return
         }
-        let data = try JSONEncoder().encode(entries)
-        try save(data: data, account: "skd.skipped.all")
+        try saveJSON(entries, account: "skd.skipped.all")
     }
 
     /// Load the skipped-message-key cache, discarding entries older than 7 days.
     public func loadSkippedGroupKeys() -> [String: [String: SkippedKeyEntry]] {
-        guard let data    = try? load(account: "skd.skipped.all"),
-              let decoded = try? JSONDecoder().decode([String: [String: SkippedKeyEntry]].self, from: data)
-        else { return [:] }
+        guard let decoded = loadJSON([String: [String: SkippedKeyEntry]].self, account: "skd.skipped.all") else { return [:] }
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
         return decoded.mapValues { inner in
             inner.filter { $0.value.storedAt > cutoff }
@@ -324,47 +313,35 @@ public final class KeychainManager {
     /// Persist the peerID → safetyNumber map in the Keychain so verification
     /// state survives app restarts without being readable from UserDefaults backups.
     public func saveVerifiedPeers(_ peers: [String: String]) throws {
-        let data = try JSONEncoder().encode(peers)
-        try save(data: data, account: "verified.peers")
+        try saveJSON(peers, account: "verified.peers")
     }
 
     /// Returns the persisted peerID → safetyNumber map, or [:] if none stored yet.
     public func loadVerifiedPeers() -> [String: String] {
-        guard let data  = try? load(account: "verified.peers"),
-              let peers = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
-        return peers
+        loadJSON([String: String].self, account: "verified.peers") ?? [:]
     }
 
     // MARK: - Pinned Messages (conversationID → messageID)
 
     /// Persist the conversationID → pinned messageID map in the Keychain.
     public func savePinnedMessages(_ map: [String: String]) throws {
-        let data = try JSONEncoder().encode(map)
-        try save(data: data, account: "pinned.messages")
+        try saveJSON(map, account: "pinned.messages")
     }
 
     /// Returns the persisted conversationID → pinned messageID map, or [:] if none stored.
     public func loadPinnedMessages() -> [String: String] {
-        guard let data = try? load(account: "pinned.messages"),
-              let map  = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
-        return map
+        loadJSON([String: String].self, account: "pinned.messages") ?? [:]
     }
 
     // MARK: - Peer Aliases (user-assigned contact nicknames)
     // Moved from UserDefaults to Keychain to exclude from iCloud/iTunes backups.
 
     public func savePeerAliases(_ aliases: [String: String]) throws {
-        let data = try JSONEncoder().encode(aliases)
-        try save(data: data, account: "peer.aliases")
+        try saveJSON(aliases, account: "peer.aliases")
     }
 
     public func loadPeerAliases() -> [String: String] {
-        guard let data    = try? load(account: "peer.aliases"),
-              let aliases = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
-        return aliases
+        loadJSON([String: String].self, account: "peer.aliases") ?? [:]
     }
 
     // MARK: - Blocked Peers
@@ -376,9 +353,7 @@ public final class KeychainManager {
     }
 
     public func saveBlockedPeers(_ ids: Set<String>, names: [String: String]) throws {
-        let payload = BlockedPeersPayload(ids: Array(ids), names: names)
-        let data = try JSONEncoder().encode(payload)
-        try save(data: data, account: "blocked.peers")
+        try saveJSON(BlockedPeersPayload(ids: Array(ids), names: names), account: "blocked.peers")
     }
 
     public func loadBlockedPeers() -> (ids: Set<String>, names: [String: String]) {
@@ -394,7 +369,6 @@ public final class KeychainManager {
            let vals  = raw["names_vals"],
            keys.count == vals.count {
             let names = Dictionary(uniqueKeysWithValues: zip(keys, vals))
-            // Persist in new format immediately
             try? saveBlockedPeers(Set(ids), names: names)
             return (Set(ids), names)
         }
@@ -427,35 +401,28 @@ public final class KeychainManager {
         var shares = loadSSSShares()
         shares.removeAll { $0.id == share.id }   // replace if re-sent
         shares.append(share)
-        guard let data = try? JSONEncoder().encode(shares) else { return }
-        try? save(data: data, account: "sss.shares")
+        try? saveJSON(shares, account: "sss.shares")
     }
 
     /// All SSS shares currently held for other users' backup recovery.
     public func loadSSSShares() -> [SSSShare] {
-        guard let data = try? load(account: "sss.shares"),
-              let shares = try? JSONDecoder().decode([SSSShare].self, from: data) else { return [] }
-        return shares
+        loadJSON([SSSShare].self, account: "sss.shares") ?? []
     }
 
     /// Remove a specific share after the creator has confirmed recovery is complete.
     public func deleteSSSShare(shareID: String) {
         var shares = loadSSSShares()
         shares.removeAll { $0.id == shareID }
-        guard let data = try? JSONEncoder().encode(shares) else { return }
-        try? save(data: data, account: "sss.shares")
+        try? saveJSON(shares, account: "sss.shares")
     }
 
     /// Store the creator's backup manifest (which contacts hold which shares).
     public func saveSSSBackupManifest(_ manifest: SSSBackupManifest) {
-        guard let data = try? JSONEncoder().encode(manifest) else { return }
-        try? save(data: data, account: "sss.manifest")
+        try? saveJSON(manifest, account: "sss.manifest")
     }
 
     public func loadSSSBackupManifest() -> SSSBackupManifest? {
-        guard let data = try? load(account: "sss.manifest"),
-              let manifest = try? JSONDecoder().decode(SSSBackupManifest.self, from: data) else { return nil }
-        return manifest
+        loadJSON(SSSBackupManifest.self, account: "sss.manifest")
     }
 
     /// Delete all SSS data — called by wipeAllData().
@@ -493,11 +460,9 @@ public final class KeychainManager {
     // successful v1 verify the hash is automatically upgraded to PBKDF2 and the old
     // keys are deleted. New installs write PBKDF2 only.
 
-    private static let lockPINIterations   = 100_000
-    // v2 keys (PBKDF2)
+    private static let lockPINIterations    = 100_000
     private static let lockPINHashAccountV2 = "settings.lock_pin_v2"
     private static let lockPINSaltAccountV2 = "settings.lock_pin_s_v2"
-    // v1 keys (SHA256, read-only for migration)
     private static let lockPINHashAccountV1 = "settings.lock_pin"
     private static let lockPINSaltAccountV1 = "settings.lock_pin_s"
 
@@ -507,26 +472,23 @@ public final class KeychainManager {
         let hash = try pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations)
         try save(data: salt, account: Self.lockPINSaltAccountV2)
         try save(data: hash, account: Self.lockPINHashAccountV2)
-        // Remove legacy SHA256 keys if they exist
         try? delete(account: Self.lockPINHashAccountV1)
         try? delete(account: Self.lockPINSaltAccountV1)
     }
 
     public func verifyRealLockPIN(_ pin: String) -> Bool {
-        // Try PBKDF2 format (v2) first
-        if let salt = try? load(account: Self.lockPINSaltAccountV2),
-           let stored = try? load(account: Self.lockPINHashAccountV2),
+        if let salt     = try? load(account: Self.lockPINSaltAccountV2),
+           let stored   = try? load(account: Self.lockPINHashAccountV2),
            let computed = try? pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations) {
             return timingsafeEqual(computed, stored)
         }
         // Fall back to legacy SHA256 (v1) — upgrade on success
-        guard let salt = try? load(account: Self.lockPINSaltAccountV1),
+        guard let salt   = try? load(account: Self.lockPINSaltAccountV1),
               let stored = try? load(account: Self.lockPINHashAccountV1) else { return false }
         var input = Data(salt)
         input.append(contentsOf: pin.utf8)
         let computed = Data(SHA256.hash(data: input))
         guard timingsafeEqual(computed, stored) else { return false }
-        // Upgrade to PBKDF2 transparently
         try? saveRealLockPIN(pin)
         return true
     }
@@ -564,13 +526,13 @@ public final class KeychainManager {
     }
 
     public func verifyDuressPIN(_ pin: String) -> Bool {
-        if let salt = try? load(account: Self.duressSaltAccountV2),
-           let stored = try? load(account: Self.duressHashAccountV2),
+        if let salt     = try? load(account: Self.duressSaltAccountV2),
+           let stored   = try? load(account: Self.duressHashAccountV2),
            let computed = try? pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations) {
             return timingsafeEqual(computed, stored)
         }
         // Fall back to SHA256 v1 — upgrade on success
-        guard let salt = try? load(account: Self.duressSaltAccountV1),
+        guard let salt   = try? load(account: Self.duressSaltAccountV1),
               let stored = try? load(account: Self.duressHashAccountV1) else { return false }
         var input = Data(salt)
         input.append(contentsOf: pin.utf8)
@@ -592,80 +554,38 @@ public final class KeychainManager {
         (try? load(account: Self.duressHashAccountV1)) != nil
     }
 
-    // MARK: - Private: PIN KDF helpers
-
-    /// PBKDF2-HMAC-SHA256 for PIN storage. Returns 32 derived bytes.
-    private func pinHash(pin: String, salt: Data, iterations: Int) throws -> Data {
-        var passData = Data(pin.utf8)
-        defer { passData.resetBytes(in: 0..<passData.count) }
-        var derived = Data(repeating: 0, count: 32)
-        let status: CCStatus = derived.withUnsafeMutableBytes { derivedPtr in
-            salt.withUnsafeBytes { saltPtr in
-                passData.withUnsafeBytes { passPtr in
-                    CCKeyDerivationPBKDF(
-                        CCPBKDFAlgorithm(kCCPBKDF2),
-                        passPtr.baseAddress, passData.count,
-                        saltPtr.baseAddress, salt.count,
-                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-                        UInt32(iterations),
-                        derivedPtr.baseAddress, 32
-                    )
-                }
-            }
-        }
-        guard status == kCCSuccess else { throw SophaxError.keyGenerationFailed }
-        return derived
-    }
-
-    /// Constant-time equality — prevents timing side-channel on PIN comparison.
-    private func timingsafeEqual(_ a: Data, _ b: Data) -> Bool {
-        guard a.count == b.count else { return false }
-        return a.withUnsafeBytes { ap in
-            b.withUnsafeBytes { bp in
-                timingsafe_bcmp(ap.baseAddress!, bp.baseAddress!, ap.count) == 0
-            }
-        }
-    }
-
     // MARK: - Remote Wipe Dedup
     // Persisted across restarts to block replay attacks on remote wipe requests.
 
     public func saveSeenWipeRequestIDs(_ ids: Set<String>) {
-        let data = (try? JSONEncoder().encode(Array(ids))) ?? Data()
-        try? save(data: data, account: "wipe.seen_ids")
+        try? saveJSON(Array(ids), account: "wipe.seen_ids")
     }
 
     public func loadSeenWipeRequestIDs() -> Set<String> {
-        guard let data = try? load(account: "wipe.seen_ids"),
-              let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
-        return Set(ids)
+        Set(loadJSON([String].self, account: "wipe.seen_ids") ?? [])
     }
 
     // MARK: - Linked Devices
     // Stored in Keychain (not UserDefaults) to exclude from iCloud/iTunes backups.
 
     public func saveLinkedDevices(_ peerIDs: [String]) {
-        let data = (try? JSONEncoder().encode(peerIDs)) ?? Data()
-        try? save(data: data, account: "linked.devices")
+        try? saveJSON(peerIDs, account: "linked.devices")
     }
 
     public func loadLinkedDevices() -> [String] {
-        guard let data = try? load(account: "linked.devices") else { return [] }
-        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        loadJSON([String].self, account: "linked.devices") ?? []
     }
 
     // MARK: - Trusted Wipe Peers
 
     /// Save the list of peerIDs that are authorised to trigger a remote wipe.
     public func saveTrustedWipePeers(_ peers: [String]) {
-        let data = (try? JSONEncoder().encode(peers)) ?? Data()
-        try? save(data: data, account: "trustedWipePeers")
+        try? saveJSON(peers, account: "trustedWipePeers")
     }
 
     /// Load the list of peerIDs authorised to trigger a remote wipe.
     public func loadTrustedWipePeers() -> [String] {
-        guard let data = try? load(account: "trustedWipePeers") else { return [] }
-        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        loadJSON([String].self, account: "trustedWipePeers") ?? []
     }
 
     public func wipeAll() throws {
@@ -681,8 +601,15 @@ public final class KeychainManager {
 
     // MARK: - Private helpers
 
+    private func saveJSON<T: Encodable>(_ value: T, account: String) throws {
+        try save(data: JSONEncoder().encode(value), account: account)
+    }
+
+    private func loadJSON<T: Decodable>(_ type: T.Type, account: String) -> T? {
+        (try? load(account: account)).flatMap { try? JSONDecoder().decode(type, from: $0) }
+    }
+
     private func save(data: Data, account: String) throws {
-        // Try to update first, then add
         let query = baseQuery(account: account)
         let update: [CFString: Any] = [
             kSecValueData: data,
@@ -742,5 +669,40 @@ public final class KeychainManager {
             query[kSecAttrAccessGroup] = accessGroup
         }
         return query
+    }
+
+    // MARK: - Private: PIN KDF helpers
+
+    /// PBKDF2-HMAC-SHA256 for PIN storage. Returns 32 derived bytes.
+    private func pinHash(pin: String, salt: Data, iterations: Int) throws -> Data {
+        var passData = Data(pin.utf8)
+        defer { passData.resetBytes(in: 0..<passData.count) }
+        var derived = Data(repeating: 0, count: 32)
+        let status: CCStatus = derived.withUnsafeMutableBytes { derivedPtr in
+            salt.withUnsafeBytes { saltPtr in
+                passData.withUnsafeBytes { passPtr in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passPtr.baseAddress, passData.count,
+                        saltPtr.baseAddress, salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                        UInt32(iterations),
+                        derivedPtr.baseAddress, 32
+                    )
+                }
+            }
+        }
+        guard status == kCCSuccess else { throw SophaxError.keyGenerationFailed }
+        return derived
+    }
+
+    /// Constant-time equality — prevents timing side-channel on PIN comparison.
+    private func timingsafeEqual(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+        return a.withUnsafeBytes { ap in
+            b.withUnsafeBytes { bp in
+                timingsafe_bcmp(ap.baseAddress!, bp.baseAddress!, ap.count) == 0
+            }
+        }
     }
 }
