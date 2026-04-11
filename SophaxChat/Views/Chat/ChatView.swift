@@ -209,6 +209,21 @@ struct ChatView: View {
 
     @ViewBuilder private var chatToolbar: some View {
         HStack(spacing: 12) {
+            // AI summarize
+            if #available(iOS 26.0, *) {
+                Button {
+                    let displayName = appState.displayName(for: peer)
+                    let msgs = messages.suffix(20).map { msg in
+                        (msg.direction == .sent ? "Me" : displayName) + ": " + msg.body
+                    }.joined(separator: "\n")
+                    aiSeedPrompt = "Summarize this conversation in 3 concise bullet points:\n\n\(msgs)"
+                    showAISheet = true
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .disabled(messages.isEmpty)
+            }
+
             // Search toggle
             Button {
                 withAnimation { isSearching.toggle() }

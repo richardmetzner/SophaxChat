@@ -271,6 +271,23 @@ struct GroupChatView: View {
                 Image(systemName: isSearching ? "xmark.circle" : "magnifyingglass")
             }
         }
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    let msgs = messages.suffix(20).map { msg in
+                        let name = msg.direction == .sent
+                            ? "Me"
+                            : (msg.senderID.flatMap { appState.displayName(forPeerID: $0) } ?? "Member")
+                        return name + ": " + msg.body
+                    }.joined(separator: "\n")
+                    aiSeedPrompt = "Summarize this group conversation in 3 concise bullet points:\n\n\(msgs)"
+                    showAISheet = true
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .disabled(messages.isEmpty)
+            }
+        }
         ToolbarItem(placement: .topBarTrailing) { timerMenu }
         ToolbarItem(placement: .topBarTrailing) { groupMenu }
     }
