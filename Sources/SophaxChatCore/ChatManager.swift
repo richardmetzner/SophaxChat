@@ -225,7 +225,6 @@ public final class ChatManager: @unchecked Sendable {
     /// PeerIDs of devices linked to this account (same person, different device).
     /// Inbound messages are forwarded to linked devices; they forward back via deviceSyncMessage.
     private var linkedDevicePeerIDs: Set<String> = []
-    private let linkedDevicesDefaultsKey = "com.sophax.linkedDevices"
 
     /// Human-readable label for this device shown to the pairing partner (e.g. "iPhone 16 Pro").
     public var deviceLabel: String = "Device"
@@ -623,12 +622,19 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     private func saveLinkedDevices() {
-        UserDefaults.standard.set(Array(linkedDevicePeerIDs), forKey: linkedDevicesDefaultsKey)
+        keychain.saveLinkedDevices(Array(linkedDevicePeerIDs))
     }
 
     private func loadLinkedDevices() {
-        let saved = UserDefaults.standard.stringArray(forKey: linkedDevicesDefaultsKey) ?? []
-        linkedDevicePeerIDs = Set(saved)
+        // Migrate from UserDefaults if present
+        let defaultsKey = "com.sophax.linkedDevices"
+        if let legacy = UserDefaults.standard.stringArray(forKey: defaultsKey), !legacy.isEmpty {
+            linkedDevicePeerIDs = Set(legacy)
+            keychain.saveLinkedDevices(legacy)
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            return
+        }
+        linkedDevicePeerIDs = Set(keychain.loadLinkedDevices())
     }
 
     // MARK: - Public: Group reactions

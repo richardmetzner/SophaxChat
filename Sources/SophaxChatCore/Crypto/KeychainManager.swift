@@ -614,6 +614,19 @@ public final class KeychainManager {
         }
     }
 
+    // MARK: - Linked Devices
+    // Stored in Keychain (not UserDefaults) to exclude from iCloud/iTunes backups.
+
+    public func saveLinkedDevices(_ peerIDs: [String]) {
+        let data = (try? JSONEncoder().encode(peerIDs)) ?? Data()
+        try? save(data: data, account: "linked.devices")
+    }
+
+    public func loadLinkedDevices() -> [String] {
+        guard let data = try? load(account: "linked.devices") else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
     // MARK: - Wipe (for account deletion / security)
 
     // MARK: - Trusted Wipe Peers
