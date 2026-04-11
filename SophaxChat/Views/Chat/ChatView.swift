@@ -42,63 +42,37 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     let peer: KnownPeer
 
-    @State private var messageText: String = ""
-    @State private var showingSafetyNumber = false
-    @State private var showingBlockConfirm = false
-    @State private var disappearingInterval: DisappearingInterval = .off
-    @State private var typingTask: Task<Void, Never>? = nil
+    @State private var vm: ChatViewModel
     @FocusState private var isInputFocused: Bool
 
-    // Attachment / camera / file
-    @State private var photoPickerItem:    PhotosPickerItem? = nil
+    // Pure UI flags (sheet/dialog visibility)
+    @State private var showingSafetyNumber = false
+    @State private var showingBlockConfirm = false
     @State private var showingCamera       = false
     @State private var showingFilePicker   = false
+    @State private var showingRenameAlert  = false
+    @State private var showingDeadDrop     = false
+    @State private var showAISheet         = false
 
     // PTT recording
     @StateObject private var voiceRecorder = VoiceRecorder()
 
-    // Reply
-    @State private var replyingTo: StoredMessage? = nil
-
-    // Edit
-    @State private var editingMessage: StoredMessage? = nil
-
-    // Forward
-    @State private var forwardingMessage: StoredMessage? = nil
-
-    // Search
-    @State private var isSearching: Bool   = false
-    @State private var searchQuery: String = ""
-
-    // Rename contact
-    @State private var showingRenameAlert = false
-    @State private var renameText: String = ""
-
-    // Dead drop
-    @State private var showingDeadDrop = false
-    @State private var deadDropText: String = ""
-
-    // AI sheet
-    @State private var aiSeedPrompt: String? = nil
-    @State private var showAISheet = false
-
     // TOFU nudge dismiss state persisted per peer
     @AppStorage private var verifyNudgeDismissed: Bool
+
     init(peer: KnownPeer) {
         self.peer = peer
+        _vm = State(initialValue: ChatViewModel(peerID: peer.id))
         _verifyNudgeDismissed = AppStorage(wrappedValue: false, "verifyNudgeDismissed.\(peer.id)")
     }
-
-    private var disappearingKey: String { "com.sophax.disappearingInterval.\(peer.id)" }
-    private var draftKey: String { "com.sophax.draft.\(peer.id)" }
 
     private var messages: [StoredMessage] {
         appState.messages[peer.id] ?? []
     }
 
     private var displayedMessages: [StoredMessage] {
-        guard isSearching, !searchQuery.isEmpty else { return messages }
-        return messages.filter { $0.body.localizedCaseInsensitiveContains(searchQuery) }
+        guard vm.isSearching, !vm.searchQuery.isEmpty else { return messages }
+        return messages.filter { $0.body.localizedCaseInsensitiveContains(vm.searchQuery) }
     }
 
     private var isOnline: Bool {
@@ -110,6 +84,7 @@ struct ChatView: View {
     }
 
     var body: some View {
+        @Bindable var vm = vm
         chatContent
             .sheet(isPresented: $showingSafetyNumber) {
                 SafetyNumberView(peer: peer)
@@ -128,33 +103,33 @@ struct ChatView: View {
                 Text("You won't receive messages from this person.")
             }
             .alert("Rename Contact", isPresented: $showingRenameAlert) {
-                TextField("Name", text: $renameText)
+                TextField("Name", text: $vm.renameText)
                     .autocorrectionDisabled()
-                Button("Save") { appState.setAlias(renameText.isEmpty ? nil : renameText, for: peer.id) }
+                Button("Save") { appState.setAlias(vm.renameText.isEmpty ? nil : vm.renameText, for: peer.id) }
                 Button("Reset") { appState.setAlias(nil, for: peer.id) }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Set a custom name for \(peer.username).")
             }
-            .sheet(item: $forwardingMessage) { message in
+            .sheet(item: $vm.forwardingMessage) { message in
                 ForwardPickerView(message: message)
                     .environmentObject(appState)
             }
             .sheet(isPresented: $showAISheet) {
                 NavigationStack {
-                    AIAssistantView(seedPrompt: aiSeedPrompt)
+                    AIAssistantView(seedPrompt: vm.aiSeedPrompt)
                 }
             }
             .alert("Dead Drop", isPresented: $showingDeadDrop) {
-                TextField("Message", text: $deadDropText)
+                TextField("Message", text: $vm.deadDropText)
                     .autocorrectionDisabled()
                 Button("Send via Mesh") {
-                    let text = deadDropText.trimmingCharacters(in: .whitespaces)
+                    let text = vm.deadDropText.trimmingCharacters(in: .whitespaces)
                     guard !text.isEmpty else { return }
                     appState.sendDeadDrop(text: text, toPeerID: peer.id)
-                    deadDropText = ""
+                    vm.deadDropText = ""
                 }
-                Button("Cancel", role: .cancel) { deadDropText = "" }
+                Button("Cancel", role: .cancel) { vm.deadDropText = "" }
             } message: {
                 Text("Your message will be flooded over the mesh network. \(peer.username) will receive it when they come online nearby — no internet needed.")
             }
@@ -188,7 +163,8 @@ struct ChatView: View {
     }
 
     private var chatContent: some View {
-        VStack(spacing: 0) {
+        @Bindable var vm = vm
+        return VStack(spacing: 0) {
             messageList
             pinnedMessageBanner
             Divider()
@@ -208,6 +184,7 @@ struct ChatView: View {
     }
 
     @ViewBuilder private var chatToolbar: some View {
+        @Bindable var vm = vm
         HStack(spacing: 12) {
             // AI summarize
             if #available(iOS 26.0, *) {
@@ -216,7 +193,7 @@ struct ChatView: View {
                     let msgs = messages.suffix(20).map { msg in
                         (msg.direction == .sent ? "Me" : displayName) + ": " + msg.body
                     }.joined(separator: "\n")
-                    aiSeedPrompt = "Summarize this conversation in 3 concise bullet points:\n\n\(msgs)"
+                    vm.aiSeedPrompt = "Summarize this conversation in 3 concise bullet points:\n\n\(msgs)"
                     showAISheet = true
                 } label: {
                     Image(systemName: "sparkles")
@@ -226,10 +203,10 @@ struct ChatView: View {
 
             // Search toggle
             Button {
-                withAnimation { isSearching.toggle() }
-                if !isSearching { searchQuery = "" }
+                withAnimation { vm.isSearching.toggle() }
+                if !vm.isSearching { vm.searchQuery = "" }
             } label: {
-                Image(systemName: isSearching ? "xmark.circle" : "magnifyingglass")
+                Image(systemName: vm.isSearching ? "xmark.circle" : "magnifyingglass")
             }
 
             // Online indicator + dead drop when offline
@@ -257,10 +234,10 @@ struct ChatView: View {
             Menu {
                 ForEach(DisappearingInterval.allCases) { interval in
                     Button {
-                        disappearingInterval = interval
-                        UserDefaults.standard.set(interval.rawValue, forKey: disappearingKey)
+                        vm.disappearingInterval = interval
+                        vm.saveDisappearing()
                     } label: {
-                        if disappearingInterval == interval {
+                        if vm.disappearingInterval == interval {
                             Label(interval.rawValue, systemImage: "checkmark")
                         } else {
                             Text(interval.rawValue)
@@ -268,8 +245,8 @@ struct ChatView: View {
                     }
                 }
             } label: {
-                Image(systemName: disappearingInterval.icon)
-                    .foregroundStyle(disappearingInterval == .off ? Color.primary : Color.orange)
+                Image(systemName: vm.disappearingInterval.icon)
+                    .foregroundStyle(vm.disappearingInterval == .off ? Color.primary : Color.orange)
             }
 
             // Safety number + more actions
@@ -286,7 +263,7 @@ struct ChatView: View {
                     }
                 }
                 Button {
-                    renameText = appState.peerAliases[peer.id] ?? ""
+                    vm.renameText = appState.peerAliases[peer.id] ?? ""
                     showingRenameAlert = true
                 } label: {
                     Label("Rename Contact", systemImage: "pencil")
@@ -304,6 +281,7 @@ struct ChatView: View {
     }
 
     @ViewBuilder private var messageList: some View {
+        @Bindable var vm = vm
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -311,11 +289,11 @@ struct ChatView: View {
                         MessageBubbleView(
                             message:   message,
                             onDelete:  { appState.deleteMessage(message) },
-                            onReply:   { withAnimation { replyingTo = message } },
-                            onForward: { forwardingMessage = message },
+                            onReply:   { withAnimation { vm.replyingTo = message } },
+                            onForward: { vm.forwardingMessage = message },
                             onEdit:    {
-                                messageText = message.body
-                                withAnimation { editingMessage = message }
+                                vm.messageText = message.body
+                                withAnimation { vm.editingMessage = message }
                                 isInputFocused = true
                             },
                             onPin: {
@@ -326,7 +304,7 @@ struct ChatView: View {
                                 }
                             },
                             onAIAction: { prompt in
-                                aiSeedPrompt = prompt
+                                vm.aiSeedPrompt = prompt
                                 showAISheet = true
                             }
                         )
@@ -351,34 +329,30 @@ struct ChatView: View {
             .onAppear {
                 proxy.scrollTo("bottom", anchor: .bottom)
                 appState.markAsRead(peerID: peer.id)
-                if let saved = UserDefaults.standard.string(forKey: disappearingKey),
-                   let interval = DisappearingInterval(rawValue: saved) {
-                    disappearingInterval = interval
-                }
-                messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
             }
             .onDisappear {
                 // Never persist drafts when app lock is enabled — UserDefaults is
                 // unencrypted and included in device backups.  When lock is off the
                 // device is already considered accessible, so drafts are safe to keep.
                 if appState.appLockEnabled {
-                    UserDefaults.standard.removeObject(forKey: draftKey)
+                    vm.clearDraft()
                 } else {
-                    UserDefaults.standard.set(messageText, forKey: draftKey)
+                    vm.saveDraft()
                 }
             }
         }
     }
 
     @ViewBuilder private var searchBar: some View {
-        if isSearching {
+        @Bindable var vm = vm
+        if vm.isSearching {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                TextField("Search messages…", text: $searchQuery)
+                TextField("Search messages…", text: $vm.searchQuery)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
-                if !searchQuery.isEmpty {
-                    Button { searchQuery = "" } label: {
+                if !vm.searchQuery.isEmpty {
+                    Button { vm.searchQuery = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                     }
                 }
@@ -391,7 +365,8 @@ struct ChatView: View {
     }
 
     @ViewBuilder private var replyBar: some View {
-        if let replying = replyingTo {
+        @Bindable var vm = vm
+        if let replying = vm.replyingTo {
             HStack(spacing: 10) {
                 Rectangle()
                     .fill(Color.accentColor)
@@ -407,7 +382,7 @@ struct ChatView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button { withAnimation { replyingTo = nil } } label: {
+                Button { withAnimation { vm.replyingTo = nil } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
             }
@@ -419,7 +394,8 @@ struct ChatView: View {
     }
 
     @ViewBuilder private var editBar: some View {
-        if editingMessage != nil {
+        @Bindable var vm = vm
+        if vm.editingMessage != nil {
             HStack(spacing: 10) {
                 Image(systemName: "pencil")
                     .foregroundStyle(Color.accentColor)
@@ -427,17 +403,14 @@ struct ChatView: View {
                     Text("Edit message")
                         .font(.caption.bold())
                         .foregroundStyle(Color.accentColor)
-                    Text(editingMessage?.body ?? "")
+                    Text(vm.editingMessage?.body ?? "")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer()
                 Button {
-                    withAnimation {
-                        editingMessage = nil
-                        messageText = ""
-                    }
+                    withAnimation { vm.cancelEdit() }
                 } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
@@ -489,10 +462,10 @@ struct ChatView: View {
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Color.yellow.opacity(0.08))
         }
-        if disappearingInterval != .off {
+        if vm.disappearingInterval != .off {
             HStack(spacing: 4) {
                 Image(systemName: "timer").font(.caption2)
-                Text("Messages disappear after \(disappearingInterval.rawValue.lowercased())").font(.caption2)
+                Text("Messages disappear after \(vm.disappearingInterval.rawValue.lowercased())").font(.caption2)
             }
             .foregroundStyle(.orange)
             .padding(.horizontal, 16).padding(.top, 6)
@@ -500,16 +473,17 @@ struct ChatView: View {
     }
 
     @ViewBuilder private var inputBar: some View {
+        @Bindable var vm = vm
         HStack(spacing: 10) {
-            PhotosPicker(selection: $photoPickerItem, matching: .any(of: [.images, .videos])) {
+            PhotosPicker(selection: $vm.photoPickerItem, matching: .any(of: [.images, .videos])) {
                 Image(systemName: "paperclip")
                     .font(.system(size: 22))
                     .foregroundStyle(.secondary)
             }
-            .onChange(of: photoPickerItem) { _, item in
+            .onChange(of: vm.photoPickerItem) { _, item in
                 guard let item else { return }
                 Task {
-                    let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                    let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
                     if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.identifier.contains("video") }) {
                         if let url = try? await item.loadTransferable(type: URL.self) {
                             await appState.sendVideo(url, toPeerID: peer.id, expiresAt: expiresAt)
@@ -518,7 +492,7 @@ struct ChatView: View {
                               let image = UIImage(data: data) {
                         appState.sendImage(image, toPeerID: peer.id, expiresAt: expiresAt)
                     }
-                    photoPickerItem = nil
+                    vm.photoPickerItem = nil
                 }
             }
             Button { showingCamera = true } label: {
@@ -531,7 +505,7 @@ struct ChatView: View {
                     .font(.system(size: 20))
                     .foregroundStyle(.secondary)
             }
-            TextField("Message", text: $messageText, axis: .vertical)
+            TextField("Message", text: $vm.messageText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .lineLimit(1...6)
@@ -539,19 +513,19 @@ struct ChatView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.sentences)
                 .textContentType(.none)
-                .onChange(of: messageText) { _, newValue in
+                .onChange(of: vm.messageText) { _, newValue in
                     let nonEmpty = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     if nonEmpty {
                         appState.sendTypingIndicator(toPeerID: peer.id, isTyping: true)
-                        typingTask?.cancel()
-                        typingTask = Task { @MainActor in
+                        vm.typingTask?.cancel()
+                        vm.typingTask = Task { @MainActor in
                             try? await Task.sleep(for: .seconds(5))
                             appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
-                            typingTask = nil
+                            vm.typingTask = nil
                         }
                     } else {
-                        typingTask?.cancel()
-                        typingTask = nil
+                        vm.typingTask?.cancel()
+                        vm.typingTask = nil
                         appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
                     }
                 }
@@ -565,7 +539,7 @@ struct ChatView: View {
             CameraPickerView { image in
                 guard let image else { return }
                 appState.sendImage(image, toPeerID: peer.id,
-                                   expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+                                   expiresAt: vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
             }
         }
         .fileImporter(
@@ -574,7 +548,7 @@ struct ChatView: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
                 appState.sendFile(url, toPeerID: peer.id, expiresAt: expiresAt)
             }
         }
@@ -611,7 +585,7 @@ struct ChatView: View {
                         voiceRecorder.stop { data, duration in
                             guard let data else { return }
                             appState.sendAudio(data, duration: duration, toPeerID: peer.id,
-                                               expiresAt: disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
+                                               expiresAt: vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) })
                         }
                     }
             )
@@ -619,25 +593,25 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func sendMessage() {
-        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        typingTask?.cancel()
-        typingTask = nil
+        vm.typingTask?.cancel()
+        vm.typingTask = nil
         appState.sendTypingIndicator(toPeerID: peer.id, isTyping: false)
-        messageText = ""
-        UserDefaults.standard.removeObject(forKey: draftKey)
-        if let editing = editingMessage {
-            withAnimation { editingMessage = nil }
+        vm.messageText = ""
+        vm.clearDraft()
+        if let editing = vm.editingMessage {
+            withAnimation { vm.editingMessage = nil }
             appState.sendEditMessage(messageID: editing.id, newBody: text, toPeerID: peer.id)
         } else {
-            let reply = replyingTo
-            withAnimation { replyingTo = nil }
-            let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+            let reply = vm.replyingTo
+            withAnimation { vm.replyingTo = nil }
+            let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
             appState.sendMessage(text, toPeerID: peer.id, expiresAt: expiresAt, replyToID: reply?.id)
         }
     }
