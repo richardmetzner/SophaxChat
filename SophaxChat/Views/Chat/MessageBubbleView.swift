@@ -27,12 +27,13 @@ private let reactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "👎"]
 struct MessageBubbleView: View {
     @EnvironmentObject var appState: AppState
 
-    let message:   StoredMessage
-    var onDelete:  (() -> Void)? = nil
-    var onReply:   (() -> Void)? = nil
-    var onForward: (() -> Void)? = nil
-    var onEdit:    (() -> Void)? = nil
-    var onPin:     (() -> Void)? = nil
+    let message:    StoredMessage
+    var onDelete:   (() -> Void)? = nil
+    var onReply:    (() -> Void)? = nil
+    var onForward:  (() -> Void)? = nil
+    var onEdit:     (() -> Void)? = nil
+    var onPin:      (() -> Void)? = nil
+    var onAIAction: ((String) -> Void)? = nil
 
     @State private var attachmentData:    Data?    = nil
     @State private var showFullScreen:    Bool     = false
@@ -105,6 +106,24 @@ struct MessageBubbleView: View {
                         if let onPin {
                             Button(action: onPin) {
                                 Label("Pin Message", systemImage: "pin")
+                            }
+                        }
+                        Divider()
+                        if message.attachmentMimeType == nil, let onAIAction {
+                            Divider()
+                            Menu {
+                                Button {
+                                    onAIAction("Translate this message to English:\n\n\(message.body)")
+                                } label: {
+                                    Label("Translate", systemImage: "character.book.closed")
+                                }
+                                Button {
+                                    onAIAction("Analyze this message for phishing, scams, or suspicious content. Be concise:\n\n\(message.body)")
+                                } label: {
+                                    Label("Check for Threats", systemImage: "shield.lefthalf.filled")
+                                }
+                            } label: {
+                                Label("Ask AI", systemImage: "sparkles")
                             }
                         }
                         Divider()

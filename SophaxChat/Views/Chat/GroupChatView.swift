@@ -42,6 +42,10 @@ struct GroupChatView: View {
     @State private var isSearching: Bool   = false
     @State private var searchQuery: String = ""
 
+    // AI sheet
+    @State private var aiSeedPrompt: String? = nil
+    @State private var showAISheet = false
+
     // UI state
     @State private var showingMemberList    = false
     @State private var showingLeaveConfirm        = false
@@ -73,6 +77,11 @@ struct GroupChatView: View {
             .sheet(item: $forwardingMessage) { message in
                 ForwardPickerView(message: message)
                     .environmentObject(appState)
+            }
+            .sheet(isPresented: $showAISheet) {
+                NavigationStack {
+                    AIAssistantView(seedPrompt: aiSeedPrompt)
+                }
             }
             .sheet(item: $editingMessage) { message in
                 GroupEditMessageSheet(
@@ -206,6 +215,10 @@ struct GroupChatView: View {
                                 } else {
                                     appState.pinMessage(message.id, inConversation: convID)
                                 }
+                            },
+                            onAIAction: { prompt in
+                                aiSeedPrompt = prompt
+                                showAISheet = true
                             }
                         )
                     }
@@ -619,6 +632,7 @@ private struct GroupMessageBubble: View {
     let onForward:  () -> Void
     let onEdit:     () -> Void
     var onPin:      (() -> Void)? = nil
+    var onAIAction: ((String) -> Void)? = nil
 
     private var isSent: Bool { message.direction == .sent }
 
@@ -665,6 +679,23 @@ private struct GroupMessageBubble: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: task)
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    if message.attachmentID == nil, let onAIAction {
+                        Divider()
+                        Menu {
+                            Button {
+                                onAIAction("Translate this message to English:\n\n\(message.body)")
+                            } label: {
+                                Label("Translate", systemImage: "character.book.closed")
+                            }
+                            Button {
+                                onAIAction("Analyze this message for phishing, scams, or suspicious content. Be concise:\n\n\(message.body)")
+                            } label: {
+                                Label("Check for Threats", systemImage: "shield.lefthalf.filled")
+                            }
+                        } label: {
+                            Label("Ask AI", systemImage: "sparkles")
+                        }
                     }
                     if isSent && message.attachmentID == nil && message.timestamp.timeIntervalSinceNow > -300 {
                         Button {

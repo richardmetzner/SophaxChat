@@ -78,6 +78,10 @@ struct ChatView: View {
     @State private var showingDeadDrop = false
     @State private var deadDropText: String = ""
 
+    // AI sheet
+    @State private var aiSeedPrompt: String? = nil
+    @State private var showAISheet = false
+
     // TOFU nudge dismiss state persisted per peer
     @AppStorage private var verifyNudgeDismissed: Bool
     init(peer: KnownPeer) {
@@ -135,6 +139,11 @@ struct ChatView: View {
             .sheet(item: $forwardingMessage) { message in
                 ForwardPickerView(message: message)
                     .environmentObject(appState)
+            }
+            .sheet(isPresented: $showAISheet) {
+                NavigationStack {
+                    AIAssistantView(seedPrompt: aiSeedPrompt)
+                }
             }
             .alert("Dead Drop", isPresented: $showingDeadDrop) {
                 TextField("Message", text: $deadDropText)
@@ -300,6 +309,10 @@ struct ChatView: View {
                                 } else {
                                     appState.pinMessage(message.id, inConversation: peer.id)
                                 }
+                            },
+                            onAIAction: { prompt in
+                                aiSeedPrompt = prompt
+                                showAISheet = true
                             }
                         )
                         .id(message.id)
