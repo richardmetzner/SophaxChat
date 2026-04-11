@@ -13,60 +13,40 @@ struct GroupChatView: View {
     @Environment(\.dismiss) private var dismiss
     let group: GroupInfo
 
-    @State private var messageText: String = ""
+    @State private var vm: GroupChatViewModel
     @FocusState private var isInputFocused: Bool
 
-    // Disappearing messages
-    @State private var disappearingInterval: DisappearingInterval = .off
-    private var disappearingKey: String { "com.sophax.disappearingInterval.group.\(group.id)" }
-    private var draftKey: String { "com.sophax.draft.group.\(group.id)" }
-
-    // Attachment / camera / file
-    @State private var photoPickerItem:  PhotosPickerItem? = nil
-    @State private var showingFilePicker = false
+    // Pure UI flags (sheet/dialog visibility)
+    @State private var showingMemberList             = false
+    @State private var showingLeaveConfirm           = false
+    @State private var showingRotateConfirm          = false
+    @State private var showingDeleteConfirm          = false
+    @State private var showingDeleteLocallyConfirm   = false
+    @State private var showingMigrationAlert         = false
+    @State private var showingFilePicker             = false
+    @State private var showAISheet                   = false
 
     // PTT recording
     @StateObject private var voiceRecorder = VoiceRecorder()
 
-    // Reply
-    @State private var replyingTo: StoredMessage? = nil
-
-    // Forward
-    @State private var forwardingMessage: StoredMessage? = nil
-
-    // Edit
-    @State private var editingMessage: StoredMessage? = nil
-    @State private var editingText:    String         = ""
-
-    // Search
-    @State private var isSearching: Bool   = false
-    @State private var searchQuery: String = ""
-
-    // AI sheet
-    @State private var aiSeedPrompt: String? = nil
-    @State private var showAISheet = false
-
-    // UI state
-    @State private var showingMemberList    = false
-    @State private var showingLeaveConfirm        = false
-    @State private var showingRotateConfirm       = false
-    @State private var showingDeleteConfirm       = false
-    @State private var showingDeleteLocallyConfirm = false
-    @State private var showingMigrationAlert   = false
-    @State private var migrationAlertMessage   = ""
+    init(group: GroupInfo) {
+        self.group = group
+        _vm = State(initialValue: GroupChatViewModel(group: group))
+    }
 
     private var messages: [StoredMessage] {
         appState.messages[group.conversationID] ?? []
     }
 
     private var displayedMessages: [StoredMessage] {
-        guard isSearching, !searchQuery.isEmpty else { return messages }
-        return messages.filter { $0.body.localizedCaseInsensitiveContains(searchQuery) }
+        guard vm.isSearching, !vm.searchQuery.isEmpty else { return messages }
+        return messages.filter { $0.body.localizedCaseInsensitiveContains(vm.searchQuery) }
     }
 
     private var memberCount: Int { group.memberIDs.count }
 
     var body: some View {
+        @Bindable var vm = vm
         mainContent
             .navigationTitle(group.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -74,20 +54,20 @@ struct GroupChatView: View {
             .sheet(isPresented: $showingMemberList) {
                 GroupMemberListView(group: group).environmentObject(appState)
             }
-            .sheet(item: $forwardingMessage) { message in
+            .sheet(item: $vm.forwardingMessage) { message in
                 ForwardPickerView(message: message)
                     .environmentObject(appState)
             }
             .sheet(isPresented: $showAISheet) {
                 NavigationStack {
-                    AIAssistantView(seedPrompt: aiSeedPrompt)
+                    AIAssistantView(seedPrompt: vm.aiSeedPrompt)
                 }
             }
-            .sheet(item: $editingMessage) { message in
+            .sheet(item: $vm.editingMessage) { message in
                 GroupEditMessageSheet(
                     message:     message,
                     group:       group,
-                    editingText: $editingText
+                    editingText: $vm.editingText
                 )
                 .environmentObject(appState)
             }
@@ -130,7 +110,7 @@ struct GroupChatView: View {
             .alert("Upgrade to MLS", isPresented: $showingMigrationAlert) {
                 Button("OK") {}
             } message: {
-                Text(migrationAlertMessage)
+                Text(vm.migrationAlertMessage)
             }
     }
 
@@ -166,7 +146,7 @@ struct GroupChatView: View {
             pinnedMessageBanner
             disappearingBanner
             Divider()
-            if isSearching {
+            if vm.isSearching {
                 searchBar
             }
             replyPreviewBar
@@ -175,14 +155,15 @@ struct GroupChatView: View {
     }
 
     private var searchBar: some View {
-        HStack(spacing: 8) {
+        @Bindable var vm = vm
+        return HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.tertiary)
-            TextField("Search messages…", text: $searchQuery)
+            TextField("Search messages…", text: $vm.searchQuery)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-            if !searchQuery.isEmpty {
-                Button { searchQuery = "" } label: {
+            if !vm.searchQuery.isEmpty {
+                Button { vm.searchQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
                 }
@@ -202,11 +183,11 @@ struct GroupChatView: View {
                             message:    message,
                             group:      group,
                             replyingTo: messages.first { $0.id == message.replyToID },
-                            onReply:    { withAnimation { replyingTo = message } },
-                            onForward:  { forwardingMessage = message },
+                            onReply:    { withAnimation { vm.replyingTo = message } },
+                            onForward:  { vm.forwardingMessage = message },
                             onEdit:     {
-                                editingText    = message.body
-                                editingMessage = message
+                                vm.editingText    = message.body
+                                vm.editingMessage = message
                             },
                             onPin: {
                                 let convID = group.conversationID
@@ -217,7 +198,7 @@ struct GroupChatView: View {
                                 }
                             },
                             onAIAction: { prompt in
-                                aiSeedPrompt = prompt
+                                vm.aiSeedPrompt = prompt
                                 showAISheet = true
                             }
                         )
@@ -235,24 +216,19 @@ struct GroupChatView: View {
             .onAppear {
                 proxy.scrollTo("bottom", anchor: .bottom)
                 appState.markGroupAsRead(group: group)
-                if let saved = UserDefaults.standard.string(forKey: disappearingKey),
-                   let interval = DisappearingInterval(rawValue: saved) {
-                    disappearingInterval = interval
-                }
-                messageText = UserDefaults.standard.string(forKey: draftKey) ?? ""
             }
             .onDisappear {
-                UserDefaults.standard.set(messageText, forKey: draftKey)
+                vm.saveDraft()
             }
         }
     }
 
     @ViewBuilder
     private var disappearingBanner: some View {
-        if disappearingInterval != .off {
+        if vm.disappearingInterval != .off {
             HStack(spacing: 4) {
                 Image(systemName: "timer").font(.caption2)
-                Text("Messages disappear after \(disappearingInterval.rawValue.lowercased())")
+                Text("Messages disappear after \(vm.disappearingInterval.rawValue.lowercased())")
                     .font(.caption2)
             }
             .foregroundStyle(Color.orange)
@@ -265,10 +241,10 @@ struct GroupChatView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button {
-                withAnimation { isSearching.toggle() }
-                if !isSearching { searchQuery = "" }
+                withAnimation { vm.isSearching.toggle() }
+                if !vm.isSearching { vm.searchQuery = "" }
             } label: {
-                Image(systemName: isSearching ? "xmark.circle" : "magnifyingglass")
+                Image(systemName: vm.isSearching ? "xmark.circle" : "magnifyingglass")
             }
         }
         if #available(iOS 26.0, *) {
@@ -280,7 +256,7 @@ struct GroupChatView: View {
                             : (msg.senderID.flatMap { appState.displayName(forPeerID: $0) } ?? "Member")
                         return name + ": " + msg.body
                     }.joined(separator: "\n")
-                    aiSeedPrompt = "Summarize this group conversation in 3 concise bullet points:\n\n\(msgs)"
+                    vm.aiSeedPrompt = "Summarize this group conversation in 3 concise bullet points:\n\n\(msgs)"
                     showAISheet = true
                 } label: {
                     Image(systemName: "sparkles")
@@ -296,10 +272,10 @@ struct GroupChatView: View {
         Menu {
             ForEach(DisappearingInterval.allCases) { interval in
                 Button {
-                    disappearingInterval = interval
-                    UserDefaults.standard.set(interval.rawValue, forKey: disappearingKey)
+                    vm.disappearingInterval = interval
+                    vm.saveDisappearing()
                 } label: {
-                    if disappearingInterval == interval {
+                    if vm.disappearingInterval == interval {
                         Label(interval.rawValue, systemImage: "checkmark")
                     } else {
                         Text(interval.rawValue)
@@ -307,8 +283,8 @@ struct GroupChatView: View {
                 }
             }
         } label: {
-            Image(systemName: disappearingInterval.icon)
-                .foregroundStyle(disappearingInterval == .off ? Color.primary : Color.orange)
+            Image(systemName: vm.disappearingInterval.icon)
+                .foregroundStyle(vm.disappearingInterval == .off ? Color.primary : Color.orange)
         }
     }
 
@@ -330,10 +306,10 @@ struct GroupChatView: View {
                         case .notNeeded:
                             break
                         case .initiated:
-                            migrationAlertMessage = "Migration started. A new MLS group has been created with the same members."
+                            vm.migrationAlertMessage = "Migration started. A new MLS group has been created with the same members."
                             showingMigrationAlert = true
                         case .requiresAllOnline(let ids):
-                            migrationAlertMessage = "\(ids.count) member(s) are missing MLS keys. Ask them to open SophaxChat while nearby, then try again."
+                            vm.migrationAlertMessage = "\(ids.count) member(s) are missing MLS keys. Ask them to open SophaxChat while nearby, then try again."
                             showingMigrationAlert = true
                         }
                     }
@@ -374,11 +350,11 @@ struct GroupChatView: View {
         }
     }
 
-    // MARK: - Sub-views (extracted to keep body type-checkable)
+    // MARK: - Sub-views
 
     @ViewBuilder
     private var replyPreviewBar: some View {
-        if let replying = replyingTo {
+        if let replying = vm.replyingTo {
             HStack(spacing: 10) {
                 Rectangle()
                     .fill(Color.accentColor)
@@ -396,7 +372,7 @@ struct GroupChatView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button { withAnimation { replyingTo = nil } } label: {
+                Button { withAnimation { vm.replyingTo = nil } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
             }
@@ -430,37 +406,38 @@ struct GroupChatView: View {
                 .onEnded { _ in
                     voiceRecorder.stop { data, duration in
                         guard let data, duration > 0.5 else { return }
-                        let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                        let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
                         appState.sendGroupAudio(data, duration: duration, group: group,
-                                                expiresAt: expiresAt, replyToID: replyingTo?.id)
-                        replyingTo = nil
+                                                expiresAt: expiresAt, replyToID: vm.replyingTo?.id)
+                        vm.replyingTo = nil
                     }
                 }
         )
     }
 
     private var inputBar: some View {
-        let isTextNonEmpty = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        @Bindable var vm = vm
+        let isTextNonEmpty = !vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return HStack(spacing: 10) {
-            PhotosPicker(selection: $photoPickerItem, matching: .any(of: [.images, .videos])) {
+            PhotosPicker(selection: $vm.photoPickerItem, matching: .any(of: [.images, .videos])) {
                 Image(systemName: "photo")
                     .font(.system(size: 22))
                     .foregroundStyle(.secondary)
             }
-            .onChange(of: photoPickerItem) { _, item in
+            .onChange(of: vm.photoPickerItem) { _, item in
                 guard let item else { return }
                 Task {
-                    let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                    let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
                     if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.identifier.contains("video") }) {
                         if let url = try? await item.loadTransferable(type: URL.self) {
                             await appState.sendGroupVideo(url, group: group, expiresAt: expiresAt)
                         }
                     } else if let data = try? await item.loadTransferable(type: Data.self),
                               let image = UIImage(data: data) {
-                        appState.sendGroupImage(image, group: group, expiresAt: expiresAt, replyToID: replyingTo?.id)
-                        replyingTo = nil
+                        appState.sendGroupImage(image, group: group, expiresAt: expiresAt, replyToID: vm.replyingTo?.id)
+                        vm.replyingTo = nil
                     }
-                    photoPickerItem = nil
+                    vm.photoPickerItem = nil
                 }
             }
             Button { showingFilePicker = true } label: {
@@ -469,7 +446,7 @@ struct GroupChatView: View {
                     .foregroundStyle(.secondary)
             }
             pttButton
-            TextField("Message", text: $messageText, axis: .vertical)
+            TextField("Message", text: $vm.messageText, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .lineLimit(1...6)
@@ -496,21 +473,21 @@ struct GroupChatView: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
-                let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+                let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
                 appState.sendGroupFile(url, group: group, expiresAt: expiresAt)
             }
         }
     }
 
     private func sendMessage() {
-        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        messageText = ""
-        UserDefaults.standard.removeObject(forKey: draftKey)
-        let expiresAt = disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
-        appState.sendGroupMessage(text, group: group, expiresAt: expiresAt, replyToID: replyingTo?.id)
-        replyingTo = nil
+        vm.messageText = ""
+        vm.clearDraft()
+        let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
+        appState.sendGroupMessage(text, group: group, expiresAt: expiresAt, replyToID: vm.replyingTo?.id)
+        vm.replyingTo = nil
     }
 }
 
