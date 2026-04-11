@@ -20,6 +20,10 @@
 import Foundation
 import CryptoKit
 
+private extension SharedSecret {
+    var rawData: Data { withUnsafeBytes { Data($0) } }
+}
+
 public enum X3DH {
 
     // MARK: - Sender (Alice)
@@ -71,18 +75,14 @@ public enum X3DH {
         // DH3 = DH(EK_A, SPK_B)
         let dh3 = try ephemeralPair.privateKey.sharedSecretFromKeyAgreement(with: recipientSPK)
 
-        var dhConcat = Data()
-        dh1.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
-        dh2.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
-        dh3.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
+        var dhConcat = dh1.rawData + dh2.rawData + dh3.rawData
 
         var usedOTPKId: UInt32? = nil
         if let otpkData = recipientBundle.oneTimePreKeyPublic,
            let otpkId   = recipientBundle.oneTimePreKeyId {
             // DH4 = DH(EK_A, OPK_B)
             let recipientOPK = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: otpkData)
-            let dh4 = try ephemeralPair.privateKey.sharedSecretFromKeyAgreement(with: recipientOPK)
-            dh4.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
+            dhConcat += try ephemeralPair.privateKey.sharedSecretFromKeyAgreement(with: recipientOPK).rawData
             usedOTPKId = otpkId
         }
 
@@ -126,15 +126,11 @@ public enum X3DH {
         // DH3 = DH(SPK_B, EK_A)
         let dh3 = try recipientSignedPreKey.privateKey.sharedSecretFromKeyAgreement(with: senderEK)
 
-        var dhConcat = Data()
-        dh1.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
-        dh2.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
-        dh3.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
+        var dhConcat = dh1.rawData + dh2.rawData + dh3.rawData
 
         if let otp = recipientOneTimePreKey {
             // DH4 = DH(OPK_B, EK_A)
-            let dh4 = try otp.privateKey.sharedSecretFromKeyAgreement(with: senderEK)
-            dh4.withUnsafeBytes { dhConcat.append(contentsOf: $0) }
+            dhConcat += try otp.privateKey.sharedSecretFromKeyAgreement(with: senderEK).rawData
         }
 
         let sharedSecret = try deriveSharedSecret(from: dhConcat)
