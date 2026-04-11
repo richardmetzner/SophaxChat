@@ -134,11 +134,10 @@ public enum ShamirBackup {
         // Duplicate x-coordinates cause division by zero in Lagrange interpolation,
         // silently producing the wrong secret. Reject before touching any arithmetic.
         let used = Array(shares.prefix(m))
-        let indices = used.map(\.index)
-        guard Set(indices).count == used.count else {
+        let xs   = used.map(\.index)
+        guard Set(xs).count == xs.count else {
             throw ShamirBackupError.inconsistentShares
         }
-        let xs   = used.map { $0.index }
         let secretLen = first.data.count
         var secret = [UInt8](repeating: 0, count: secretLen)
         for byteIdx in 0..<secretLen {
@@ -152,23 +151,21 @@ public enum ShamirBackup {
 
     private static let hkdfInfo = Data("SophaxChat_SSS_Share_v1".utf8)
 
+    private static func deriveShareKey(from shared: SharedSecret) -> SymmetricKey {
+        HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: shared.withUnsafeBytes { Data($0) }),
+            info: hkdfInfo,
+            outputByteCount: 32
+        )
+    }
+
     /// Encrypt `share` for a recipient identified by `recipientDHPublicKey` (32B X25519).
     /// Returns (ephemeralPublicKey, ciphertext) to be sent in .sssShareDelivery.
     public static func encryptShare(_ share: SSSShare, recipientDHPublicKey: Data) throws -> (ephPublicKey: Data, ciphertext: Data) {
         let ephPair  = DHKeyPair()
         let recipKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: recipientDHPublicKey)
-        let shared   = try ephPair.privateKey.sharedSecretFromKeyAgreement(with: recipKey)
-
-        var ikm = Data()
-        shared.withUnsafeBytes { ikm.append(contentsOf: $0) }
-        let key = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: ikm),
-            info: hkdfInfo,
-            outputByteCount: 32
-        )
-
-        let plaintext = try JSONEncoder().encode(share)
-        let sealed    = try ChaChaPoly.seal(plaintext, using: key)
+        let key      = deriveShareKey(from: try ephPair.privateKey.sharedSecretFromKeyAgreement(with: recipKey))
+        let sealed   = try ChaChaPoly.seal(try JSONEncoder().encode(share), using: key)
         return (ephPublicKey: ephPair.publicKeyData, ciphertext: sealed.combined)
     }
 
@@ -179,20 +176,10 @@ public enum ShamirBackup {
         myDHPrivateKey: Curve25519.KeyAgreement.PrivateKey
     ) throws -> SSSShare {
         let ephKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: ephPublicKey)
-        let shared = try myDHPrivateKey.sharedSecretFromKeyAgreement(with: ephKey)
-
-        var ikm = Data()
-        shared.withUnsafeBytes { ikm.append(contentsOf: $0) }
-        let key = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: ikm),
-            info: hkdfInfo,
-            outputByteCount: 32
-        )
-
+        let key    = deriveShareKey(from: try myDHPrivateKey.sharedSecretFromKeyAgreement(with: ephKey))
         do {
-            let box       = try ChaChaPoly.SealedBox(combined: ciphertext)
-            let plaintext = try ChaChaPoly.open(box, using: key)
-            return try JSONDecoder().decode(SSSShare.self, from: plaintext)
+            let box = try ChaChaPoly.SealedBox(combined: ciphertext)
+            return try JSONDecoder().decode(SSSShare.self, from: ChaChaPoly.open(box, using: key))
         } catch {
             throw ShamirBackupError.decryptionFailed
         }
