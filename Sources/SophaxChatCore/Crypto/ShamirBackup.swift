@@ -131,7 +131,13 @@ public enum ShamirBackup {
         guard shares.allSatisfy({ $0.id == first.id && $0.data.count == first.data.count }) else {
             throw ShamirBackupError.inconsistentShares
         }
+        // Duplicate x-coordinates cause division by zero in Lagrange interpolation,
+        // silently producing the wrong secret. Reject before touching any arithmetic.
         let used = Array(shares.prefix(m))
+        let indices = used.map(\.index)
+        guard Set(indices).count == used.count else {
+            throw ShamirBackupError.inconsistentShares
+        }
         let xs   = used.map { $0.index }
         let secretLen = first.data.count
         var secret = [UInt8](repeating: 0, count: secretLen)
