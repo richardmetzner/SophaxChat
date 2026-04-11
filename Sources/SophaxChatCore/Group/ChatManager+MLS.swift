@@ -318,17 +318,13 @@ extension ChatManager {
                 struct ReactionPayload: Codable { let emoji: String? }
                 guard let payload = try? JSONDecoder().decode(ReactionPayload.self, from: plain) else { return }
 
-                guard let msgs = try? self.messageStore.messages(forPeer: convID),
-                      let idx  = msgs.firstIndex(where: { $0.id == targetID }) else { return }
-                var reactions = msgs[idx].reactions ?? [:]
-                if let e = payload.emoji { reactions[senderPeerID] = e }
-                else { reactions.removeValue(forKey: senderPeerID) }
-                try? self.messageStore.updateReactions(reactions, forMessageID: targetID, peerID: convID)
-                let finalReactions = reactions
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    self.delegate?.chatManager(self, didUpdateGroupReactions: finalReactions,
-                                               onMessageID: targetID, groupID: groupID)
+                if let reactions = self.applyReaction(emoji: payload.emoji, senderID: senderPeerID,
+                                                       messageID: targetID, convID: convID) {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        self.delegate?.chatManager(self, didUpdateGroupReactions: reactions,
+                                                   onMessageID: targetID, groupID: groupID)
+                    }
                 }
             } catch {
                 #if DEBUG
@@ -569,16 +565,11 @@ extension ChatManager {
         struct ReactionPayload: Codable { let emoji: String? }
         guard let payloadData = try? JSONEncoder().encode(ReactionPayload(emoji: emoji)) else { return }
 
-        // Apply locally (mirrors SKv2 sendGroupReaction pattern)
-        if let msgs = try? messageStore.messages(forPeer: convID),
-           let idx  = msgs.firstIndex(where: { $0.id == targetID }) {
-            var reactions = msgs[idx].reactions ?? [:]
-            if let e = emoji { reactions[myID] = e } else { reactions.removeValue(forKey: myID) }
-            try? messageStore.updateReactions(reactions, forMessageID: targetID, peerID: convID)
-            let finalReactions = reactions
+        // Apply locally
+        if let reactions = applyReaction(emoji: emoji, senderID: myID, messageID: targetID, convID: convID) {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.delegate?.chatManager(self, didUpdateGroupReactions: finalReactions,
+                self.delegate?.chatManager(self, didUpdateGroupReactions: reactions,
                                            onMessageID: targetID, groupID: group.id)
             }
         }

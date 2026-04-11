@@ -650,16 +650,12 @@ public final class ChatManager: @unchecked Sendable {
         }
         // Apply locally
         let convID = "group.\(groupID)"
-        guard let msgs = try? messageStore.messages(forPeer: convID),
-              let idx  = msgs.firstIndex(where: { $0.id == messageID }) else { return }
-        var reactions = msgs[idx].reactions ?? [:]
-        if let e = emoji { reactions[myID] = e } else { reactions.removeValue(forKey: myID) }
-        try? messageStore.updateReactions(reactions, forMessageID: messageID, peerID: convID)
-        let finalReactions = reactions
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.delegate?.chatManager(self, didUpdateGroupReactions: finalReactions,
-                                       onMessageID: messageID, groupID: groupID)
+        if let reactions = applyReaction(emoji: emoji, senderID: myID, messageID: messageID, convID: convID) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.delegate?.chatManager(self, didUpdateGroupReactions: reactions,
+                                           onMessageID: messageID, groupID: groupID)
+            }
         }
     }
 
@@ -2126,46 +2122,38 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     private func handleReaction(_ payload: ReactionMessage, fromPeer peerID: String) {
-        // Determine which conversation owns the target message.
-        // For sent messages the peerID is the conversation partner; reactions come from that peer.
-        // For received messages the peerID is also the conversation partner.
-        let convID = peerID
-        guard let msgs = try? messageStore.messages(forPeer: convID),
-              let idx = msgs.firstIndex(where: { $0.id == payload.targetMessageID }) else { return }
-        var reactions = msgs[idx].reactions ?? [:]
-        if let emoji = payload.emoji {
-            reactions[peerID] = emoji
-        } else {
-            reactions.removeValue(forKey: peerID)
-        }
-        try? messageStore.updateReactions(reactions, forMessageID: payload.targetMessageID, peerID: convID)
-        let messageID  = payload.targetMessageID
-        let finalReactions = reactions
+        guard let reactions = applyReaction(emoji: payload.emoji, senderID: peerID,
+                                            messageID: payload.targetMessageID, convID: peerID) else { return }
+        let messageID = payload.targetMessageID
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.delegate?.chatManager(self, didUpdateReactions: finalReactions, onMessageID: messageID, peerID: convID)
+            self.delegate?.chatManager(self, didUpdateReactions: reactions, onMessageID: messageID, peerID: peerID)
         }
     }
 
     private func handleGroupReaction(_ payload: GroupReactionMessage, fromPeer peerID: String) {
         let convID = "group.\(payload.groupID)"
-        guard let msgs = try? messageStore.messages(forPeer: convID),
-              let idx  = msgs.firstIndex(where: { $0.id == payload.targetMessageID }) else { return }
-        var reactions = msgs[idx].reactions ?? [:]
-        if let emoji = payload.emoji {
-            reactions[peerID] = emoji
-        } else {
-            reactions.removeValue(forKey: peerID)
-        }
-        try? messageStore.updateReactions(reactions, forMessageID: payload.targetMessageID, peerID: convID)
-        let messageID      = payload.targetMessageID
-        let groupID        = payload.groupID
-        let finalReactions = reactions
+        guard let reactions = applyReaction(emoji: payload.emoji, senderID: peerID,
+                                            messageID: payload.targetMessageID, convID: convID) else { return }
+        let messageID = payload.targetMessageID
+        let groupID   = payload.groupID
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.delegate?.chatManager(self, didUpdateGroupReactions: finalReactions,
+            self.delegate?.chatManager(self, didUpdateGroupReactions: reactions,
                                        onMessageID: messageID, groupID: groupID)
         }
+    }
+
+    /// Apply an emoji reaction (or removal) to the message store and return the updated map.
+    /// Returns nil if the target message was not found.
+    @discardableResult
+    func applyReaction(emoji: String?, senderID: String, messageID: String, convID: String) -> [String: String]? {
+        guard let msgs = try? messageStore.messages(forPeer: convID),
+              let idx  = msgs.firstIndex(where: { $0.id == messageID }) else { return nil }
+        var reactions = msgs[idx].reactions ?? [:]
+        if let e = emoji { reactions[senderID] = e } else { reactions.removeValue(forKey: senderID) }
+        try? messageStore.updateReactions(reactions, forMessageID: messageID, peerID: convID)
+        return reactions
     }
 
     // MARK: - Store-and-forward handlers
