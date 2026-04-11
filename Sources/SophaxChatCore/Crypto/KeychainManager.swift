@@ -654,8 +654,6 @@ public final class KeychainManager {
         return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
 
-    // MARK: - Wipe (for account deletion / security)
-
     // MARK: - Trusted Wipe Peers
 
     /// Save the list of peerIDs that are authorised to trigger a remote wipe.
