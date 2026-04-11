@@ -370,22 +370,35 @@ public final class KeychainManager {
     // MARK: - Blocked Peers
     // Moved from UserDefaults to Keychain to exclude from iCloud/iTunes backups.
 
+    private struct BlockedPeersPayload: Codable {
+        let ids:   [String]
+        let names: [String: String]
+    }
+
     public func saveBlockedPeers(_ ids: Set<String>, names: [String: String]) throws {
-        let payload = ["ids": Array(ids), "names_keys": Array(names.keys), "names_vals": Array(names.values)]
+        let payload = BlockedPeersPayload(ids: Array(ids), names: names)
         let data = try JSONEncoder().encode(payload)
         try save(data: data, account: "blocked.peers")
     }
 
     public func loadBlockedPeers() -> (ids: Set<String>, names: [String: String]) {
-        guard let data    = try? load(account: "blocked.peers"),
-              let payload = try? JSONDecoder().decode([String: [String]].self, from: data),
-              let ids     = payload["ids"],
-              let keys    = payload["names_keys"],
-              let vals    = payload["names_vals"],
-              keys.count == vals.count
-        else { return ([], [:]) }
-        let names = Dictionary(uniqueKeysWithValues: zip(keys, vals))
-        return (Set(ids), names)
+        guard let data = try? load(account: "blocked.peers") else { return ([], [:]) }
+        // Try new format first
+        if let payload = try? JSONDecoder().decode(BlockedPeersPayload.self, from: data) {
+            return (Set(payload.ids), payload.names)
+        }
+        // Migrate from legacy parallel-array format
+        if let raw   = try? JSONDecoder().decode([String: [String]].self, from: data),
+           let ids   = raw["ids"],
+           let keys  = raw["names_keys"],
+           let vals  = raw["names_vals"],
+           keys.count == vals.count {
+            let names = Dictionary(uniqueKeysWithValues: zip(keys, vals))
+            // Persist in new format immediately
+            try? saveBlockedPeers(Set(ids), names: names)
+            return (Set(ids), names)
+        }
+        return ([], [:])
     }
 
     // MARK: - MLS Group State (Phase 2 — raw binary blob from mls-rs)
