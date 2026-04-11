@@ -92,76 +92,52 @@ public final class MessageStore: @unchecked Sendable {
 
     /// Update the emoji reactions map for a specific message.
     public func updateReactions(_ reactions: [String: String], forMessageID messageID: String, peerID: String) throws {
-        var messages = (try? self.messages(forPeer: peerID)) ?? []
-        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
-        messages[idx].reactions = reactions.isEmpty ? nil : reactions
-        cache[peerID] = messages
-        try saveToDisk(messages: messages, peerID: peerID)
+        try mutate(peerID: peerID, messageID: messageID) { msgs, idx in
+            msgs[idx].reactions = reactions.isEmpty ? nil : reactions
+        }
     }
 
-    /// Append `peerID` to the `deliveredBy` set of a group message.
-    /// No-op if the peerID is already present. Idempotent.
+    /// Append `peerID` to the `deliveredBy` set of a group message. Idempotent.
     public func addDeliveredBy(_ delivererID: String, forMessageID messageID: String, convID: String) throws {
-        var messages = (try? self.messages(forPeer: convID)) ?? []
-        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
-        var set = messages[idx].deliveredBy ?? []
-        guard !set.contains(delivererID) else { return }
-        set.append(delivererID)
-        messages[idx].deliveredBy = set
-        cache[convID] = messages
-        try saveToDisk(messages: messages, peerID: convID)
+        try mutate(peerID: convID, messageID: messageID) { msgs, idx in
+            var set = msgs[idx].deliveredBy ?? []
+            guard !set.contains(delivererID) else { return }
+            set.append(delivererID)
+            msgs[idx].deliveredBy = set
+        }
     }
 
-    /// Append `readerID` to the `readBy` set of a group message.
-    /// No-op if the peerID is already present. Idempotent.
+    /// Append `readerID` to the `readBy` set of a group message. Idempotent.
     public func addReadBy(_ readerID: String, forMessageID messageID: String, convID: String) throws {
-        var messages = (try? self.messages(forPeer: convID)) ?? []
-        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
-        var set = messages[idx].readBy ?? []
-        guard !set.contains(readerID) else { return }
-        set.append(readerID)
-        messages[idx].readBy = set
-        cache[convID] = messages
-        try saveToDisk(messages: messages, peerID: convID)
+        try mutate(peerID: convID, messageID: messageID) { msgs, idx in
+            var set = msgs[idx].readBy ?? []
+            guard !set.contains(readerID) else { return }
+            set.append(readerID)
+            msgs[idx].readBy = set
+        }
     }
 
     /// Update the body text of a message, marking it as edited.
     public func updateMessage(id: String, peerID: String, newBody: String, editedAt: Date) throws {
-        var messages = (try? self.messages(forPeer: peerID)) ?? []
-        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        let old = messages[idx]
-        messages[idx] = StoredMessage(
-            id:                 old.id,
-            peerID:             old.peerID,
-            direction:          old.direction,
-            body:               newBody,
-            timestamp:          old.timestamp,
-            status:             old.status,
-            replyToID:          old.replyToID,
-            expiresAt:          old.expiresAt,
-            hopCount:           old.hopCount,
-            attachmentID:       old.attachmentID,
-            attachmentMimeType: old.attachmentMimeType,
-            attachmentFilename: old.attachmentFilename,
-            audioDuration:      old.audioDuration,
-            reactions:          old.reactions,
-            senderID:           old.senderID,
-            receivedAt:         old.receivedAt,
-            deliveredBy:        old.deliveredBy,
-            isEdited:           true,
-            editedAt:           editedAt
-        )
-        cache[peerID] = messages
-        try saveToDisk(messages: messages, peerID: peerID)
+        try mutate(peerID: peerID, messageID: id) { msgs, idx in
+            let old = msgs[idx]
+            msgs[idx] = StoredMessage(
+                id: old.id, peerID: old.peerID, direction: old.direction,
+                body: newBody, timestamp: old.timestamp, status: old.status,
+                replyToID: old.replyToID, expiresAt: old.expiresAt, hopCount: old.hopCount,
+                attachmentID: old.attachmentID, attachmentMimeType: old.attachmentMimeType,
+                attachmentFilename: old.attachmentFilename, audioDuration: old.audioDuration,
+                reactions: old.reactions, senderID: old.senderID, receivedAt: old.receivedAt,
+                deliveredBy: old.deliveredBy, isEdited: true, editedAt: editedAt
+            )
+        }
     }
 
     /// Update message status (sent → delivered, sending → failed, etc.).
     public func updateStatus(_ status: StoredMessage.MessageStatus, forMessageID messageID: String, peerID: String) throws {
-        var messages = (try? self.messages(forPeer: peerID)) ?? []
-        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
-        messages[idx].status = status
-        cache[peerID] = messages
-        try saveToDisk(messages: messages, peerID: peerID)
+        try mutate(peerID: peerID, messageID: messageID) { msgs, idx in
+            msgs[idx].status = status
+        }
     }
 
     /// All conversation peer IDs that have stored messages.
@@ -234,6 +210,17 @@ public final class MessageStore: @unchecked Sendable {
         for file in files {
             try FileManager.default.removeItem(at: file)
         }
+    }
+
+    // MARK: - Private: Mutation helper
+
+    /// Load messages for `peerID`, find the message by ID, apply `body`, then cache and save.
+    private func mutate(peerID: String, messageID: String, _ body: (inout [StoredMessage], Int) throws -> Void) throws {
+        var messages = (try? self.messages(forPeer: peerID)) ?? []
+        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        try body(&messages, idx)
+        cache[peerID] = messages
+        try saveToDisk(messages: messages, peerID: peerID)
     }
 
     // MARK: - Private: Disk I/O with encryption
