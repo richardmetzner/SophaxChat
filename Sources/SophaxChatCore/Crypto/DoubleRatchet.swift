@@ -211,12 +211,7 @@ public final class DoubleRatchet: @unchecked Sendable {
         if let hkr = state.receivingHeaderKey?.key,
            let header = try? decryptHeaderBytes(message.encryptedHeader, using: hkr) {
             try skipMessageKeys(until: header.messageNumber)
-            guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
-            guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
-            let (newCK, mk) = Self.kdfCK(ck)
-            state.receivingChainKey = SerializableSymmetricKey(newCK)
-            state.receiveMessageCount += 1
-            return try decryptBody(mk, message: message, associatedData: associatedData)
+            return try decryptBody(advanceReceivingChain(), message: message, associatedData: associatedData)
         }
 
         // 3. Try the next receiving header key (new DH epoch — performs DHRatchet first)
@@ -224,18 +219,10 @@ public final class DoubleRatchet: @unchecked Sendable {
               let header = try? decryptHeaderBytes(message.encryptedHeader, using: nhkr) else {
             throw SophaxError.decryptionFailed
         }
-
-        // Skip remaining messages in the previous chain before ratcheting
         try skipMessageKeys(until: header.previousChainLength)
         try dhRatchetStep(with: header.senderRatchetKey)
         try skipMessageKeys(until: header.messageNumber)
-
-        guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
-        guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
-        let (newCK, mk) = Self.kdfCK(ck)
-        state.receivingChainKey = SerializableSymmetricKey(newCK)
-        state.receiveMessageCount += 1
-        return try decryptBody(mk, message: message, associatedData: associatedData)
+        return try decryptBody(advanceReceivingChain(), message: message, associatedData: associatedData)
     }
 
     // MARK: - State Persistence
@@ -298,6 +285,18 @@ public final class DoubleRatchet: @unchecked Sendable {
         state.rootKey              = SerializableSymmetricKey(rk2)
         state.sendingChainKey      = SerializableSymmetricKey(sendingCK)
         state.nextSendingHeaderKey = SerializableSymmetricKey(newNHKs)
+    }
+
+    // MARK: - Private: Chain advance
+
+    /// Advance the receiving chain by one step. Returns the message key for this position.
+    private func advanceReceivingChain() throws -> MessageKey {
+        guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
+        guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
+        let (newCK, mk) = Self.kdfCK(ck)
+        state.receivingChainKey = SerializableSymmetricKey(newCK)
+        state.receiveMessageCount += 1
+        return mk
     }
 
     // MARK: - Private: Skip message keys
