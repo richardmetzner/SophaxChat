@@ -375,6 +375,7 @@ public final class ChatManager: @unchecked Sendable {
         loadPersistedForwardItems()
         loadSkippedGroupKeyCache()
         loadLinkedDevices()
+        seenWipeRequestIDs = keychain.loadSeenWipeRequestIDs()
     }
 
     /// Stop the mesh and TCP transport (call on app background / termination).
@@ -2828,6 +2829,10 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     // MARK: - Private: Remote Wipe
+    // Persisted to Keychain so replayed wipe requests are rejected across app restarts.
+    // Capped at 200 entries; oldest are pruned when the cap is exceeded.
+
+    private static let maxSeenWipeIDs = 200
 
     private var seenWipeRequestIDs: Set<String> = []
 
@@ -2856,9 +2861,14 @@ public final class ChatManager: @unchecked Sendable {
     private func handleRemoteWipe(_ req: RemoteWipeRequest, fromPeer senderID: String) {
         // 1. Sender must be a trusted wipe peer
         guard trustedWipePeers.contains(senderID) else { return }
-        // 2. Dedup — prevent replay
+        // 2. Dedup — reject replays including across app restarts
         guard !seenWipeRequestIDs.contains(req.requestID) else { return }
         seenWipeRequestIDs.insert(req.requestID)
+        // Cap to prevent unbounded Keychain growth (oldest UUIDs are pruned arbitrarily)
+        if seenWipeRequestIDs.count > Self.maxSeenWipeIDs {
+            seenWipeRequestIDs = Set(seenWipeRequestIDs.dropFirst(seenWipeRequestIDs.count - Self.maxSeenWipeIDs))
+        }
+        keychain.saveSeenWipeRequestIDs(seenWipeRequestIDs)
         // 3. Notify delegate on main thread
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }

@@ -614,6 +614,20 @@ public final class KeychainManager {
         }
     }
 
+    // MARK: - Remote Wipe Dedup
+    // Persisted across restarts to block replay attacks on remote wipe requests.
+
+    public func saveSeenWipeRequestIDs(_ ids: Set<String>) {
+        let data = (try? JSONEncoder().encode(Array(ids))) ?? Data()
+        try? save(data: data, account: "wipe.seen_ids")
+    }
+
+    public func loadSeenWipeRequestIDs() -> Set<String> {
+        guard let data = try? load(account: "wipe.seen_ids"),
+              let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(ids)
+    }
+
     // MARK: - Linked Devices
     // Stored in Keychain (not UserDefaults) to exclude from iCloud/iTunes backups.
 
