@@ -13,10 +13,12 @@ import FoundationModels
 // MARK: - Entry point
 
 struct AIAssistantView: View {
+    var seedPrompt: String? = nil
+
     var body: some View {
 #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
-            AIAssistantViewImpl()
+            AIAssistantViewImpl(seedPrompt: seedPrompt)
         } else {
             UnavailableView()
         }
@@ -53,6 +55,7 @@ private struct UnavailableView: View {
 
 @available(iOS 26.0, *)
 private struct AIAssistantViewImpl: View {
+    var seedPrompt: String? = nil
     @StateObject private var ai = AISession()
     @State private var text = ""
     @FocusState private var focused: Bool
@@ -65,6 +68,11 @@ private struct AIAssistantViewImpl: View {
         }
         .navigationTitle("Assistant")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if let prompt = seedPrompt {
+                await ai.send(prompt)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !ai.messages.isEmpty {
