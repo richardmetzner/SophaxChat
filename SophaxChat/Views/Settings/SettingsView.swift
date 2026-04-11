@@ -198,7 +198,7 @@ struct SettingsView: View {
                     appState.appLockEnabled = enabled
                     if !enabled {
                         appState.isAppLocked = false
-                        try? appState.clearRealLockPIN()
+                        appState.clearRealLockPIN()
                     }
                 }
             ))
@@ -261,7 +261,7 @@ struct SettingsView: View {
                     }
                     if appState.hasDuressPIN {
                         Button(role: .destructive) {
-                            try? appState.clearDuressPIN()
+                            appState.clearDuressPIN()
                         } label: {
                             Label("Remove Duress PIN", systemImage: "trash")
                         }

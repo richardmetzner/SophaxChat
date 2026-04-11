@@ -8,6 +8,7 @@
 import Foundation
 import Security
 import CryptoKit
+import CommonCrypto
 
 public final class KeychainManager {
 
@@ -472,94 +473,145 @@ public final class KeychainManager {
 
     // MARK: - App Lock PIN (custom numeric PIN, alternative to biometrics)
     //
-    // When set, the user can unlock with this PIN in addition to biometrics.
-    // Stored as SHA256(salt + pin). Same pattern as duress PIN.
+    // Stored as PBKDF2-HMAC-SHA256(pin, salt, 100k iterations).
+    // 100k iterations ≈ 0.1s on A15+: acceptable UX, ~100k× harder to brute-force than SHA256.
+    //
+    // Migration: v1 (SHA256) format is detected by the legacy account keys. On first
+    // successful v1 verify the hash is automatically upgraded to PBKDF2 and the old
+    // keys are deleted. New installs write PBKDF2 only.
 
-    private static let lockPINHashAccount = "settings.lock_pin"
-    private static let lockPINSaltAccount = "settings.lock_pin_s"
+    private static let lockPINIterations   = 100_000
+    // v2 keys (PBKDF2)
+    private static let lockPINHashAccountV2 = "settings.lock_pin_v2"
+    private static let lockPINSaltAccountV2 = "settings.lock_pin_s_v2"
+    // v1 keys (SHA256, read-only for migration)
+    private static let lockPINHashAccountV1 = "settings.lock_pin"
+    private static let lockPINSaltAccountV1 = "settings.lock_pin_s"
 
     public func saveRealLockPIN(_ pin: String) throws {
-        var salt = Data(repeating: 0, count: 16)
-        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
-        var input = Data(salt)
-        input.append(contentsOf: pin.utf8)
-        let hashData = Data(SHA256.hash(data: input))
-        try save(data: salt,     account: Self.lockPINSaltAccount)
-        try save(data: hashData, account: Self.lockPINHashAccount)
+        var salt = Data(repeating: 0, count: 32)
+        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        let hash = try pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations)
+        try save(data: salt, account: Self.lockPINSaltAccountV2)
+        try save(data: hash, account: Self.lockPINHashAccountV2)
+        // Remove legacy SHA256 keys if they exist
+        try? delete(account: Self.lockPINHashAccountV1)
+        try? delete(account: Self.lockPINSaltAccountV1)
     }
 
     public func verifyRealLockPIN(_ pin: String) -> Bool {
-        guard let salt     = try? load(account: Self.lockPINSaltAccount),
-              let hashData = try? load(account: Self.lockPINHashAccount) else { return false }
+        // Try PBKDF2 format (v2) first
+        if let salt = try? load(account: Self.lockPINSaltAccountV2),
+           let stored = try? load(account: Self.lockPINHashAccountV2),
+           let computed = try? pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations) {
+            return timingsafeEqual(computed, stored)
+        }
+        // Fall back to legacy SHA256 (v1) — upgrade on success
+        guard let salt = try? load(account: Self.lockPINSaltAccountV1),
+              let stored = try? load(account: Self.lockPINHashAccountV1) else { return false }
         var input = Data(salt)
         input.append(contentsOf: pin.utf8)
         let computed = Data(SHA256.hash(data: input))
-        // Constant-time comparison to prevent timing side-channel on PIN brute-force.
-        guard computed.count == hashData.count else { return false }
-        return computed.withUnsafeBytes { cp in
-            hashData.withUnsafeBytes { hp in
-                timingsafe_bcmp(cp.baseAddress!, hp.baseAddress!, cp.count) == 0
-            }
-        }
+        guard timingsafeEqual(computed, stored) else { return false }
+        // Upgrade to PBKDF2 transparently
+        try? saveRealLockPIN(pin)
+        return true
     }
 
-    public func clearRealLockPIN() throws {
-        try? delete(account: Self.lockPINHashAccount)
-        try? delete(account: Self.lockPINSaltAccount)
+    public func clearRealLockPIN() {
+        try? delete(account: Self.lockPINHashAccountV2)
+        try? delete(account: Self.lockPINSaltAccountV2)
+        try? delete(account: Self.lockPINHashAccountV1)
+        try? delete(account: Self.lockPINSaltAccountV1)
     }
 
     public func hasRealLockPIN() -> Bool {
-        (try? load(account: Self.lockPINHashAccount)) != nil
+        (try? load(account: Self.lockPINHashAccountV2)) != nil ||
+        (try? load(account: Self.lockPINHashAccountV1)) != nil
     }
 
     // MARK: - Duress PIN
     //
-    // Stored as SHA256(salt + pin) under a non-obvious account key.
-    // The salt is stored alongside the hash so the hash can be re-derived on verify.
+    // Stored as PBKDF2-HMAC-SHA256(pin, salt, 100k iterations) under obfuscated account keys.
     // PIN is NEVER stored in plaintext, memory, or UserDefaults.
 
-    /// Obfuscated Keychain account key — intentionally non-obvious to forensic tools.
-    private static let duressHashAccount = "settings.security_alt"
-    private static let duressSaltAccount = "settings.security_alt_s"
+    private static let duressHashAccountV2 = "settings.security_alt_v2"
+    private static let duressSaltAccountV2 = "settings.security_alt_s_v2"
+    private static let duressHashAccountV1 = "settings.security_alt"
+    private static let duressSaltAccountV1 = "settings.security_alt_s"
 
-    /// Hash and persist the duress PIN.  Called only from a short-lived stack; wipe after use.
     public func saveDuressPIN(_ pin: String) throws {
-        var salt = Data(repeating: 0, count: 16)
-        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
-
-        var input = Data(salt)
-        input.append(contentsOf: pin.utf8)
-        let hash = SHA256.hash(data: input)
-        let hashData = Data(hash)
-
-        try save(data: salt,     account: Self.duressSaltAccount)
-        try save(data: hashData, account: Self.duressHashAccount)
+        var salt = Data(repeating: 0, count: 32)
+        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        let hash = try pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations)
+        try save(data: salt, account: Self.duressSaltAccountV2)
+        try save(data: hash, account: Self.duressHashAccountV2)
+        try? delete(account: Self.duressHashAccountV1)
+        try? delete(account: Self.duressSaltAccountV1)
     }
 
-    /// Returns `true` if `pin` matches the stored duress PIN hash.
-    /// Returns `false` (not throws) when no duress PIN is set.
     public func verifyDuressPIN(_ pin: String) -> Bool {
-        guard let salt     = try? load(account: Self.duressSaltAccount),
-              let hashData = try? load(account: Self.duressHashAccount) else { return false }
+        if let salt = try? load(account: Self.duressSaltAccountV2),
+           let stored = try? load(account: Self.duressHashAccountV2),
+           let computed = try? pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations) {
+            return timingsafeEqual(computed, stored)
+        }
+        // Fall back to SHA256 v1 — upgrade on success
+        guard let salt = try? load(account: Self.duressSaltAccountV1),
+              let stored = try? load(account: Self.duressHashAccountV1) else { return false }
         var input = Data(salt)
         input.append(contentsOf: pin.utf8)
         let computed = Data(SHA256.hash(data: input))
-        // Constant-time comparison to prevent timing side-channel on PIN brute-force.
-        guard computed.count == hashData.count else { return false }
-        return computed.withUnsafeBytes { cp in
-            hashData.withUnsafeBytes { hp in
-                timingsafe_bcmp(cp.baseAddress!, hp.baseAddress!, cp.count) == 0
-            }
-        }
+        guard timingsafeEqual(computed, stored) else { return false }
+        try? saveDuressPIN(pin)
+        return true
     }
 
-    public func clearDuressPIN() throws {
-        try? delete(account: Self.duressHashAccount)
-        try? delete(account: Self.duressSaltAccount)
+    public func clearDuressPIN() {
+        try? delete(account: Self.duressHashAccountV2)
+        try? delete(account: Self.duressSaltAccountV2)
+        try? delete(account: Self.duressHashAccountV1)
+        try? delete(account: Self.duressSaltAccountV1)
     }
 
     public func hasDuressPIN() -> Bool {
-        (try? load(account: Self.duressHashAccount)) != nil
+        (try? load(account: Self.duressHashAccountV2)) != nil ||
+        (try? load(account: Self.duressHashAccountV1)) != nil
+    }
+
+    // MARK: - Private: PIN KDF helpers
+
+    /// PBKDF2-HMAC-SHA256 for PIN storage. Returns 32 derived bytes.
+    private func pinHash(pin: String, salt: Data, iterations: Int) throws -> Data {
+        var passData = Data(pin.utf8)
+        defer { passData.resetBytes(in: 0..<passData.count) }
+        var derived = Data(repeating: 0, count: 32)
+        let status: CCStatus = derived.withUnsafeMutableBytes { derivedPtr in
+            salt.withUnsafeBytes { saltPtr in
+                passData.withUnsafeBytes { passPtr in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passPtr.baseAddress, passData.count,
+                        saltPtr.baseAddress, salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+                        UInt32(iterations),
+                        derivedPtr.baseAddress, 32
+                    )
+                }
+            }
+        }
+        guard status == kCCSuccess else { throw SophaxError.keyGenerationFailed }
+        return derived
+    }
+
+    /// Constant-time equality — prevents timing side-channel on PIN comparison.
+    private func timingsafeEqual(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+        return a.withUnsafeBytes { ap in
+            b.withUnsafeBytes { bp in
+                timingsafe_bcmp(ap.baseAddress!, bp.baseAddress!, ap.count) == 0
+            }
+        }
     }
 
     // MARK: - Wipe (for account deletion / security)

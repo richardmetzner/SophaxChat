@@ -974,9 +974,9 @@ final class AppState: ObservableObject {
     func setRealLockPIN(_ pin: String) throws { try keychain.saveRealLockPIN(pin) }
 
     /// Clear the real lock PIN (and implicitly the duress PIN — duress requires a real PIN).
-    func clearRealLockPIN() throws {
-        try keychain.clearRealLockPIN()
-        try keychain.clearDuressPIN()
+    func clearRealLockPIN() {
+        keychain.clearRealLockPIN()
+        keychain.clearDuressPIN()
     }
 
     /// Set or replace the duress PIN.
@@ -986,7 +986,7 @@ final class AppState: ObservableObject {
     func verifyRealLockPIN(_ pin: String) -> Bool { keychain.verifyRealLockPIN(pin) }
 
     /// Clear only the duress PIN.
-    func clearDuressPIN() throws { try keychain.clearDuressPIN() }
+    func clearDuressPIN() { keychain.clearDuressPIN() }
 
     // MARK: - Account wipe
 
