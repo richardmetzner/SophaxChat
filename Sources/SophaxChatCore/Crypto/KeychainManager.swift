@@ -467,8 +467,7 @@ public final class KeychainManager {
     private static let lockPINSaltAccountV1 = "settings.lock_pin_s"
 
     public func saveRealLockPIN(_ pin: String) throws {
-        var salt = Data(repeating: 0, count: 32)
-        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        let salt = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
         let hash = try pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations)
         try save(data: salt, account: Self.lockPINSaltAccountV2)
         try save(data: hash, account: Self.lockPINHashAccountV2)
@@ -516,8 +515,7 @@ public final class KeychainManager {
     private static let duressSaltAccountV1 = "settings.security_alt_s"
 
     public func saveDuressPIN(_ pin: String) throws {
-        var salt = Data(repeating: 0, count: 32)
-        _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        let salt = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
         let hash = try pinHash(pin: pin, salt: salt, iterations: Self.lockPINIterations)
         try save(data: salt, account: Self.duressSaltAccountV2)
         try save(data: hash, account: Self.duressHashAccountV2)

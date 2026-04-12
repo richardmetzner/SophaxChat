@@ -91,7 +91,8 @@ public struct SerializableSymmetricKey: Codable, Equatable {
         guard lhs.rawData.count == rhs.rawData.count else { return false }
         return lhs.rawData.withUnsafeBytes { lp in
             rhs.rawData.withUnsafeBytes { rp in
-                timingsafe_bcmp(lp.baseAddress!, rp.baseAddress!, lp.count) == 0
+                guard let lpAddr = lp.baseAddress, let rpAddr = rp.baseAddress else { return lp.count == 0 }
+                return timingsafe_bcmp(lpAddr, rpAddr, lp.count) == 0
             }
         }
     }
