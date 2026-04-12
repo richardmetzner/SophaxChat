@@ -138,7 +138,7 @@ extension ChatManager {
 
                 // Cache sender avatar for group-only contacts
                 if let avatarData = msg.senderAvatarData,
-                   avatarData.count > 0, avatarData.count <= 8_192,
+                   !avatarData.isEmpty, avatarData.count <= 8_192,
                    self.peerBundles[msg.senderPeerID]?.avatarData == nil {
                     let senderID = msg.senderPeerID
                     DispatchQueue.main.async {

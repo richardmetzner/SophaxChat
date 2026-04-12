@@ -2179,7 +2179,7 @@ public final class ChatManager: @unchecked Sendable {
         let now = Date()
         storedForwardItems.removeAll { $0.expiresAt <= now }
         // Per-peer cap: prevents a single attacker peer from consuming all slots
-        let peerCount = storedForwardItems.filter { $0.targetPeerID == payload.targetPeerID }.count
+        let peerCount = storedForwardItems.count(where: { $0.targetPeerID == payload.targetPeerID })
         guard peerCount < Self.maxStoredForwardPerPeer else { return }
         if storedForwardItems.count >= Self.maxStoredForwardItems {
             storedForwardItems.removeFirst()
@@ -2571,7 +2571,7 @@ public final class ChatManager: @unchecked Sendable {
 
         // Cache sender avatar if this is a group-only contact (no Hello received yet)
         if let avatarData = payload.senderAvatarData,
-           avatarData.count > 0, avatarData.count <= 8_192,
+           !avatarData.isEmpty, avatarData.count <= 8_192,
            peerBundles[payload.senderPeerID]?.avatarData == nil {
             let senderID = payload.senderPeerID
             DispatchQueue.main.async { [weak self] in
