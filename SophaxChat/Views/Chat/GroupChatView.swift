@@ -704,17 +704,15 @@ private struct GroupMessageBubble: View {
                         Label("Forward", systemImage: "arrowshape.turn.up.right")
                     }
                     Divider()
+                    let myID = appState.chatManager?.identity.publicIdentity.peerID ?? ""
                     ForEach(["👍", "❤️", "😂", "😮", "😢", "👎"], id: \.self) { emoji in
                         Button {
-                            let myID = appState.chatManager?.identity.publicIdentity.peerID ?? ""
-                            let current = message.reactions?[myID]
                             appState.sendGroupReaction(
-                                emoji: current == emoji ? nil : emoji,
+                                emoji: message.reactions?[myID] == emoji ? nil : emoji,
                                 messageID: message.id,
                                 group: group
                             )
                         } label: {
-                            let myID = appState.chatManager?.identity.publicIdentity.peerID ?? ""
                             if message.reactions?[myID] == emoji {
                                 Label(emoji, systemImage: "checkmark")
                             } else {

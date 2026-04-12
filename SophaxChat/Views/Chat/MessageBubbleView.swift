@@ -65,21 +65,18 @@ struct MessageBubbleView: View {
                 // ── Main content ──────────────────────────────────────────────
                 contentBubble
                     .contextMenu {
+                        let myID = appState.chatManager?.identity.publicIdentity.peerID ?? ""
                         // Emoji reactions
                         Menu {
                             ForEach(reactionEmojis, id: \.self) { emoji in
                                 Button {
-                                    let myID = appState.chatManager?.identity.publicIdentity.peerID ?? ""
-                                    let existing = message.reactions?[myID]
                                     appState.sendReaction(
-                                        emoji: existing == emoji ? nil : emoji,
+                                        emoji: message.reactions?[myID] == emoji ? nil : emoji,
                                         messageID: message.id,
                                         peerID: message.peerID
                                     )
                                 } label: {
-                                    let myID = appState.chatManager?.identity.publicIdentity.peerID ?? ""
-                                    let isActive = message.reactions?[myID] == emoji
-                                    Text(isActive ? "\(emoji) ✓" : emoji)
+                                    Text(message.reactions?[myID] == emoji ? "\(emoji) ✓" : emoji)
                                 }
                             }
                         } label: {
