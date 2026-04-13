@@ -1008,8 +1008,14 @@ public final class ChatManager: @unchecked Sendable {
         myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
                                  messageCount: newCount, createdAt: myState.createdAt ?? Date())
         keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+        // Bind ciphertext to wire-message context so the AEAD tag authenticates
+        // not just the plaintext but also which group, sender, and chain position
+        // this message belongs to. Prevents a compromised relay from mixing
+        // ciphertexts across groups or reordering them across chain positions.
+        let aadBody = Data("\(groupID)/\(myID)/\(iteration)/body".utf8)
         guard let bodyData = body.data(using: .utf8),
-              let sealed   = try? ChaChaPoly.seal(bodyData, using: messageKey) else {
+              let sealed   = try? ChaChaPoly.seal(bodyData, using: messageKey,
+                                                  authenticating: aadBody) else {
             fail(SophaxError.encryptionFailed("Group message body encryption failed"))
             return
         }
@@ -1147,9 +1153,13 @@ public final class ChatManager: @unchecked Sendable {
         myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
                                  messageCount: newCount, createdAt: myState.createdAt ?? Date())
         keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+        let aadBody = Data("\(groupID)/\(myID)/\(iteration)/body".utf8)
+        let aadAtt  = Data("\(groupID)/\(myID)/\(iteration)/att".utf8)
         guard let bodyData   = displayBody.data(using: .utf8),
-              let sealedBody = try? ChaChaPoly.seal(bodyData, using: messageKey),
-              let sealedAtt  = try? ChaChaPoly.seal(data,     using: messageKey) else {
+              let sealedBody = try? ChaChaPoly.seal(bodyData, using: messageKey,
+                                                    authenticating: aadBody),
+              let sealedAtt  = try? ChaChaPoly.seal(data,     using: messageKey,
+                                                    authenticating: aadAtt) else {
             fail(SophaxError.encryptionFailed("Group attachment encryption failed"))
             return
         }
@@ -2484,8 +2494,10 @@ public final class ChatManager: @unchecked Sendable {
 
             // ── Fast path: out-of-order delivery via skipped-key cache ─────────
             if let cachedKey = skippedGroupMessageKeys[cacheKey]?[iteration] {
+                let aadBody = Data("\(payload.groupID)/\(payload.senderPeerID)/\(iteration)/body".utf8)
                 guard let sealedBox = try? ChaChaPoly.SealedBox(combined: payload.ciphertext),
-                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: cachedKey),
+                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: cachedKey,
+                                                            authenticating: aadBody),
                       let decoded   = String(data: bodyData, encoding: .utf8) else { return }
                 body             = decoded
                 attachDecryptKey = cachedKey
@@ -2536,8 +2548,10 @@ public final class ChatManager: @unchecked Sendable {
                 if !cached.isEmpty { persistSkippedGroupKeyCache() }
 
                 let (messageKey, nextCK) = senderKeyRatchetStep(senderState.chainKey)
+                let aadBody = Data("\(payload.groupID)/\(payload.senderPeerID)/\(iteration)/body".utf8)
                 guard let sealedBox = try? ChaChaPoly.SealedBox(combined: payload.ciphertext),
-                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: messageKey),
+                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: messageKey,
+                                                            authenticating: aadBody),
                       let decoded   = String(data: bodyData, encoding: .utf8) else { return }
                 body             = decoded
                 attachDecryptKey = messageKey
@@ -2553,7 +2567,8 @@ public final class ChatManager: @unchecked Sendable {
            payload.attachmentMimeType != nil,
            let key      = attachDecryptKey,
            let sealedAtt = try? ChaChaPoly.SealedBox(combined: attCiphertext),
-           let attData  = try? ChaChaPoly.open(sealedAtt, using: key) {
+           let attData  = try? ChaChaPoly.open(sealedAtt, using: key,
+                                               authenticating: Data("\(payload.groupID)/\(payload.senderPeerID)/\(iteration)/att".utf8)) {
             let id = UUID().uuidString
             try? attachmentStore.save(attData, id: id)
             attachmentID = id
