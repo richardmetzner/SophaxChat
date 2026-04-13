@@ -358,17 +358,23 @@ public final class DoubleRatchet: @unchecked Sendable {
 
     // MARK: - Private: Header encryption/decryption
 
+    /// Static domain-separator bound to every header AEAD tag.
+    /// Prevents cross-protocol confusion and makes the empty-AAD choice explicit.
+    private static let headerAAD = Data("SophaxChat_DR_Header_v2".utf8)
+
     private func encryptHeader(_ header: RatchetHeader, using key: HeaderKey) throws -> Data {
         let headerData = try JSONEncoder().encode(header)
         let nonce      = ChaChaPoly.Nonce()
-        let sealed     = try ChaChaPoly.seal(headerData, using: key, nonce: nonce, authenticating: Data())
+        let sealed     = try ChaChaPoly.seal(headerData, using: key, nonce: nonce,
+                                             authenticating: DoubleRatchet.headerAAD)
         return sealed.combined
     }
 
     private func decryptHeaderBytes(_ encryptedHeader: Data, using key: HeaderKey) throws -> RatchetHeader {
         do {
             let sealedBox  = try ChaChaPoly.SealedBox(combined: encryptedHeader)
-            let headerData = try ChaChaPoly.open(sealedBox, using: key, authenticating: Data())
+            let headerData = try ChaChaPoly.open(sealedBox, using: key,
+                                                  authenticating: DoubleRatchet.headerAAD)
             return try JSONDecoder().decode(RatchetHeader.self, from: headerData)
         } catch {
             throw SophaxError.decryptionFailed
