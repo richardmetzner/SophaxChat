@@ -102,7 +102,7 @@ public struct SerializableSymmetricKey: Codable, Equatable {
 
 public enum CryptoConstants {
     /// App identifier included in all KDF info strings to domain-separate keys.
-    public static let appVersion = "SophaxChat_v1"
+    public static let appVersion = "SophaxChat_v2"
 
     // KDF info strings (domain separation)
     public static let rkInfo       = Data("SophaxChat_RootKey_v1".utf8)
