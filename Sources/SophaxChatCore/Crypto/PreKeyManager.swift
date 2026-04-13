@@ -95,7 +95,9 @@ public struct PreKeyBundle: Codable, Sendable {
             throw SophaxError.invalidMessageFormat("Invalid prekey bundle key dimensions")
         }
         let identityKey  = try Curve25519.Signing.PublicKey(rawRepresentation: signingKeyPublic)
-        let signedData   = signedPreKeyPublic + spkTimestampData(timestamp)
+        // Include signingKeyPublic as the first field so an adversary cannot swap in a
+        // different identity key while reusing a captured (SPK, timestamp, signature) triple.
+        let signedData   = signingKeyPublic + signedPreKeyPublic + spkTimestampData(timestamp)
         return identityKey.isValidSignature(signedPreKeySignature, for: signedData)
     }
 
@@ -165,15 +167,17 @@ public final class PreKeyManager: @unchecked Sendable {
     /// Generates a PreKeyBundle ready to share with a peer.
     /// - Parameter tcpAddress: Optional "host:port" to include so peers learn our TCP address.
     public func generateBundle(tcpAddress: String? = nil) throws -> PreKeyBundle {
+        let pub      = identity.publicIdentity
         let spkData  = signedPreKey.publicKeyData
         // Capture timestamp before signing so the exact same value ends up in both the
         // signed data and the bundle field — verifySignedPreKey() reconstructs the signed
         // data from bundle.timestamp, so they must match to the millisecond.
         let timestamp    = Date()
-        let signedData   = spkData + spkTimestampData(timestamp)
+        // signingKeyPublic is prepended so the signature commits to the identity key itself,
+        // preventing a key-substitution attack (different signingKeyPublic + same SPK/timestamp).
+        let signedData   = pub.signingKeyPublic + spkData + spkTimestampData(timestamp)
         let spkSignature = try identity.sign(signedData)
         let otp = oneTimePreKeys.randomElement()
-        let pub = identity.publicIdentity
 
         return PreKeyBundle(
             signingKeyPublic:      pub.signingKeyPublic,
