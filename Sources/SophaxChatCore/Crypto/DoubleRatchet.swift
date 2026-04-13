@@ -247,6 +247,25 @@ public final class DoubleRatchet: @unchecked Sendable {
               state.receiveMessageCount < UInt32.max else {
             throw SophaxError.invalidState
         }
+        // Verify that the stored sending key pair is internally consistent.
+        // A crafted or corrupted blob could carry mismatched private/public bytes,
+        // silently producing wrong DH outputs on the next ratchet step.
+        guard state.sendingRatchetPrivateKey.count == 32,
+              state.sendingRatchetPublicKey.count  == 32 else {
+            throw SophaxError.invalidState
+        }
+        let derivedSendingPriv = try Curve25519.KeyAgreement.PrivateKey(
+            rawRepresentation: state.sendingRatchetPrivateKey)
+        guard derivedSendingPriv.publicKey.rawRepresentation == state.sendingRatchetPublicKey else {
+            throw SophaxError.invalidState
+        }
+        // Validate chain key widths.
+        if let ck = state.sendingChainKey {
+            guard ck.key.withUnsafeBytes({ $0.count }) == 32 else { throw SophaxError.invalidState }
+        }
+        if let ck = state.receivingChainKey {
+            guard ck.key.withUnsafeBytes({ $0.count }) == 32 else { throw SophaxError.invalidState }
+        }
         return DoubleRatchet(state: state)
     }
 
