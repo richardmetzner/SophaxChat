@@ -36,9 +36,15 @@ private func sealWireMessage(_ wire: WireMessage, recipientDHPublicKey: Data) th
         outputByteCount: 32
     )
 
-    let wireJSON  = try JSONEncoder().encode(wire)
-    let nonce     = ChaChaPoly.Nonce()
-    let sealed    = try ChaChaPoly.seal(wireJSON, using: sealingKey, nonce: nonce, authenticating: Data())
+    // Bind the ciphertext to the intended recipient's static DH public key.
+    // The sealing key is already derived from ECDH(eph, recipientDHKey), so the
+    // recipient is implicitly authenticated via key derivation. Explicitly including
+    // the recipient's DH public key as AAD additionally prevents key-confusion: even
+    // if two recipients somehow shared the same DH key the AAD tag would differ.
+    let wireJSON = try JSONEncoder().encode(wire)
+    let nonce    = ChaChaPoly.Nonce()
+    let sealed   = try ChaChaPoly.seal(wireJSON, using: sealingKey, nonce: nonce,
+                                       authenticating: recipientDHPublicKey)
     return SealedMessage(ephemeralPublicKey: ephPair.publicKeyData, encryptedPayload: sealed.combined)
 }
 
@@ -54,9 +60,12 @@ private func unsealMessage(_ sealed: SealedMessage, recipientDHPrivateKey: Curve
         outputByteCount: 32
     )
 
+    // Reconstruct the same AAD used during sealing: our own DH public key.
+    let recipientDHPublicKey = recipientDHPrivateKey.publicKey.rawRepresentation
     do {
         let box      = try ChaChaPoly.SealedBox(combined: sealed.encryptedPayload)
-        let wireJSON = try ChaChaPoly.open(box, using: sealingKey, authenticating: Data())
+        let wireJSON = try ChaChaPoly.open(box, using: sealingKey,
+                                           authenticating: recipientDHPublicKey)
         return try JSONDecoder().decode(WireMessage.self, from: wireJSON)
     } catch {
         throw SophaxError.decryptionFailed
