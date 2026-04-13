@@ -554,13 +554,29 @@ public final class KeychainManager {
 
     // MARK: - Remote Wipe Dedup
     // Persisted across restarts to block replay attacks on remote wipe requests.
+    // Each entry carries a timestamp so records older than 30 days can be pruned —
+    // they offer no replay protection value once the device clock has advanced past them.
+
+    private struct WipeRequestRecord: Codable {
+        let id:     String
+        let seenAt: Date
+    }
 
     public func saveSeenWipeRequestIDs(_ ids: Set<String>) {
-        try? saveJSON(Array(ids), account: "wipe.seen_ids")
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
+        var records = (loadJSON([WipeRequestRecord].self, account: "wipe.seen_ids") ?? [])
+            .filter { $0.seenAt > cutoff }
+        let existing = Set(records.map { $0.id })
+        for id in ids where !existing.contains(id) {
+            records.append(WipeRequestRecord(id: id, seenAt: Date()))
+        }
+        try? saveJSON(records, account: "wipe.seen_ids")
     }
 
     public func loadSeenWipeRequestIDs() -> Set<String> {
-        Set(loadJSON([String].self, account: "wipe.seen_ids") ?? [])
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
+        let records = loadJSON([WipeRequestRecord].self, account: "wipe.seen_ids") ?? []
+        return Set(records.filter { $0.seenAt > cutoff }.map { $0.id })
     }
 
     // MARK: - Linked Devices
