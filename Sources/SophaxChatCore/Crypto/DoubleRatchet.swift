@@ -233,6 +233,12 @@ public final class DoubleRatchet: @unchecked Sendable {
 
     public static func importState(_ data: Data) throws -> DoubleRatchet {
         let state = try JSONDecoder().decode(RatchetSessionState.self, from: data)
+        // Bound the number of distinct header-key buckets in addition to the total
+        // key count. Without this, a crafted state blob could allocate O(n) dictionary
+        // entries that each contain only a few keys and still pass the total-count check.
+        guard state.skippedKeyBundles.count <= 50 else {
+            throw SophaxError.invalidState
+        }
         let totalSkipped = state.skippedKeyBundles.values.reduce(0) { $0 + $1.count }
         guard totalSkipped <= CryptoConstants.maxSkippedMessages else {
             throw SophaxError.invalidState
