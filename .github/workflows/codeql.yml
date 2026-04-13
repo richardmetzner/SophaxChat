@@ -1,0 +1,72 @@
+name: CodeQL Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Weekly scan every Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: swift
+            runner: macos-15
+          - language: java-kotlin
+            runner: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Swift: select Xcode before CodeQL init so the build toolchain is found
+      - name: Select Xcode (Swift only)
+        if: matrix.language == 'swift'
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Set up JDK 17 (Java/Kotlin only)
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+
+      - name: Build SophaxChatCore (Swift)
+        if: matrix.language == 'swift'
+        run: swift build
+
+      - name: Generate Gradle wrapper (Java/Kotlin)
+        if: matrix.language == 'java-kotlin'
+        working-directory: android
+        run: |
+          if [ ! -f gradlew ]; then gradle wrapper --gradle-version=8.9; fi
+          chmod +x gradlew
+
+      - name: Build Android debug APK (Java/Kotlin)
+        if: matrix.language == 'java-kotlin'
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

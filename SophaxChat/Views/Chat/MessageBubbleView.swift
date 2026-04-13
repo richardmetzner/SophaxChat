@@ -27,16 +27,24 @@ private let reactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "👎"]
 struct MessageBubbleView: View {
     @EnvironmentObject var appState: AppState
 
-    let message:    StoredMessage
-    var onDelete:   (() -> Void)? = nil
-    var onReply:    (() -> Void)? = nil
-    var onForward:  (() -> Void)? = nil
-    var onEdit:     (() -> Void)? = nil
-    var onPin:      (() -> Void)? = nil
-    var onAIAction: ((String) -> Void)? = nil
+    let message:        StoredMessage
+    var onDelete:       (() -> Void)? = nil
+    var onReply:        (() -> Void)? = nil
+    var onForward:      (() -> Void)? = nil
+    var onEdit:         (() -> Void)? = nil
+    var onPin:          (() -> Void)? = nil
+    var onAIAction:     ((String) -> Void)? = nil
+    /// When false, hides the timestamp/status row (used for grouping consecutive messages).
+    var showTimestamp:  Bool = true
+    /// Highlight this substring inside text bubbles (search mode).
+    var highlightText:  String? = nil
 
     @State private var attachmentData:    Data?    = nil
     @State private var showFullScreen:    Bool     = false
+    @State private var dragOffset:        CGFloat  = 0
+    @State private var replyTriggered:    Bool     = false
+
+    private static let replyThreshold: CGFloat = 60
 
     /// Shared cancellable task for clipboard auto-clear. Static so cancelling it
     /// from any bubble instance reliably cancels the previous timer regardless of
@@ -156,8 +164,8 @@ struct MessageBubbleView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // ── Timestamp + relay hop + status ────────────────────────────
-                HStack(spacing: 4) {
+                // ── Timestamp + relay hop + disappearing timer + status ───────
+                if showTimestamp { HStack(spacing: 4) {
                     Text(message.timestamp, style: .time)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -169,12 +177,51 @@ struct MessageBubbleView: View {
                             .help("Delivered via \(hops) relay hop\(hops == 1 ? "" : "s")")
                     }
 
+                    if let exp = message.expiresAt, exp > Date() {
+                        Image(systemName: "timer")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        Text(exp, style: .timer)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.orange)
+                    }
+
                     if isSent { statusIcon }
-                }
+                } }   // closes HStack + if showTimestamp
             }
 
             if !isSent { Spacer(minLength: 60) }
         }
+        .offset(x: dragOffset)
+        .background(alignment: .leading) {
+            if dragOffset > 0, onReply != nil {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(min(1.0, Double(dragOffset) / Double(Self.replyThreshold) * 1.5))
+                    .scaleEffect(min(1.0, dragOffset / Self.replyThreshold))
+                    .padding(.leading, 8)
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    guard value.translation.width > 0,
+                          abs(value.translation.width) > abs(value.translation.height) else { return }
+                    dragOffset = min(value.translation.width, 80)
+                    if dragOffset >= Self.replyThreshold && !replyTriggered {
+                        replyTriggered = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        onReply?()
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                        dragOffset = 0
+                    }
+                    replyTriggered = false
+                }
+        )
         .task(id: message.attachmentID) {
             guard let id = message.attachmentID else { return }
             attachmentData = appState.loadAttachment(id: id)
@@ -273,13 +320,33 @@ struct MessageBubbleView: View {
     // MARK: - Text bubble
 
     private var textBubble: some View {
-        Text(message.body)
+        highlightedView(message.body)
             .font(.body)
             .foregroundStyle(isSent ? .white : .primary)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(isSent ? Color.accentColor : Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+
+    /// Returns a Text view with `highlightText` ranges marked in yellow/black.
+    private func highlightedView(_ text: String) -> Text {
+        guard let query = highlightText, !query.isEmpty else { return Text(text) }
+        var attr = AttributedString(text)
+        let nsText = text as NSString
+        var searchRange = NSRange(location: 0, length: nsText.length)
+        while true {
+            let found = nsText.range(of: query, options: .caseInsensitive, range: searchRange)
+            guard found.location != NSNotFound else { break }
+            if let swiftRange = Range(found, in: text), let attrRange = Range(swiftRange, in: attr) {
+                attr[attrRange].backgroundColor = Color.yellow
+                attr[attrRange].foregroundColor = Color.black
+            }
+            let next = found.upperBound
+            guard next < nsText.length else { break }
+            searchRange = NSRange(location: next, length: nsText.length - next)
+        }
+        return Text(attr)
     }
 
     // MARK: - Image bubble

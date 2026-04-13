@@ -1,0 +1,66 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build & publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/keystore.jks
+
+      - name: Build release APK
+        working-directory: android
+        env:
+          KEYSTORE_PATH:     keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mv android/app/build/outputs/apk/release/app-release.apk \
+             android/app/build/outputs/apk/release/SophaxChat-${VERSION}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/SophaxChat-*.apk
+          generate_release_notes: true
+          body: |
+            ## SophaxChat ${{ github.ref_name }} — Android
+
+            **Instalace:**
+            1. Stáhni `SophaxChat-${{ github.ref_name }}.apk`
+            2. Povol instalaci z neznámých zdrojů: Nastavení → Aplikace → Zvláštní přístup
+            3. Otevři APK a nainstaluj
+
+            **Požadavky:** Android 8.0+
+
+            > ⚠️ Alpha verze — kryptografie je solidní, ale kód nebyl nezávisle auditován.

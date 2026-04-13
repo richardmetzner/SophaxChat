@@ -45,6 +45,10 @@ struct ChatView: View {
     @State private var vm: ChatViewModel
     @FocusState private var isInputFocused: Bool
 
+    // Scroll-to-bottom tracking
+    @State private var atBottom          = true
+    @State private var newWhileScrolled  = 0
+
     // Pure UI flags (sheet/dialog visibility)
     @State private var showingSafetyNumber = false
     @State private var showingBlockConfirm = false
@@ -165,8 +169,8 @@ struct ChatView: View {
     private var chatContent: some View {
         @Bindable var vm = vm
         return VStack(spacing: 0) {
-            messageList
             pinnedMessageBanner
+            messageList
             Divider()
             searchBar
             replyBar
@@ -284,14 +288,19 @@ struct ChatView: View {
         @Bindable var vm = vm
         ScrollViewReader { proxy in
             ScrollView {
+
                 LazyVStack(spacing: 8) {
-                    ForEach(displayedMessages) { message in
+                    ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+                        let prevDate = index > 0 ? displayedMessages[index - 1].timestamp : nil
+                        if prevDate == nil || !Calendar.current.isDate(message.timestamp, inSameDayAs: prevDate!) {
+                            DateSeparatorView(date: message.timestamp)
+                        }
                         MessageBubbleView(
-                            message:   message,
-                            onDelete:  { appState.deleteMessage(message) },
-                            onReply:   { withAnimation { vm.replyingTo = message } },
-                            onForward: { vm.forwardingMessage = message },
-                            onEdit:    {
+                            message:        message,
+                            onDelete:       { appState.deleteMessage(message) },
+                            onReply:        { withAnimation { vm.replyingTo = message } },
+                            onForward:      { vm.forwardingMessage = message },
+                            onEdit:         {
                                 vm.messageText = message.body
                                 withAnimation { vm.editingMessage = message }
                                 isInputFocused = true
@@ -303,25 +312,49 @@ struct ChatView: View {
                                     appState.pinMessage(message.id, inConversation: peer.id)
                                 }
                             },
-                            onAIAction: { prompt in
+                            onAIAction:     { prompt in
                                 vm.aiSeedPrompt = prompt
                                 showAISheet = true
-                            }
+                            },
+                            showTimestamp:  showTimestamp(at: index, in: displayedMessages),
+                            highlightText:  vm.isSearching ? vm.searchQuery : nil
                         )
                         .id(message.id)
                     }
                     if appState.typingPeers.contains(peer.id) {
                         TypingBubbleView().id("typing-indicator")
                     }
-                    Color.clear.frame(height: 1).id("bottom")
+                    Color.clear.frame(height: 1)
+                        .id("bottom")
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: BottomOffsetKey.self,
+                                    value: geo.frame(in: .named("chatScroll")).maxY
+                                )
+                            }
+                        )
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
             }
-            .onChange(of: messages.count) { _, _ in
-                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                appState.markAsRead(peerID: peer.id)
+            .coordinateSpace(name: "chatScroll")
+            .onPreferenceChange(BottomOffsetKey.self) { maxY in
+                let wasAtBottom = atBottom
+                atBottom = maxY <= UIScreen.main.bounds.height + 80
+                if atBottom && !wasAtBottom {
+                    newWhileScrolled = 0
+                    appState.markAsRead(peerID: peer.id)
+                }
+            }
+            .onChange(of: messages.count) { old, new in
+                if atBottom {
+                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                    appState.markAsRead(peerID: peer.id)
+                } else {
+                    newWhileScrolled += max(0, new - old)
+                }
             }
             .onChange(of: appState.typingPeers.contains(peer.id)) { _, isTyping in
                 if isTyping { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
@@ -330,6 +363,41 @@ struct ChatView: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
                 appState.markAsRead(peerID: peer.id)
             }
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom {
+                    Button {
+                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        atBottom = true
+                        newWhileScrolled = 0
+                        appState.markAsRead(peerID: peer.id)
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Circle()
+                                .fill(.bar)
+                                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 40, height: 40)
+                            if newWhileScrolled > 0 {
+                                Text("\(min(newWhileScrolled, 99))")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor, in: Capsule())
+                                    .offset(x: 10, y: -10)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 8)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.3), value: atBottom)
+            .privacyScreen()
             .onDisappear {
                 // Never persist drafts when app lock is enabled — UserDefaults is
                 // unencrypted and included in device backups.  When lock is off the
@@ -592,6 +660,14 @@ struct ChatView: View {
         }
     }
 
+    /// Hide the timestamp row when the next message is from the same sender within 60 s.
+    private func showTimestamp(at index: Int, in msgs: [StoredMessage]) -> Bool {
+        guard index + 1 < msgs.count else { return true }
+        let curr = msgs[index]; let next = msgs[index + 1]
+        return curr.direction != next.direction
+            || next.timestamp.timeIntervalSince(curr.timestamp) > 60
+    }
+
     private var canSend: Bool {
         !vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -614,6 +690,81 @@ struct ChatView: View {
             let expiresAt = vm.disappearingInterval.seconds.map { Date().addingTimeInterval($0) }
             appState.sendMessage(text, toPeerID: peer.id, expiresAt: expiresAt, replyToID: reply?.id)
         }
+    }
+}
+
+// MARK: - Privacy screen protection
+
+/// Blurs message content during screen recording and marks it sensitive
+/// for the iOS app-switcher snapshot. Screenshots cannot be blocked by
+/// iOS apps, but we log a security event so the user is aware.
+struct PrivacyScreenModifier: ViewModifier {
+    @State private var isBeingCaptured = false
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: isBeingCaptured ? 24 : 0)
+            .animation(.easeInOut(duration: 0.2), value: isBeingCaptured)
+            .privacySensitive()
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIScreen.capturedDidChangeNotification
+            )) { _ in
+                isBeingCaptured = UIScreen.main.isCaptured
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.userDidTakeScreenshotNotification
+            )) { _ in
+                // Log security event — cannot prevent screenshot on iOS but
+                // callers can react (e.g. show a warning toast in future).
+                NotificationCenter.default.post(
+                    name: .init("com.sophax.screenshotDetected"), object: nil
+                )
+            }
+            .onAppear {
+                isBeingCaptured = UIScreen.main.isCaptured
+            }
+    }
+}
+
+extension View {
+    func privacyScreen() -> some View {
+        modifier(PrivacyScreenModifier())
+    }
+}
+
+// MARK: - Scroll tracking
+
+struct BottomOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+// MARK: - Date Separator
+
+struct DateSeparatorView: View {
+    let date: Date
+
+    private var label: String {
+        if Calendar.current.isDateInToday(date)     { return "Today" }
+        if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.month(.wide).day().year())
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.2))
+                .frame(height: 0.5)
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            Rectangle()
+                .fill(Color.secondary.opacity(0.2))
+                .frame(height: 0.5)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 6)
     }
 }
 

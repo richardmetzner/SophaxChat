@@ -142,8 +142,8 @@ struct GroupChatView: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            messageScrollView
             pinnedMessageBanner
+            messageScrollView
             disappearingBanner
             Divider()
             if vm.isSearching {
@@ -178,7 +178,11 @@ struct GroupChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(displayedMessages) { message in
+                    ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+                        let prevDate = index > 0 ? displayedMessages[index - 1].timestamp : nil
+                        if prevDate == nil || !Calendar.current.isDate(message.timestamp, inSameDayAs: prevDate!) {
+                            DateSeparatorView(date: message.timestamp)
+                        }
                         GroupMessageBubble(
                             message:    message,
                             group:      group,
@@ -220,6 +224,7 @@ struct GroupChatView: View {
             .onDisappear {
                 vm.saveDraft()
             }
+            .privacyScreen()
         }
     }
 
@@ -628,6 +633,10 @@ private struct GroupMessageBubble: View {
     var onPin:      (() -> Void)? = nil
     var onAIAction: ((String) -> Void)? = nil
 
+    @State private var dragOffset:     CGFloat = 0
+    @State private var replyTriggered: Bool    = false
+    private static let replyThreshold: CGFloat = 60
+
     private var isSent: Bool { message.direction == .sent }
 
     private var senderName: String {
@@ -735,6 +744,14 @@ private struct GroupMessageBubble: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
+                    if let exp = message.expiresAt, exp > Date() {
+                        Image(systemName: "timer")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        Text(exp, style: .timer)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.orange)
+                    }
                     if isSent {
                         let delivered    = message.deliveredBy?.count ?? 0
                         let read         = message.readBy?.count ?? 0
@@ -765,6 +782,36 @@ private struct GroupMessageBubble: View {
 
             if !isSent { Spacer(minLength: 60) }
         }
+        .offset(x: dragOffset)
+        .background(alignment: .leading) {
+            if dragOffset > 0 {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(min(1.0, Double(dragOffset) / Double(Self.replyThreshold) * 1.5))
+                    .scaleEffect(min(1.0, dragOffset / Self.replyThreshold))
+                    .padding(.leading, 8)
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    guard value.translation.width > 0,
+                          abs(value.translation.width) > abs(value.translation.height) else { return }
+                    dragOffset = min(value.translation.width, 80)
+                    if dragOffset >= Self.replyThreshold && !replyTriggered {
+                        replyTriggered = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        onReply()
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                        dragOffset = 0
+                    }
+                    replyTriggered = false
+                }
+        )
     }
 
     @State private var showFileShare = false

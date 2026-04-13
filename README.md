@@ -16,6 +16,9 @@
     <a href="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/swift.yml">
       <img src="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/swift.yml/badge.svg" alt="Swift build" />
     </a>
+    <a href="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/android-ci.yml">
+      <img src="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/android-ci.yml/badge.svg" alt="Android CI" />
+    </a>
   </p>
 
   <p>
@@ -110,7 +113,27 @@ SophaxChat is built around three principles that cannot be traded away:
 
 <sub>¹ Telegram requires a phone number to register; usernames added in 2023 do not replace this requirement. ² Telegram's MTProto E2EE applies only to "Secret Chats" — regular chats, groups, and channels are server-side encrypted (Telegram holds the keys). ³ WhatsApp uses Signal Protocol for message content but collects extensive metadata: who you talk to, when, how often, your IP address, device fingerprint, and contact graph — all shared with Meta. ⁴ Telegram clients are open-source; the server is closed-source and proprietary.</sub>
 
+**Compared to privacy-focused alternatives:**
+
+| Feature | Briar | Session | SimpleX | SophaxChat |
+|---|:---:|:---:|:---:|:---:|
+| Bluetooth / WiFi mesh (no internet) | ✅ | ❌ | ❌ | ✅ |
+| iOS support | ❌ | ✅ | ✅ | ✅ |
+| No server dependency | ✅ | ❌¹ | ❌² | ✅ |
+| No phone number / email required | ✅ | ✅ | ✅ | ✅ |
+| X3DH + Double Ratchet (Signal spec) | ❌³ | ❌⁴ | ✅ | ✅ |
+| Header Encryption (hides routing metadata) | ❌ | ❌ | ❌ | ✅ |
+| Sealed Sender (hides sender from relay) | ❌ | ❌ | ❌ | ✅ |
+| MLS (RFC 9420) group encryption | ❌ | ❌ | ❌ | ✅ |
+| Tor integration | ✅ | ❌ | ❌ | ✅ |
+| macOS support | ❌ | ✅ | ✅ | ✅ |
+| Full open-source (client + protocol) | ✅ | ✅ | ✅ | ✅ |
+
+<sub>¹ Session routes messages through the decentralized Oxen network — not truly serverless, nodes hold messages until delivery. ² SimpleX uses relay servers for delivery; users can self-host but cannot eliminate the relay dependency. ³ Briar uses the custom Bramble protocol; per-message forward secrecy is achieved differently, without the X3DH session-setup guarantees. ⁴ Session removed X3DH to enable async account creation; sessions lack the session-setup forward-secrecy properties of Signal's full handshake.</sub>
+
 SophaxChat occupies a specific niche: **Signal-grade cryptography, zero infrastructure**. Ideal for journalists, activists, protesters, disaster responders, or anyone in an environment where internet access is unavailable, monitored, or untrusted.
+
+> **No server means no one to betray you.**
 
 ---
 
@@ -388,6 +411,35 @@ SophaxChat/
 ```
 
 > **macOS:** The app runs on macOS 14+ via Catalyst. `AVAudioSession` calls are guarded with `#if !targetEnvironment(macCatalyst)`. Peer discovery works over WiFi on macOS.
+
+### Message Encryption Layers
+
+Every message passes through four independent encryption layers before leaving the device:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Alice 📱
+    participant R as Relay node 📡
+    participant B as Bob 📱
+
+    Note over A,B: Session setup — once per contact
+    A->>B: Hello (PreKeyBundle: IK, SPK, OTPKs, avatar)
+    B->>B: X3DH: DH₁⊕DH₂⊕DH₃⊕DH₄ → RootKey → Double Ratchet init
+
+    Note over A,B: Every message — 4 layers applied on Alice's device
+    rect rgb(20, 30, 48)
+        Note over A: ① Double Ratchet — new symmetric key every message (forward secrecy)
+        Note over A: ② Header Encryption — sequence numbers and ratchet keys sealed
+        Note over A: ③ Sealed Sender — Alice's identity hidden from all relay nodes
+        Note over A: ④ RelayEnvelope — TTL=6, LRU dedup, multihop routing
+    end
+
+    A->>R: Encrypted blob — relay sees ciphertext + TTL only
+    Note over R: Cannot read: sender identity, recipient identity, or content
+    R->>B: TTL decremented, rebroadcast unchanged
+    B->>B: Unseal Sealed Sender → DR+HE decrypt → plaintext ✓
+```
 
 ### Data Flow
 
