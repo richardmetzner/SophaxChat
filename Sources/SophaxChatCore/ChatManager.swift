@@ -3360,6 +3360,10 @@ extension ChatManager: MeshManagerDelegate {
         // Reject non-monotonic distributions — a peer must never lower their iteration.
         // An attacker who replays an old SKD or sends iteration=0 would reset the chain
         // and break decryption for all subsequent group messages (DoS).
+        // Note: equal iteration (==) is intentionally allowed — after a sender key
+        // rotation the new chain always starts at iteration=0, so a peer that already
+        // has state at iteration=0 must accept the new rotation SKD. Replay of an old
+        // SKD at the same iteration is prevented by the DR channel's own replay protection.
         if let existing = states[peerID], skd.iteration < existing.iteration { return }
 
         // Bidirectional exchange: if this is the first time we see this sender in this
