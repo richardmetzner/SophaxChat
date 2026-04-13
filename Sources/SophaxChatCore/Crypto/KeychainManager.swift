@@ -460,7 +460,7 @@ public final class KeychainManager {
     // successful v1 verify the hash is automatically upgraded to PBKDF2 and the old
     // keys are deleted. New installs write PBKDF2 only.
 
-    private static let lockPINIterations    = 100_000
+    private static let lockPINIterations    = 720_000
     private static let lockPINHashAccountV2 = "settings.lock_pin_v2"
     private static let lockPINSaltAccountV2 = "settings.lock_pin_s_v2"
     private static let lockPINHashAccountV1 = "settings.lock_pin"
