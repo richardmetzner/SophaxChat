@@ -445,6 +445,22 @@ public final class KeychainManager {
         return key
     }
 
+    // MARK: - PQ Identity Key (ML-KEM-768, iOS 18+ / macOS 15+)
+    // Stored as raw seed bytes (platform-specific length).
+    // The caller is responsible for availability guards — this layer is version-agnostic.
+
+    public func savePQIdentityKey(_ data: Data) throws {
+        try save(data: data, account: "identity.pq")
+    }
+
+    public func loadPQIdentityKey() -> Data? {
+        try? load(account: "identity.pq")
+    }
+
+    public func deletePQIdentityKey() {
+        try? delete(account: "identity.pq")
+    }
+
     // MARK: - Existence Check
 
     public func hasIdentity() -> Bool {

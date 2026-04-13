@@ -1619,7 +1619,8 @@ public final class ChatManager: @unchecked Sendable {
             ephemeralPublicKey:  x3dhResult.ephemeralPublicKey,
             usedSignedPreKeyId:  bundle.signedPreKeyId,
             usedOneTimePreKeyId: x3dhResult.usedOneTimePreKeyId,
-            initialMessage:      ratchetMsg
+            initialMessage:      ratchetMsg,
+            pqEncapsulatedKey:   x3dhResult.pqEncapsulatedKey
         )
         return try wireBuilder.build(.initiateSession, payload: initPayload)
     }
@@ -1892,13 +1893,16 @@ public final class ChatManager: @unchecked Sendable {
             self.delegate?.chatManager(self, sessionEstablishedWithPeer: notifyPeerID, usedOPK: usedOPK)
         }
 
-        // X3DH: Bob (responder) side — produces the same shared secret as Alice
+        // X3DH: Bob (responder) side — produces the same shared secret as Alice.
+        // Pass the PQ encapsulated key so the hybrid KEM path can run on iOS 18+.
         let sharedSecret = try X3DH.initiateReceiver(
             recipientIdentityDH:     identity.dhKeyPair,
             recipientSignedPreKey:   preKeys.signedPreKeyPair,
             recipientOneTimePreKey:  otpk,
             senderIdentityDHKeyData: senderBundle.dhIdentityKeyPublic,
-            senderEphemeralKeyData:  payload.ephemeralPublicKey
+            senderEphemeralKeyData:  payload.ephemeralPublicKey,
+            senderPQEncapsulatedKey: payload.pqEncapsulatedKey,
+            identityManager:         identity
         )
 
         // Double Ratchet: Bob starts as responder

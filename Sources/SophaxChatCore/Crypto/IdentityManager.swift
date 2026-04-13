@@ -19,6 +19,32 @@ import CryptoKit
 // IdentityManager instance and accesses it serially on its dispatch queue.
 public final class IdentityManager: @unchecked Sendable {
 
+    // MARK: - Post-Quantum Identity Key (ML-KEM-768)
+    //
+    // Stored as raw seed Data to avoid `@available` annotations propagating through
+    // the entire class. The `pqKeyData` property holds the serialised private key bytes
+    // (nil on iOS 17); callers use availability-guarded accessors below.
+
+    /// Raw seed bytes of the ML-KEM-768 private key. Set during init on iOS 18+.
+    private var pqKeyData: Data?
+
+    /// The ML-KEM-768 public key raw representation (1184 bytes), or nil on iOS < 18.
+    public var pqPublicKeyData: Data? {
+        guard #available(iOS 19.0, macOS 26.0, *), let rep = pqKeyData else { return nil }
+        return (try? MLKEM768.PrivateKey(integrityCheckedRepresentation: rep))?.publicKey.rawRepresentation
+    }
+
+    /// Decapsulate an ML-KEM-768 encapsulated key produced by a remote peer.
+    /// Returns the shared secret, or throws if the key is missing or the ciphertext is invalid.
+    @available(iOS 19.0, macOS 26.0, *)
+    public func pqDecapsulate(_ encapsulatedKeyData: Data) throws -> SymmetricKey {
+        guard let rep = pqKeyData,
+              let privKey = try? MLKEM768.PrivateKey(integrityCheckedRepresentation: rep) else {
+            throw SophaxError.keyGenerationFailed
+        }
+        return try privKey.decapsulate(encapsulatedKeyData)
+    }
+
     // MARK: - Public Identity (safe to share)
 
     public struct PublicIdentity: Codable, Equatable {
@@ -79,6 +105,18 @@ public final class IdentityManager: @unchecked Sendable {
             signing:  self.signingPair,
             dh:       self.dhPair
         )
+
+        // Post-quantum key (iOS 18+ only). On older OS this is simply nil; the
+        // classical X3DH path runs unchanged.
+        if #available(iOS 19.0, macOS 26.0, *) {
+            if let existing = keychain.loadPQIdentityKey() {
+                self.pqKeyData = existing
+            } else if let pqKey = try? MLKEM768.PrivateKey() {
+                let rep = pqKey.integrityCheckedRepresentation
+                try? keychain.savePQIdentityKey(rep)
+                self.pqKeyData = rep
+            }
+        }
     }
 
     /// Loads existing identity keys from the Keychain, or generates and saves

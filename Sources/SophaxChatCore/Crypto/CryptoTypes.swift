@@ -128,6 +128,13 @@ public enum CryptoConstants {
     /// Maximum prekey bundle age in seconds (1 hour).
     /// Reduced from 24h to narrow the replay window for captured prekey bundles.
     public static let maxPreKeyBundleAge: TimeInterval = 3600
+
+    // MARK: - Post-Quantum KEM (ML-KEM-768, iOS 18+ / macOS 15+)
+
+    /// HKDF info string used to domain-separate the PQ contribution when mixing
+    /// ML-KEM-768 and X25519 shared secrets in hybrid X3DH key derivation.
+    /// On iOS 17 this constant is unused — the code path never executes.
+    public static let pqKEMInfo = Data("SophaxChat_PQKEM_v1".utf8)
 }
 
 // MARK: - Errors

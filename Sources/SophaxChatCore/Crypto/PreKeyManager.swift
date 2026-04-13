@@ -51,6 +51,11 @@ public struct PreKeyBundle: Codable, Sendable {
     /// Group coordinators use this to add the peer to an MLS group via Welcome.
     public let mlsKeyPackage: Data?
 
+    /// ML-KEM-768 public key (1184 bytes). nil = peer is running iOS < 18.
+    /// When present, initiators include an ML-KEM encapsulated shared secret so the
+    /// session key is quantum-resistant even if the Curve25519 DH is broken by Shor's algorithm.
+    public let pqPreKeyPublic: Data?
+
     public init(
         signingKeyPublic:      Data,
         dhIdentityKeyPublic:   Data,
@@ -63,7 +68,8 @@ public struct PreKeyBundle: Codable, Sendable {
         timestamp:             Date,
         tcpAddress:            String? = nil,
         avatarData:            Data?   = nil,
-        mlsKeyPackage:         Data?   = nil
+        mlsKeyPackage:         Data?   = nil,
+        pqPreKeyPublic:        Data?   = nil
     ) {
         self.signingKeyPublic      = signingKeyPublic
         self.dhIdentityKeyPublic   = dhIdentityKeyPublic
@@ -77,6 +83,7 @@ public struct PreKeyBundle: Codable, Sendable {
         self.tcpAddress            = tcpAddress
         self.avatarData            = avatarData
         self.mlsKeyPackage         = mlsKeyPackage
+        self.pqPreKeyPublic        = pqPreKeyPublic
     }
 
     /// Verifies the signed prekey signature against the identity key.
@@ -190,7 +197,8 @@ public final class PreKeyManager: @unchecked Sendable {
             username:              pub.username,
             timestamp:             timestamp,
             tcpAddress:            tcpAddress,
-            avatarData:            identity.loadAvatar()
+            avatarData:            identity.loadAvatar(),
+            pqPreKeyPublic:        identity.pqPublicKeyData
         )
     }
 

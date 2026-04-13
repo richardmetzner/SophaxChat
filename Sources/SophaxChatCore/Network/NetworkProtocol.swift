@@ -397,6 +397,10 @@ public struct InitiateSessionMessage: Codable, Sendable {
     public let usedOneTimePreKeyId: UInt32?
     /// First Double Ratchet encrypted message.
     public let initialMessage:      RatchetMessage
+    /// ML-KEM-768 encapsulated shared secret (1088 bytes). nil = sender is on iOS < 18
+    /// or Bob's bundle carries no PQ public key. Bob passes this to X3DH.initiateReceiver
+    /// so both sides derive the same hybrid shared secret.
+    public let pqEncapsulatedKey:   Data?
 }
 
 // MARK: - Chat Message Payload
