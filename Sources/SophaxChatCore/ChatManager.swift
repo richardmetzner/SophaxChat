@@ -210,7 +210,7 @@ public final class ChatManager: @unchecked Sendable {
     private static let senderKeyRotationMessageLimit: UInt32 = 500
     private static let senderKeyRotationAgeLimit: TimeInterval = 7 * 24 * 3600
     private static let senderKeyRequestCooldown: TimeInterval  = 60
-    private static let senderKeyStaleThreshold: TimeInterval   = 30 * 24 * 3600
+    private static let senderKeyStaleThreshold: TimeInterval   = 14 * 24 * 3600
 
     /// Last time we sent a senderKeyRequest for a given "groupID/peerID".
     /// Prevents request spam from peers who repeatedly send undecryptable messages.
@@ -882,7 +882,8 @@ public final class ChatManager: @unchecked Sendable {
         // Generate my sender chain key (v2 — random 32-byte seed via CryptoKit)
         let tmpKey       = SymmetricKey(size: .bits256)
         let chainKeyData = tmpKey.withUnsafeBytes { Data($0) }
-        let myState      = SenderKeyState(chainKey: chainKeyData, iteration: 0)
+        let myState      = SenderKeyState(chainKey: chainKeyData, iteration: 0,
+                                          messageCount: 0, createdAt: Date())
         do {
             try keychain.saveMySenderKeyState(myState, groupID: groupID)
         } catch {
@@ -1455,7 +1456,8 @@ public final class ChatManager: @unchecked Sendable {
         let myID       = identity.publicIdentity.peerID
         let tmpKey     = SymmetricKey(size: .bits256)
         let newChainKey = tmpKey.withUnsafeBytes { Data($0) }
-        let newState   = SenderKeyState(chainKey: newChainKey, iteration: 0)
+        let newState   = SenderKeyState(chainKey: newChainKey, iteration: 0,
+                                        messageCount: 0, createdAt: Date())
         keychainSave("mySenderKey:\(group.id)") { try self.keychain.saveMySenderKeyState(newState, groupID: group.id) }
 
         let skd = SenderKeyDistributionMessage(groupID: group.id, chainKey: newChainKey, iteration: 0)
@@ -2354,7 +2356,9 @@ public final class ChatManager: @unchecked Sendable {
         let tmpKey      = SymmetricKey(size: .bits256)
         let newChainKey = tmpKey.withUnsafeBytes { Data($0) }
         keychainSave("mySenderKey:\(groupID)") {
-            try keychain.saveMySenderKeyState(SenderKeyState(chainKey: newChainKey, iteration: 0), groupID: groupID)
+            try keychain.saveMySenderKeyState(
+                SenderKeyState(chainKey: newChainKey, iteration: 0, messageCount: 0, createdAt: Date()),
+                groupID: groupID)
         }
 
         // Re-distribute our new sender key to every remaining member (excluding self)
