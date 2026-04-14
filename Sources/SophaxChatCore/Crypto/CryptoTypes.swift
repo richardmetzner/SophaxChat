@@ -125,6 +125,11 @@ public enum CryptoConstants {
     /// Prevents memory exhaustion attacks.
     public static let maxSkippedMessages: Int = 1000
 
+    /// Maximum messages per Double Ratchet sending/receiving chain before the
+    /// session is considered exhausted. Well below UInt32.max to give the upper
+    /// layers time to signal that re-establishment is needed before overflow.
+    public static let maxChainMessages: UInt32 = 500_000
+
     /// Maximum prekey bundle age in seconds (1 hour).
     /// Reduced from 24h to narrow the replay window for captured prekey bundles.
     public static let maxPreKeyBundleAge: TimeInterval = 3600

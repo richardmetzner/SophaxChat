@@ -178,7 +178,7 @@ public final class DoubleRatchet: @unchecked Sendable {
         let (newCK, mk) = Self.kdfCK(ck)
         state.sendingChainKey = SerializableSymmetricKey(newCK)
 
-        guard state.sendMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
+        guard state.sendMessageCount < CryptoConstants.maxChainMessages else { throw SophaxError.counterOverflow }
         let header = RatchetHeader(
             senderRatchetKey:    state.sendingRatchetPublicKey,
             previousChainLength: state.previousSendingChainLength,
@@ -243,8 +243,8 @@ public final class DoubleRatchet: @unchecked Sendable {
         guard totalSkipped <= CryptoConstants.maxSkippedMessages else {
             throw SophaxError.invalidState
         }
-        guard state.sendMessageCount < UInt32.max,
-              state.receiveMessageCount < UInt32.max else {
+        guard state.sendMessageCount < CryptoConstants.maxChainMessages,
+              state.receiveMessageCount < CryptoConstants.maxChainMessages else {
             throw SophaxError.invalidState
         }
         // Verify that the stored sending key pair is internally consistent.
@@ -317,7 +317,7 @@ public final class DoubleRatchet: @unchecked Sendable {
     /// Advance the receiving chain by one step. Returns the message key for this position.
     private func advanceReceivingChain() throws -> MessageKey {
         guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
-        guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
+        guard state.receiveMessageCount < CryptoConstants.maxChainMessages else { throw SophaxError.counterOverflow }
         let (newCK, mk) = Self.kdfCK(ck)
         state.receivingChainKey = SerializableSymmetricKey(newCK)
         state.receiveMessageCount += 1
