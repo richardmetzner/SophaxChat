@@ -130,9 +130,10 @@ public enum CryptoConstants {
     /// layers time to signal that re-establishment is needed before overflow.
     public static let maxChainMessages: UInt32 = 500_000
 
-    /// Maximum prekey bundle age in seconds (1 hour).
-    /// Reduced from 24h to narrow the replay window for captured prekey bundles.
-    public static let maxPreKeyBundleAge: TimeInterval = 3600
+    /// Maximum prekey bundle age in seconds (30 minutes).
+    /// Reduced from 1h to narrow the replay window for captured prekey bundles.
+    /// Peers regenerate bundles on demand, so 30 min is ample for normal delivery.
+    public static let maxPreKeyBundleAge: TimeInterval = 1800
 
     // MARK: - Post-Quantum KEM (ML-KEM-768, iOS 18+ / macOS 15+)
 
