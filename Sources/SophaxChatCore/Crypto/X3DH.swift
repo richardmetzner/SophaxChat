@@ -96,6 +96,7 @@ public enum X3DH {
         // so an attacker needs to break BOTH the classical Curve25519 DH AND the PQ KEM.
         var pqSharedSecret: Data? = nil
         var pqEncapKey:     Data? = nil
+        #if swift(>=6.2)
         if #available(iOS 19.0, macOS 26.0, *),
            let pqPubData = recipientBundle.pqPreKeyPublic,
            let recipientPQKey = try? MLKEM768.PublicKey(rawRepresentation: pqPubData),
@@ -103,6 +104,7 @@ public enum X3DH {
             pqSharedSecret = encResult.sharedSecret.withUnsafeBytes { Data($0) }
             pqEncapKey     = encResult.encapsulated
         }
+        #endif
 
         // 7. Derive shared secret via HKDF, then zero the DH material immediately.
         let sharedSecret = try deriveSharedSecret(from: dhConcat, pqSharedSecret: pqSharedSecret)
@@ -157,14 +159,16 @@ public enum X3DH {
             dhConcat += try otp.privateKey.sharedSecretFromKeyAgreement(with: senderEK).rawData
         }
 
-        // Post-quantum contribution: decapsulate Alice's ML-KEM-768 ciphertext (iOS 18+ only).
+        // Post-quantum contribution: decapsulate Alice's ML-KEM-768 ciphertext (iOS 19+ only).
         var pqSharedSecret: Data? = nil
+        #if swift(>=6.2)
         if #available(iOS 19.0, macOS 26.0, *),
            let encapData = senderPQEncapsulatedKey,
            let idMgr = identityManager {
             let pqSS = try idMgr.pqDecapsulate(encapData)
             pqSharedSecret = pqSS.withUnsafeBytes { Data($0) }
         }
+        #endif
 
         let sharedSecret = try deriveSharedSecret(from: dhConcat, pqSharedSecret: pqSharedSecret)
         dhConcat.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
