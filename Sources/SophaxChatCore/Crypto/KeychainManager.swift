@@ -445,6 +445,22 @@ public final class KeychainManager {
         return key
     }
 
+    // MARK: - PQ Identity Key (ML-KEM-768, iOS 18+ / macOS 15+)
+    // Stored as raw seed bytes (platform-specific length).
+    // The caller is responsible for availability guards — this layer is version-agnostic.
+
+    public func savePQIdentityKey(_ data: Data) throws {
+        try save(data: data, account: "identity.pq")
+    }
+
+    public func loadPQIdentityKey() -> Data? {
+        try? load(account: "identity.pq")
+    }
+
+    public func deletePQIdentityKey() {
+        try? delete(account: "identity.pq")
+    }
+
     // MARK: - Existence Check
 
     public func hasIdentity() -> Bool {
@@ -460,7 +476,7 @@ public final class KeychainManager {
     // successful v1 verify the hash is automatically upgraded to PBKDF2 and the old
     // keys are deleted. New installs write PBKDF2 only.
 
-    private static let lockPINIterations    = 100_000
+    private static let lockPINIterations    = 720_000
     private static let lockPINHashAccountV2 = "settings.lock_pin_v2"
     private static let lockPINSaltAccountV2 = "settings.lock_pin_s_v2"
     private static let lockPINHashAccountV1 = "settings.lock_pin"
@@ -554,13 +570,29 @@ public final class KeychainManager {
 
     // MARK: - Remote Wipe Dedup
     // Persisted across restarts to block replay attacks on remote wipe requests.
+    // Each entry carries a timestamp so records older than 30 days can be pruned —
+    // they offer no replay protection value once the device clock has advanced past them.
+
+    private struct WipeRequestRecord: Codable {
+        let id:     String
+        let seenAt: Date
+    }
 
     public func saveSeenWipeRequestIDs(_ ids: Set<String>) {
-        try? saveJSON(Array(ids), account: "wipe.seen_ids")
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
+        var records = (loadJSON([WipeRequestRecord].self, account: "wipe.seen_ids") ?? [])
+            .filter { $0.seenAt > cutoff }
+        let existing = Set(records.map { $0.id })
+        for id in ids where !existing.contains(id) {
+            records.append(WipeRequestRecord(id: id, seenAt: Date()))
+        }
+        try? saveJSON(records, account: "wipe.seen_ids")
     }
 
     public func loadSeenWipeRequestIDs() -> Set<String> {
-        Set(loadJSON([String].self, account: "wipe.seen_ids") ?? [])
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
+        let records = loadJSON([WipeRequestRecord].self, account: "wipe.seen_ids") ?? []
+        return Set(records.filter { $0.seenAt > cutoff }.map { $0.id })
     }
 
     // MARK: - Linked Devices

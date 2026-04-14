@@ -51,6 +51,11 @@ public struct PreKeyBundle: Codable, Sendable {
     /// Group coordinators use this to add the peer to an MLS group via Welcome.
     public let mlsKeyPackage: Data?
 
+    /// ML-KEM-768 public key (1184 bytes). nil = peer is running iOS < 18.
+    /// When present, initiators include an ML-KEM encapsulated shared secret so the
+    /// session key is quantum-resistant even if the Curve25519 DH is broken by Shor's algorithm.
+    public let pqPreKeyPublic: Data?
+
     public init(
         signingKeyPublic:      Data,
         dhIdentityKeyPublic:   Data,
@@ -63,7 +68,8 @@ public struct PreKeyBundle: Codable, Sendable {
         timestamp:             Date,
         tcpAddress:            String? = nil,
         avatarData:            Data?   = nil,
-        mlsKeyPackage:         Data?   = nil
+        mlsKeyPackage:         Data?   = nil,
+        pqPreKeyPublic:        Data?   = nil
     ) {
         self.signingKeyPublic      = signingKeyPublic
         self.dhIdentityKeyPublic   = dhIdentityKeyPublic
@@ -77,10 +83,15 @@ public struct PreKeyBundle: Codable, Sendable {
         self.tcpAddress            = tcpAddress
         self.avatarData            = avatarData
         self.mlsKeyPackage         = mlsKeyPackage
+        self.pqPreKeyPublic        = pqPreKeyPublic
     }
 
     /// Verifies the signed prekey signature against the identity key.
     /// MUST be called before using the bundle.
+    ///
+    /// The signature covers `signedPreKeyPublic ‖ spkTimestampData(timestamp)` so that
+    /// an adversary cannot substitute a freshly minted timestamp onto a captured bundle
+    /// without invalidating the Ed25519 tag.
     public func verifySignedPreKey() throws -> Bool {
         // Explicit length checks before passing to CryptoKit — gives a clear error
         // and prevents library-specific exception messages from leaking algorithm details.
@@ -90,8 +101,11 @@ public struct PreKeyBundle: Codable, Sendable {
               signedPreKeySignature.count == 64 else {
             throw SophaxError.invalidMessageFormat("Invalid prekey bundle key dimensions")
         }
-        let identityKey = try Curve25519.Signing.PublicKey(rawRepresentation: signingKeyPublic)
-        return identityKey.isValidSignature(signedPreKeySignature, for: signedPreKeyPublic)
+        let identityKey  = try Curve25519.Signing.PublicKey(rawRepresentation: signingKeyPublic)
+        // Include signingKeyPublic as the first field so an adversary cannot swap in a
+        // different identity key while reusing a captured (SPK, timestamp, signature) triple.
+        let signedData   = signingKeyPublic + signedPreKeyPublic + spkTimestampData(timestamp)
+        return identityKey.isValidSignature(signedPreKeySignature, for: signedData)
     }
 
     /// Unique peer identifier derived from identity keys.
@@ -100,6 +114,19 @@ public struct PreKeyBundle: Codable, Sendable {
         let hash = SHA256.hash(data: combined)
         return Data(hash).prefix(16).hexString
     }
+}
+
+// MARK: - Helpers
+
+/// Canonical 8-byte little-endian representation of a Date's TimeInterval.
+/// Used to include the SPK bundle timestamp in the Ed25519 signed data so that
+/// the timestamp field cannot be silently modified without invalidating the signature.
+///
+/// Choosing a raw TimeInterval (Double, 8 bytes) rather than an ISO8601 string avoids
+/// locale, formatter-version, and string-encoding ambiguity.
+private func spkTimestampData(_ date: Date) -> Data {
+    var ti = date.timeIntervalSinceReferenceDate
+    return Data(bytes: &ti, count: MemoryLayout<Double>.size)
 }
 
 // MARK: - Prekey Manager
@@ -147,10 +174,17 @@ public final class PreKeyManager: @unchecked Sendable {
     /// Generates a PreKeyBundle ready to share with a peer.
     /// - Parameter tcpAddress: Optional "host:port" to include so peers learn our TCP address.
     public func generateBundle(tcpAddress: String? = nil) throws -> PreKeyBundle {
-        let spkData      = signedPreKey.publicKeyData
-        let spkSignature = try identity.sign(spkData)
+        let pub      = identity.publicIdentity
+        let spkData  = signedPreKey.publicKeyData
+        // Capture timestamp before signing so the exact same value ends up in both the
+        // signed data and the bundle field — verifySignedPreKey() reconstructs the signed
+        // data from bundle.timestamp, so they must match to the millisecond.
+        let timestamp    = Date()
+        // signingKeyPublic is prepended so the signature commits to the identity key itself,
+        // preventing a key-substitution attack (different signingKeyPublic + same SPK/timestamp).
+        let signedData   = pub.signingKeyPublic + spkData + spkTimestampData(timestamp)
+        let spkSignature = try identity.sign(signedData)
         let otp = oneTimePreKeys.randomElement()
-        let pub = identity.publicIdentity
 
         return PreKeyBundle(
             signingKeyPublic:      pub.signingKeyPublic,
@@ -161,9 +195,10 @@ public final class PreKeyManager: @unchecked Sendable {
             oneTimePreKeyPublic:   otp?.value.publicKeyData,
             oneTimePreKeyId:       otp?.key,
             username:              pub.username,
-            timestamp:             Date(),
+            timestamp:             timestamp,
             tcpAddress:            tcpAddress,
-            avatarData:            identity.loadAvatar()
+            avatarData:            identity.loadAvatar(),
+            pqPreKeyPublic:        identity.pqPublicKeyData
         )
     }
 

@@ -155,8 +155,11 @@ extension MeshManager: MCSessionDelegate {
     public func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         queue.async { [weak self] in
             guard let self else { return }
-            // Reject oversized payloads before decoding to prevent memory DoS
-            guard data.count <= 50 * 1024 * 1024 else { return }
+            // Reject oversized payloads before decoding to prevent memory DoS.
+            // Matches TCPTransport.maxFrameSize (3 MiB) — both transports must accept
+            // the same message types, so an attacker cannot bypass the TCP limit by
+            // switching to the BLE/WiFi-Direct transport.
+            guard data.count <= 3 * 1024 * 1024 else { return }
             guard let message = try? JSONDecoder().decode(WireMessage.self, from: data) else {
                 return   // Malformed — drop silently
             }

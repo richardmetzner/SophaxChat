@@ -102,7 +102,7 @@ public struct SerializableSymmetricKey: Codable, Equatable {
 
 public enum CryptoConstants {
     /// App identifier included in all KDF info strings to domain-separate keys.
-    public static let appVersion = "SophaxChat_v1"
+    public static let appVersion = "SophaxChat_v2"
 
     // KDF info strings (domain separation)
     public static let rkInfo       = Data("SophaxChat_RootKey_v1".utf8)
@@ -125,9 +125,22 @@ public enum CryptoConstants {
     /// Prevents memory exhaustion attacks.
     public static let maxSkippedMessages: Int = 1000
 
-    /// Maximum prekey bundle age in seconds (1 hour).
-    /// Reduced from 24h to narrow the replay window for captured prekey bundles.
-    public static let maxPreKeyBundleAge: TimeInterval = 3600
+    /// Maximum messages per Double Ratchet sending/receiving chain before the
+    /// session is considered exhausted. Well below UInt32.max to give the upper
+    /// layers time to signal that re-establishment is needed before overflow.
+    public static let maxChainMessages: UInt32 = 500_000
+
+    /// Maximum prekey bundle age in seconds (30 minutes).
+    /// Reduced from 1h to narrow the replay window for captured prekey bundles.
+    /// Peers regenerate bundles on demand, so 30 min is ample for normal delivery.
+    public static let maxPreKeyBundleAge: TimeInterval = 1800
+
+    // MARK: - Post-Quantum KEM (ML-KEM-768, iOS 18+ / macOS 15+)
+
+    /// HKDF info string used to domain-separate the PQ contribution when mixing
+    /// ML-KEM-768 and X25519 shared secrets in hybrid X3DH key derivation.
+    /// On iOS 17 this constant is unused — the code path never executes.
+    public static let pqKEMInfo = Data("SophaxChat_PQKEM_v1".utf8)
 }
 
 // MARK: - Errors

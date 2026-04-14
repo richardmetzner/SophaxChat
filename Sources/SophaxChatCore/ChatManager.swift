@@ -36,9 +36,15 @@ private func sealWireMessage(_ wire: WireMessage, recipientDHPublicKey: Data) th
         outputByteCount: 32
     )
 
-    let wireJSON  = try JSONEncoder().encode(wire)
-    let nonce     = ChaChaPoly.Nonce()
-    let sealed    = try ChaChaPoly.seal(wireJSON, using: sealingKey, nonce: nonce, authenticating: Data())
+    // Bind the ciphertext to the intended recipient's static DH public key.
+    // The sealing key is already derived from ECDH(eph, recipientDHKey), so the
+    // recipient is implicitly authenticated via key derivation. Explicitly including
+    // the recipient's DH public key as AAD additionally prevents key-confusion: even
+    // if two recipients somehow shared the same DH key the AAD tag would differ.
+    let wireJSON = try JSONEncoder().encode(wire)
+    let nonce    = ChaChaPoly.Nonce()
+    let sealed   = try ChaChaPoly.seal(wireJSON, using: sealingKey, nonce: nonce,
+                                       authenticating: recipientDHPublicKey)
     return SealedMessage(ephemeralPublicKey: ephPair.publicKeyData, encryptedPayload: sealed.combined)
 }
 
@@ -54,9 +60,12 @@ private func unsealMessage(_ sealed: SealedMessage, recipientDHPrivateKey: Curve
         outputByteCount: 32
     )
 
+    // Reconstruct the same AAD used during sealing: our own DH public key.
+    let recipientDHPublicKey = recipientDHPrivateKey.publicKey.rawRepresentation
     do {
         let box      = try ChaChaPoly.SealedBox(combined: sealed.encryptedPayload)
-        let wireJSON = try ChaChaPoly.open(box, using: sealingKey, authenticating: Data())
+        let wireJSON = try ChaChaPoly.open(box, using: sealingKey,
+                                           authenticating: recipientDHPublicKey)
         return try JSONDecoder().decode(WireMessage.self, from: wireJSON)
     } catch {
         throw SophaxError.decryptionFailed
@@ -201,7 +210,7 @@ public final class ChatManager: @unchecked Sendable {
     private static let senderKeyRotationMessageLimit: UInt32 = 500
     private static let senderKeyRotationAgeLimit: TimeInterval = 7 * 24 * 3600
     private static let senderKeyRequestCooldown: TimeInterval  = 60
-    private static let senderKeyStaleThreshold: TimeInterval   = 30 * 24 * 3600
+    private static let senderKeyStaleThreshold: TimeInterval   = 14 * 24 * 3600
 
     /// Last time we sent a senderKeyRequest for a given "groupID/peerID".
     /// Prevents request spam from peers who repeatedly send undecryptable messages.
@@ -873,7 +882,8 @@ public final class ChatManager: @unchecked Sendable {
         // Generate my sender chain key (v2 — random 32-byte seed via CryptoKit)
         let tmpKey       = SymmetricKey(size: .bits256)
         let chainKeyData = tmpKey.withUnsafeBytes { Data($0) }
-        let myState      = SenderKeyState(chainKey: chainKeyData, iteration: 0)
+        let myState      = SenderKeyState(chainKey: chainKeyData, iteration: 0,
+                                          messageCount: 0, createdAt: Date())
         do {
             try keychain.saveMySenderKeyState(myState, groupID: groupID)
         } catch {
@@ -999,8 +1009,14 @@ public final class ChatManager: @unchecked Sendable {
         myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
                                  messageCount: newCount, createdAt: myState.createdAt ?? Date())
         keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+        // Bind ciphertext to wire-message context so the AEAD tag authenticates
+        // not just the plaintext but also which group, sender, and chain position
+        // this message belongs to. Prevents a compromised relay from mixing
+        // ciphertexts across groups or reordering them across chain positions.
+        let aadBody = Data("\(groupID)/\(myID)/\(iteration)/body".utf8)
         guard let bodyData = body.data(using: .utf8),
-              let sealed   = try? ChaChaPoly.seal(bodyData, using: messageKey) else {
+              let sealed   = try? ChaChaPoly.seal(bodyData, using: messageKey,
+                                                  authenticating: aadBody) else {
             fail(SophaxError.encryptionFailed("Group message body encryption failed"))
             return
         }
@@ -1138,9 +1154,13 @@ public final class ChatManager: @unchecked Sendable {
         myState = SenderKeyState(chainKey: nextCK, iteration: iteration + 1,
                                  messageCount: newCount, createdAt: myState.createdAt ?? Date())
         keychainSave("mySenderKey:\(groupID)") { try keychain.saveMySenderKeyState(myState, groupID: groupID) }
+        let aadBody = Data("\(groupID)/\(myID)/\(iteration)/body".utf8)
+        let aadAtt  = Data("\(groupID)/\(myID)/\(iteration)/att".utf8)
         guard let bodyData   = displayBody.data(using: .utf8),
-              let sealedBody = try? ChaChaPoly.seal(bodyData, using: messageKey),
-              let sealedAtt  = try? ChaChaPoly.seal(data,     using: messageKey) else {
+              let sealedBody = try? ChaChaPoly.seal(bodyData, using: messageKey,
+                                                    authenticating: aadBody),
+              let sealedAtt  = try? ChaChaPoly.seal(data,     using: messageKey,
+                                                    authenticating: aadAtt) else {
             fail(SophaxError.encryptionFailed("Group attachment encryption failed"))
             return
         }
@@ -1436,7 +1456,8 @@ public final class ChatManager: @unchecked Sendable {
         let myID       = identity.publicIdentity.peerID
         let tmpKey     = SymmetricKey(size: .bits256)
         let newChainKey = tmpKey.withUnsafeBytes { Data($0) }
-        let newState   = SenderKeyState(chainKey: newChainKey, iteration: 0)
+        let newState   = SenderKeyState(chainKey: newChainKey, iteration: 0,
+                                        messageCount: 0, createdAt: Date())
         keychainSave("mySenderKey:\(group.id)") { try self.keychain.saveMySenderKeyState(newState, groupID: group.id) }
 
         let skd = SenderKeyDistributionMessage(groupID: group.id, chainKey: newChainKey, iteration: 0)
@@ -1600,7 +1621,8 @@ public final class ChatManager: @unchecked Sendable {
             ephemeralPublicKey:  x3dhResult.ephemeralPublicKey,
             usedSignedPreKeyId:  bundle.signedPreKeyId,
             usedOneTimePreKeyId: x3dhResult.usedOneTimePreKeyId,
-            initialMessage:      ratchetMsg
+            initialMessage:      ratchetMsg,
+            pqEncapsulatedKey:   x3dhResult.pqEncapsulatedKey
         )
         return try wireBuilder.build(.initiateSession, payload: initPayload)
     }
@@ -1873,13 +1895,16 @@ public final class ChatManager: @unchecked Sendable {
             self.delegate?.chatManager(self, sessionEstablishedWithPeer: notifyPeerID, usedOPK: usedOPK)
         }
 
-        // X3DH: Bob (responder) side — produces the same shared secret as Alice
+        // X3DH: Bob (responder) side — produces the same shared secret as Alice.
+        // Pass the PQ encapsulated key so the hybrid KEM path can run on iOS 18+.
         let sharedSecret = try X3DH.initiateReceiver(
             recipientIdentityDH:     identity.dhKeyPair,
             recipientSignedPreKey:   preKeys.signedPreKeyPair,
             recipientOneTimePreKey:  otpk,
             senderIdentityDHKeyData: senderBundle.dhIdentityKeyPublic,
-            senderEphemeralKeyData:  payload.ephemeralPublicKey
+            senderEphemeralKeyData:  payload.ephemeralPublicKey,
+            senderPQEncapsulatedKey: payload.pqEncapsulatedKey,
+            identityManager:         identity
         )
 
         // Double Ratchet: Bob starts as responder
@@ -2331,7 +2356,9 @@ public final class ChatManager: @unchecked Sendable {
         let tmpKey      = SymmetricKey(size: .bits256)
         let newChainKey = tmpKey.withUnsafeBytes { Data($0) }
         keychainSave("mySenderKey:\(groupID)") {
-            try keychain.saveMySenderKeyState(SenderKeyState(chainKey: newChainKey, iteration: 0), groupID: groupID)
+            try keychain.saveMySenderKeyState(
+                SenderKeyState(chainKey: newChainKey, iteration: 0, messageCount: 0, createdAt: Date()),
+                groupID: groupID)
         }
 
         // Re-distribute our new sender key to every remaining member (excluding self)
@@ -2475,8 +2502,10 @@ public final class ChatManager: @unchecked Sendable {
 
             // ── Fast path: out-of-order delivery via skipped-key cache ─────────
             if let cachedKey = skippedGroupMessageKeys[cacheKey]?[iteration] {
+                let aadBody = Data("\(payload.groupID)/\(payload.senderPeerID)/\(iteration)/body".utf8)
                 guard let sealedBox = try? ChaChaPoly.SealedBox(combined: payload.ciphertext),
-                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: cachedKey),
+                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: cachedKey,
+                                                            authenticating: aadBody),
                       let decoded   = String(data: bodyData, encoding: .utf8) else { return }
                 body             = decoded
                 attachDecryptKey = cachedKey
@@ -2527,8 +2556,10 @@ public final class ChatManager: @unchecked Sendable {
                 if !cached.isEmpty { persistSkippedGroupKeyCache() }
 
                 let (messageKey, nextCK) = senderKeyRatchetStep(senderState.chainKey)
+                let aadBody = Data("\(payload.groupID)/\(payload.senderPeerID)/\(iteration)/body".utf8)
                 guard let sealedBox = try? ChaChaPoly.SealedBox(combined: payload.ciphertext),
-                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: messageKey),
+                      let bodyData  = try? ChaChaPoly.open(sealedBox, using: messageKey,
+                                                            authenticating: aadBody),
                       let decoded   = String(data: bodyData, encoding: .utf8) else { return }
                 body             = decoded
                 attachDecryptKey = messageKey
@@ -2544,7 +2575,8 @@ public final class ChatManager: @unchecked Sendable {
            payload.attachmentMimeType != nil,
            let key      = attachDecryptKey,
            let sealedAtt = try? ChaChaPoly.SealedBox(combined: attCiphertext),
-           let attData  = try? ChaChaPoly.open(sealedAtt, using: key) {
+           let attData  = try? ChaChaPoly.open(sealedAtt, using: key,
+                                               authenticating: Data("\(payload.groupID)/\(payload.senderPeerID)/\(iteration)/att".utf8)) {
             let id = UUID().uuidString
             try? attachmentStore.save(attData, id: id)
             attachmentID = id
@@ -3360,6 +3392,10 @@ extension ChatManager: MeshManagerDelegate {
         // Reject non-monotonic distributions — a peer must never lower their iteration.
         // An attacker who replays an old SKD or sends iteration=0 would reset the chain
         // and break decryption for all subsequent group messages (DoS).
+        // Note: equal iteration (==) is intentionally allowed — after a sender key
+        // rotation the new chain always starts at iteration=0, so a peer that already
+        // has state at iteration=0 must accept the new rotation SKD. Replay of an old
+        // SKD at the same iteration is prevented by the DR channel's own replay protection.
         if let existing = states[peerID], skd.iteration < existing.iteration { return }
 
         // Bidirectional exchange: if this is the first time we see this sender in this

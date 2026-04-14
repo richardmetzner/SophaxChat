@@ -35,6 +35,10 @@ public enum X3DH {
         public let ephemeralPublicKey: Data
         /// Which of Bob's one-time prekeys was used (if any) — sent to Bob.
         public let usedOneTimePreKeyId: UInt32?
+        /// ML-KEM-768 encapsulated shared secret (iOS 18+ only; nil otherwise).
+        /// Must be sent to Bob alongside the X3DH ephemeral key so he can reproduce
+        /// the hybrid shared secret. nil = Bob has no PQ key or sender is on iOS < 18.
+        public let pqEncapsulatedKey: Data?
     }
 
     /// Perform X3DH as the initiating party (Alice).
@@ -86,14 +90,32 @@ public enum X3DH {
             usedOTPKId = otpkId
         }
 
-        // 6. Derive shared secret via HKDF, then zero the DH material immediately.
-        let sharedSecret = try deriveSharedSecret(from: dhConcat)
+        // 6. Post-quantum KEM contribution (iOS 18+ only).
+        // If Bob advertised an ML-KEM-768 public key, encapsulate a fresh shared secret.
+        // The resulting (pq_shared_secret, encapsulated_key) are mixed into the HKDF IKM
+        // so an attacker needs to break BOTH the classical Curve25519 DH AND the PQ KEM.
+        var pqSharedSecret: Data? = nil
+        var pqEncapKey:     Data? = nil
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *),
+           let pqPubData = recipientBundle.pqPreKeyPublic,
+           let recipientPQKey = try? MLKEM768.PublicKey(rawRepresentation: pqPubData),
+           let encResult = try? recipientPQKey.encapsulate() {
+            pqSharedSecret = encResult.sharedSecret.withUnsafeBytes { Data($0) }
+            pqEncapKey     = encResult.encapsulated
+        }
+        #endif
+
+        // 7. Derive shared secret via HKDF, then zero the DH material immediately.
+        let sharedSecret = try deriveSharedSecret(from: dhConcat, pqSharedSecret: pqSharedSecret)
         dhConcat.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
+        pqSharedSecret?.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
 
         return SenderResult(
-            sharedSecret: sharedSecret,
-            ephemeralPublicKey: ephemeralPair.publicKeyData,
-            usedOneTimePreKeyId: usedOTPKId
+            sharedSecret:        sharedSecret,
+            ephemeralPublicKey:  ephemeralPair.publicKeyData,
+            usedOneTimePreKeyId: usedOTPKId,
+            pqEncapsulatedKey:   pqEncapKey
         )
     }
 
@@ -107,13 +129,17 @@ public enum X3DH {
     ///   - recipientOneTimePreKey: Bob's one-time prekey pair (OPK_B) — if Alice used one
     ///   - senderIdentityDHKeyData: Alice's DH identity public key (IK_A)
     ///   - senderEphemeralKeyData: Alice's ephemeral public key (EK_A) from the message
+    ///   - senderPQEncapsulatedKey: Alice's ML-KEM-768 encapsulated key (nil if Alice is on iOS < 18)
+    ///   - identityManager: Bob's IdentityManager — used to decapsulate the PQ key (iOS 18+ only)
     /// - Returns: Shared secret (must match Alice's)
     public static func initiateReceiver(
         recipientIdentityDH: DHKeyPair,
         recipientSignedPreKey: DHKeyPair,
         recipientOneTimePreKey: DHKeyPair?,
         senderIdentityDHKeyData: Data,
-        senderEphemeralKeyData: Data
+        senderEphemeralKeyData: Data,
+        senderPQEncapsulatedKey: Data?    = nil,
+        identityManager: IdentityManager? = nil
     ) throws -> SymmetricKey {
 
         let senderIK  = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: senderIdentityDHKeyData)
@@ -133,8 +159,20 @@ public enum X3DH {
             dhConcat += try otp.privateKey.sharedSecretFromKeyAgreement(with: senderEK).rawData
         }
 
-        let sharedSecret = try deriveSharedSecret(from: dhConcat)
+        // Post-quantum contribution: decapsulate Alice's ML-KEM-768 ciphertext (iOS 19+ only).
+        var pqSharedSecret: Data? = nil
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *),
+           let encapData = senderPQEncapsulatedKey,
+           let idMgr = identityManager {
+            let pqSS = try idMgr.pqDecapsulate(encapData)
+            pqSharedSecret = pqSS.withUnsafeBytes { Data($0) }
+        }
+        #endif
+
+        let sharedSecret = try deriveSharedSecret(from: dhConcat, pqSharedSecret: pqSharedSecret)
         dhConcat.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
+        pqSharedSecret?.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
         return sharedSecret
     }
 
@@ -143,13 +181,22 @@ public enum X3DH {
     /// HKDF-SHA256 key derivation.
     /// Follows the Signal X3DH spec: F || DH_concat is the IKM,
     /// where F = 32 bytes of 0xFF (domain separator for non-empty use).
-    private static func deriveSharedSecret(from dhConcat: Data) throws -> SymmetricKey {
+    ///
+    /// When `pqSharedSecret` is non-nil (hybrid mode), it is appended to the IKM
+    /// after the DH material. HKDF's extraction step mixes all of it securely —
+    /// the session key is secure as long as either the classical DH OR the PQ KEM is secure.
+    private static func deriveSharedSecret(from dhConcat: Data, pqSharedSecret: Data? = nil) throws -> SymmetricKey {
         guard dhConcat.count == 96 || dhConcat.count == 128 else {
             throw SophaxError.keyAgreementFailed
         }
         // Per Signal X3DH spec: prepend 32 0xFF bytes as domain separator
-        let f   = Data(repeating: 0xFF, count: 32)
-        let ikm = f + dhConcat
+        let f    = Data(repeating: 0xFF, count: 32)
+        var ikm  = f + dhConcat
+        // Append PQ contribution when available — length differs from classical-only
+        // IKM, which inherently domain-separates hybrid from non-hybrid derives.
+        if let pq = pqSharedSecret {
+            ikm += pq
+        }
         let salt = Data(repeating: 0x00, count: 32)   // 32 zero bytes as salt
 
         return HKDF<SHA256>.deriveKey(

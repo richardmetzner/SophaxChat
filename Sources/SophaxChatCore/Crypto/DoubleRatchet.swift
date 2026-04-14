@@ -178,7 +178,7 @@ public final class DoubleRatchet: @unchecked Sendable {
         let (newCK, mk) = Self.kdfCK(ck)
         state.sendingChainKey = SerializableSymmetricKey(newCK)
 
-        guard state.sendMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
+        guard state.sendMessageCount < CryptoConstants.maxChainMessages else { throw SophaxError.counterOverflow }
         let header = RatchetHeader(
             senderRatchetKey:    state.sendingRatchetPublicKey,
             previousChainLength: state.previousSendingChainLength,
@@ -233,13 +233,38 @@ public final class DoubleRatchet: @unchecked Sendable {
 
     public static func importState(_ data: Data) throws -> DoubleRatchet {
         let state = try JSONDecoder().decode(RatchetSessionState.self, from: data)
+        // Bound the number of distinct header-key buckets in addition to the total
+        // key count. Without this, a crafted state blob could allocate O(n) dictionary
+        // entries that each contain only a few keys and still pass the total-count check.
+        guard state.skippedKeyBundles.count <= 50 else {
+            throw SophaxError.invalidState
+        }
         let totalSkipped = state.skippedKeyBundles.values.reduce(0) { $0 + $1.count }
         guard totalSkipped <= CryptoConstants.maxSkippedMessages else {
             throw SophaxError.invalidState
         }
-        guard state.sendMessageCount < UInt32.max,
-              state.receiveMessageCount < UInt32.max else {
+        guard state.sendMessageCount < CryptoConstants.maxChainMessages,
+              state.receiveMessageCount < CryptoConstants.maxChainMessages else {
             throw SophaxError.invalidState
+        }
+        // Verify that the stored sending key pair is internally consistent.
+        // A crafted or corrupted blob could carry mismatched private/public bytes,
+        // silently producing wrong DH outputs on the next ratchet step.
+        guard state.sendingRatchetPrivateKey.count == 32,
+              state.sendingRatchetPublicKey.count  == 32 else {
+            throw SophaxError.invalidState
+        }
+        let derivedSendingPriv = try Curve25519.KeyAgreement.PrivateKey(
+            rawRepresentation: state.sendingRatchetPrivateKey)
+        guard derivedSendingPriv.publicKey.rawRepresentation == state.sendingRatchetPublicKey else {
+            throw SophaxError.invalidState
+        }
+        // Validate chain key widths.
+        if let ck = state.sendingChainKey {
+            guard ck.key.withUnsafeBytes({ $0.count }) == 32 else { throw SophaxError.invalidState }
+        }
+        if let ck = state.receivingChainKey {
+            guard ck.key.withUnsafeBytes({ $0.count }) == 32 else { throw SophaxError.invalidState }
         }
         return DoubleRatchet(state: state)
     }
@@ -292,7 +317,7 @@ public final class DoubleRatchet: @unchecked Sendable {
     /// Advance the receiving chain by one step. Returns the message key for this position.
     private func advanceReceivingChain() throws -> MessageKey {
         guard let ck = state.receivingChainKey?.key else { throw SophaxError.missingChainKey }
-        guard state.receiveMessageCount < UInt32.max else { throw SophaxError.counterOverflow }
+        guard state.receiveMessageCount < CryptoConstants.maxChainMessages else { throw SophaxError.counterOverflow }
         let (newCK, mk) = Self.kdfCK(ck)
         state.receivingChainKey = SerializableSymmetricKey(newCK)
         state.receiveMessageCount += 1
@@ -358,17 +383,23 @@ public final class DoubleRatchet: @unchecked Sendable {
 
     // MARK: - Private: Header encryption/decryption
 
+    /// Static domain-separator bound to every header AEAD tag.
+    /// Prevents cross-protocol confusion and makes the empty-AAD choice explicit.
+    private static let headerAAD = Data("SophaxChat_DR_Header_v2".utf8)
+
     private func encryptHeader(_ header: RatchetHeader, using key: HeaderKey) throws -> Data {
         let headerData = try JSONEncoder().encode(header)
         let nonce      = ChaChaPoly.Nonce()
-        let sealed     = try ChaChaPoly.seal(headerData, using: key, nonce: nonce, authenticating: Data())
+        let sealed     = try ChaChaPoly.seal(headerData, using: key, nonce: nonce,
+                                             authenticating: DoubleRatchet.headerAAD)
         return sealed.combined
     }
 
     private func decryptHeaderBytes(_ encryptedHeader: Data, using key: HeaderKey) throws -> RatchetHeader {
         do {
             let sealedBox  = try ChaChaPoly.SealedBox(combined: encryptedHeader)
-            let headerData = try ChaChaPoly.open(sealedBox, using: key, authenticating: Data())
+            let headerData = try ChaChaPoly.open(sealedBox, using: key,
+                                                  authenticating: DoubleRatchet.headerAAD)
             return try JSONDecoder().decode(RatchetHeader.self, from: headerData)
         } catch {
             throw SophaxError.decryptionFailed
