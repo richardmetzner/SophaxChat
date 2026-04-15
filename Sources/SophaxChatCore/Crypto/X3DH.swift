@@ -39,6 +39,9 @@ public enum X3DH {
         /// Must be sent to Bob alongside the X3DH ephemeral key so he can reproduce
         /// the hybrid shared secret. nil = Bob has no PQ key or sender is on iOS < 18.
         public let pqEncapsulatedKey: Data?
+        /// Which of Bob's ML-KEM-768 signed prekeys Alice used. Sent to Bob so he
+        /// can look up the correct private key for decapsulation. nil = no PQ key used.
+        public let usedPQPreKeyId: UInt32?
     }
 
     /// Perform X3DH as the initiating party (Alice).
@@ -96,6 +99,7 @@ public enum X3DH {
         // so an attacker needs to break BOTH the classical Curve25519 DH AND the PQ KEM.
         var pqSharedSecret: Data? = nil
         var pqEncapKey:     Data? = nil
+        var usedPQPreKeyId: UInt32? = nil
         #if swift(>=6.2)
         if #available(iOS 19.0, macOS 26.0, *),
            let pqPubData = recipientBundle.pqPreKeyPublic,
@@ -103,6 +107,7 @@ public enum X3DH {
            let encResult = try? recipientPQKey.encapsulate() {
             pqSharedSecret = encResult.sharedSecret.withUnsafeBytes { Data($0) }
             pqEncapKey     = encResult.encapsulated
+            usedPQPreKeyId = recipientBundle.pqPreKeyId   // nil for legacy identity-level keys
         }
         #endif
 
@@ -115,7 +120,8 @@ public enum X3DH {
             sharedSecret:        sharedSecret,
             ephemeralPublicKey:  ephemeralPair.publicKeyData,
             usedOneTimePreKeyId: usedOTPKId,
-            pqEncapsulatedKey:   pqEncapKey
+            pqEncapsulatedKey:   pqEncapKey,
+            usedPQPreKeyId:      usedPQPreKeyId
         )
     }
 
@@ -130,7 +136,8 @@ public enum X3DH {
     ///   - senderIdentityDHKeyData: Alice's DH identity public key (IK_A)
     ///   - senderEphemeralKeyData: Alice's ephemeral public key (EK_A) from the message
     ///   - senderPQEncapsulatedKey: Alice's ML-KEM-768 encapsulated key (nil if Alice is on iOS < 18)
-    ///   - identityManager: Bob's IdentityManager — used to decapsulate the PQ key (iOS 18+ only)
+    ///   - recipientPQPreKey: Bob's ML-KEM-768 prekey as `integrityCheckedRepresentation` bytes.
+    ///     Pass the rotating PQ signed prekey (looked up by `usedPQPreKeyId`). nil = skip PQ decap.
     /// - Returns: Shared secret (must match Alice's)
     public static func initiateReceiver(
         recipientIdentityDH: DHKeyPair,
@@ -138,8 +145,8 @@ public enum X3DH {
         recipientOneTimePreKey: DHKeyPair?,
         senderIdentityDHKeyData: Data,
         senderEphemeralKeyData: Data,
-        senderPQEncapsulatedKey: Data?    = nil,
-        identityManager: IdentityManager? = nil
+        senderPQEncapsulatedKey: Data? = nil,
+        recipientPQPreKey: Data?       = nil
     ) throws -> SymmetricKey {
 
         let senderIK  = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: senderIdentityDHKeyData)
@@ -160,12 +167,16 @@ public enum X3DH {
         }
 
         // Post-quantum contribution: decapsulate Alice's ML-KEM-768 ciphertext (iOS 19+ only).
+        // `recipientPQPreKey` is the rotating PQ signed prekey (integrityCheckedRepresentation).
+        // If the ID didn't match Bob's current key (rotation happened), the caller passes nil
+        // and the PQ layer is skipped — session falls back to classical security for this exchange.
         var pqSharedSecret: Data? = nil
         #if swift(>=6.2)
         if #available(iOS 19.0, macOS 26.0, *),
-           let encapData = senderPQEncapsulatedKey,
-           let idMgr = identityManager {
-            let pqSS = try idMgr.pqDecapsulate(encapData)
+           let encapData  = senderPQEncapsulatedKey,
+           let pqKeyBytes = recipientPQPreKey,
+           let pqPrivKey  = try? MLKEM768.PrivateKey(integrityCheckedRepresentation: pqKeyBytes) {
+            let pqSS = try pqPrivKey.decapsulate(encapData)
             pqSharedSecret = pqSS.withUnsafeBytes { Data($0) }
         }
         #endif

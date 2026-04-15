@@ -1622,7 +1622,8 @@ public final class ChatManager: @unchecked Sendable {
             usedSignedPreKeyId:  bundle.signedPreKeyId,
             usedOneTimePreKeyId: x3dhResult.usedOneTimePreKeyId,
             initialMessage:      ratchetMsg,
-            pqEncapsulatedKey:   x3dhResult.pqEncapsulatedKey
+            pqEncapsulatedKey:   x3dhResult.pqEncapsulatedKey,
+            usedPQPreKeyId:      x3dhResult.usedPQPreKeyId
         )
         return try wireBuilder.build(.initiateSession, payload: initPayload)
     }
@@ -1896,7 +1897,9 @@ public final class ChatManager: @unchecked Sendable {
         }
 
         // X3DH: Bob (responder) side — produces the same shared secret as Alice.
-        // Pass the PQ encapsulated key so the hybrid KEM path can run on iOS 18+.
+        // Look up the rotating PQ prekey by ID so Bob decapsulates with the right key.
+        // If the ID doesn't match Bob's current prekey (rotation happened mid-window),
+        // recipientPQPreKey is nil and the session falls back to classical security.
         let sharedSecret = try X3DH.initiateReceiver(
             recipientIdentityDH:     identity.dhKeyPair,
             recipientSignedPreKey:   preKeys.signedPreKeyPair,
@@ -1904,7 +1907,7 @@ public final class ChatManager: @unchecked Sendable {
             senderIdentityDHKeyData: senderBundle.dhIdentityKeyPublic,
             senderEphemeralKeyData:  payload.ephemeralPublicKey,
             senderPQEncapsulatedKey: payload.pqEncapsulatedKey,
-            identityManager:         identity
+            recipientPQPreKey:       payload.usedPQPreKeyId.flatMap { preKeys.pqSignedPreKeyData(forId: $0) }
         )
 
         // Double Ratchet: Bob starts as responder

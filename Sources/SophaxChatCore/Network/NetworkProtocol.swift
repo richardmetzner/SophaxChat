@@ -401,6 +401,10 @@ public struct InitiateSessionMessage: Codable, Sendable {
     /// or Bob's bundle carries no PQ public key. Bob passes this to X3DH.initiateReceiver
     /// so both sides derive the same hybrid shared secret.
     public let pqEncapsulatedKey:   Data?
+    /// Which of Bob's ML-KEM-768 rotating prekeys Alice used for encapsulation.
+    /// Nil = Alice used the legacy identity-level PQ key or has no PQ support.
+    /// Bob uses this ID to look up his private key for decapsulation.
+    public let usedPQPreKeyId:      UInt32?
 }
 
 // MARK: - Chat Message Payload
