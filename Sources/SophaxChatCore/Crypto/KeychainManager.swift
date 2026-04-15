@@ -461,6 +461,42 @@ public final class KeychainManager {
         try? delete(account: "identity.pq")
     }
 
+    // MARK: - ML-DSA-65 Identity Key (post-quantum signing, iOS 19+ / macOS 26+)
+    // Stored as raw representation bytes.
+    // The caller is responsible for availability guards — this layer is version-agnostic.
+
+    public func saveMLDSAIdentityKey(_ data: Data) throws {
+        try save(data: data, account: "identity.mldsa")
+    }
+
+    public func loadMLDSAIdentityKey() -> Data? {
+        try? load(account: "identity.mldsa")
+    }
+
+    public func deleteMLDSAIdentityKey() {
+        try? delete(account: "identity.mldsa")
+    }
+
+    // MARK: - PQ Signed Prekey (ML-KEM-768, rotating — separate from identity.pq)
+    // Rotates weekly alongside the classical signed prekey for forward secrecy.
+
+    public func savePQSignedPreKey(id: UInt32, data: Data) throws {
+        try save(data: data, account: "pqspk.\(id)")
+        try save(data: Data(withUnsafeBytes(of: id) { Data($0) }), account: "pqspk.current_id")
+    }
+
+    public func loadPQSignedPreKey() -> (id: UInt32, data: Data)? {
+        guard let idData = try? load(account: "pqspk.current_id"), idData.count == 4 else { return nil }
+        let id = idData.withUnsafeBytes { $0.load(as: UInt32.self) }
+        guard let keyData = try? load(account: "pqspk.\(id)") else { return nil }
+        return (id, keyData)
+    }
+
+    public func deletePQSignedPreKey(id: UInt32) {
+        try? delete(account: "pqspk.\(id)")
+        try? delete(account: "pqspk.current_id")
+    }
+
     // MARK: - Existence Check
 
     public func hasIdentity() -> Bool {

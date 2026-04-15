@@ -56,6 +56,19 @@ public struct PreKeyBundle: Codable, Sendable {
     /// session key is quantum-resistant even if the Curve25519 DH is broken by Shor's algorithm.
     public let pqPreKeyPublic: Data?
 
+    /// ML-DSA-65 signing public key (1952 bytes). nil = peer is on iOS < 19.
+    /// When present, both this signature AND the Ed25519 `signedPreKeySignature` MUST verify.
+    /// Security holds as long as either Ed25519 or ML-DSA-65 is unbroken.
+    public let mldsaPublicKey: Data?
+
+    /// ML-DSA-65 signature of (signingKeyPublic ‖ signedPreKeyPublic ‖ timestamp).
+    /// nil = peer is on iOS < 19. Must be present when mldsaPublicKey is non-nil.
+    public let mldsaSPKSignature: Data?
+
+    /// ID of the ML-KEM-768 rotating signed prekey Alice should encapsulate to.
+    /// nil = peer uses legacy identity-level PQ key (iOS 18 peers) or has no PQ key.
+    public let pqPreKeyId: UInt32?
+
     public init(
         signingKeyPublic:      Data,
         dhIdentityKeyPublic:   Data,
@@ -69,7 +82,10 @@ public struct PreKeyBundle: Codable, Sendable {
         tcpAddress:            String? = nil,
         avatarData:            Data?   = nil,
         mlsKeyPackage:         Data?   = nil,
-        pqPreKeyPublic:        Data?   = nil
+        pqPreKeyPublic:        Data?   = nil,
+        mldsaPublicKey:        Data?   = nil,
+        mldsaSPKSignature:     Data?   = nil,
+        pqPreKeyId:            UInt32? = nil
     ) {
         self.signingKeyPublic      = signingKeyPublic
         self.dhIdentityKeyPublic   = dhIdentityKeyPublic
@@ -84,6 +100,9 @@ public struct PreKeyBundle: Codable, Sendable {
         self.avatarData            = avatarData
         self.mlsKeyPackage         = mlsKeyPackage
         self.pqPreKeyPublic        = pqPreKeyPublic
+        self.mldsaPublicKey        = mldsaPublicKey
+        self.mldsaSPKSignature     = mldsaSPKSignature
+        self.pqPreKeyId            = pqPreKeyId
     }
 
     /// Verifies the signed prekey signature against the identity key.
@@ -105,7 +124,35 @@ public struct PreKeyBundle: Codable, Sendable {
         // Include signingKeyPublic as the first field so an adversary cannot swap in a
         // different identity key while reusing a captured (SPK, timestamp, signature) triple.
         let signedData   = signingKeyPublic + signedPreKeyPublic + spkTimestampData(timestamp)
-        return identityKey.isValidSignature(signedPreKeySignature, for: signedData)
+
+        // Ed25519 check (classical path — required from all peers).
+        guard identityKey.isValidSignature(signedPreKeySignature, for: signedData) else {
+            return false
+        }
+
+        // ML-DSA-65 check (PQ path — required when peer advertises ML-DSA fields).
+        // Both fields must be present or both absent; one without the other signals tampering.
+        let hasMLDSAPub = mldsaPublicKey != nil
+        let hasMLDSASig = mldsaSPKSignature != nil
+        guard hasMLDSAPub == hasMLDSASig else {
+            throw SophaxError.invalidMessageFormat("Inconsistent ML-DSA-65 fields in prekey bundle")
+        }
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *),
+           let mldsaPubData = mldsaPublicKey,
+           let mldsaSig     = mldsaSPKSignature {
+            // ML-DSA-65 public keys are 1952 bytes; reject anything else before passing to CryptoKit.
+            guard mldsaPubData.count == 1952 else {
+                throw SophaxError.invalidMessageFormat("Invalid ML-DSA-65 public key size")
+            }
+            let mldsaKey = try MLDSA65.PublicKey(rawRepresentation: mldsaPubData)
+            guard mldsaKey.isValidSignature(mldsaSig, for: signedData) else {
+                return false
+            }
+        }
+        #endif
+
+        return true
     }
 
     /// Unique peer identifier derived from identity keys.
@@ -143,6 +190,11 @@ public final class PreKeyManager: @unchecked Sendable {
     private var signedPreKeyId: UInt32
     private var oneTimePreKeys: [UInt32: DHKeyPair] = [:]
 
+    // ML-KEM-768 signed prekey — separate from the identity-level PQ key.
+    // Rotates weekly alongside the classical signed prekey for PQ forward secrecy.
+    private var pqSignedPreKey:   Data?   // integrityCheckedRepresentation bytes
+    private var pqSignedPreKeyId: UInt32?
+
     // MARK: - Init
 
     public init(identity: IdentityManager, keychain: KeychainManager) throws {
@@ -164,6 +216,19 @@ public final class PreKeyManager: @unchecked Sendable {
 
         // Generate one-time prekeys
         try generateOneTimePreKeys(count: 20)
+
+        // Load or generate PQ signed prekey (iOS 19+ only).
+        // On older OS, pqSignedPreKey stays nil and the identity-level PQ key is used as fallback.
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *) {
+            if let stored = keychain.loadPQSignedPreKey() {
+                self.pqSignedPreKey   = stored.data
+                self.pqSignedPreKeyId = stored.id
+            } else {
+                try? generateNewPQSignedPreKey()
+            }
+        }
+        #endif
     }
 
     // MARK: - Public API
@@ -186,6 +251,34 @@ public final class PreKeyManager: @unchecked Sendable {
         let spkSignature = try identity.sign(signedData)
         let otp = oneTimePreKeys.randomElement()
 
+        // ML-DSA-65 signature (iOS 19+ only). Both mldsaPublicKey and mldsaSPKSignature are
+        // included when available — peers verify both. On older OS both remain nil.
+        var mldsaPubData: Data? = nil
+        var mldsaSig:     Data? = nil
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *),
+           let pubData = identity.mldsaPublicKeyData {
+            mldsaPubData = pubData
+            mldsaSig     = try identity.mldsaSign(signedData)
+        }
+        #endif
+
+        // PQ signed prekey (rotating, iOS 19+ only).
+        var pqPubKeyData:    Data?   = nil
+        var pqPreKeyIdValue: UInt32? = nil
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *),
+           let pqKeyBytes = pqSignedPreKey,
+           let pqId       = pqSignedPreKeyId,
+           let pqPrivKey  = try? MLKEM768.PrivateKey(integrityCheckedRepresentation: pqKeyBytes) {
+            pqPubKeyData    = pqPrivKey.publicKey.rawRepresentation
+            pqPreKeyIdValue = pqId
+        }
+        #endif
+        // Fall back to identity-level PQ key for peers that already have a bundle from us
+        // before the rotating prekey was introduced (nil pqSignedPreKey means iOS < 19).
+        if pqPubKeyData == nil { pqPubKeyData = identity.pqPublicKeyData }
+
         return PreKeyBundle(
             signingKeyPublic:      pub.signingKeyPublic,
             dhIdentityKeyPublic:   pub.dhKeyPublic,
@@ -198,7 +291,10 @@ public final class PreKeyManager: @unchecked Sendable {
             timestamp:             timestamp,
             tcpAddress:            tcpAddress,
             avatarData:            identity.loadAvatar(),
-            pqPreKeyPublic:        identity.pqPublicKeyData
+            pqPreKeyPublic:        pqPubKeyData,
+            mldsaPublicKey:        mldsaPubData,
+            mldsaSPKSignature:     mldsaSig,
+            pqPreKeyId:            pqPreKeyIdValue
         )
     }
 
@@ -219,7 +315,15 @@ public final class PreKeyManager: @unchecked Sendable {
     /// The current signed prekey pair (Bob's initial ratchet key in X3DH).
     public var signedPreKeyPair: DHKeyPair { signedPreKey }
 
+    /// Returns the raw PQ signed prekey bytes for the given ID, or nil if the ID
+    /// doesn't match the current prekey (rotation happened between bundle issuance and use).
+    public func pqSignedPreKeyData(forId id: UInt32) -> Data? {
+        guard pqSignedPreKeyId == id else { return nil }
+        return pqSignedPreKey
+    }
+
     /// Rotate the signed prekey unconditionally.
+    /// Also co-rotates the PQ signed prekey so both keys have the same age.
     public func rotateSignedPreKey() throws {
         let pair = DHKeyPair()
         let id   = UInt32.random(in: 1...UInt32.max)
@@ -227,6 +331,13 @@ public final class PreKeyManager: @unchecked Sendable {
         try keychain.saveSignedPreKeyDate(Date())
         signedPreKey   = pair
         signedPreKeyId = id
+        // Co-rotate PQ signed prekey for forward secrecy — both rotate together so the
+        // exposure window for the PQ key equals the signed prekey lifetime (default 7 days).
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *) {
+            try? generateNewPQSignedPreKey()
+        }
+        #endif
     }
 
     /// Rotate only if the current signed prekey is older than `maxAge` seconds (default 7 days).
@@ -245,6 +356,20 @@ public final class PreKeyManager: @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    /// Generate a fresh ML-KEM-768 signed prekey, persist it, and update in-memory state.
+    /// No-op when compiled with Swift < 6.2 or at runtime on iOS < 19.
+    private func generateNewPQSignedPreKey() throws {
+        #if swift(>=6.2)
+        guard #available(iOS 19.0, macOS 26.0, *) else { return }
+        let privKey = MLKEM768.PrivateKey()
+        let id      = UInt32.random(in: 1...UInt32.max)
+        let rep     = privKey.integrityCheckedRepresentation
+        try keychain.savePQSignedPreKey(id: id, data: rep)
+        pqSignedPreKey   = rep
+        pqSignedPreKeyId = id
+        #endif
+    }
 
     private func generateOneTimePreKeys(count: Int) throws {
         // Mutable set tracks both pre-existing and newly generated IDs within this

@@ -19,7 +19,7 @@ import CryptoKit
 // IdentityManager instance and accesses it serially on its dispatch queue.
 public final class IdentityManager: @unchecked Sendable {
 
-    // MARK: - Post-Quantum Identity Key (ML-KEM-768)
+    // MARK: - Post-Quantum KEM Identity Key (ML-KEM-768)
     //
     // Stored as raw seed Data to avoid `@available` annotations propagating through
     // the entire class. The `pqKeyData` property holds the serialised private key bytes
@@ -53,6 +53,43 @@ public final class IdentityManager: @unchecked Sendable {
         throw SophaxError.keyGenerationFailed
         #endif
     }
+
+    // MARK: - Post-Quantum Signing Key (ML-DSA-65)
+    //
+    // Paired with Ed25519 in a hybrid scheme: both signatures must verify.
+    // Security holds as long as either primitive is unbroken — classical or quantum.
+    // Stored as rawRepresentation bytes; availability-guarded the same way as pqKeyData.
+
+    /// Raw bytes of the ML-DSA-65 private key (4032 bytes on iOS 19+). nil on older OS.
+    private var mldsaKeyData: Data?
+
+    /// ML-DSA-65 public key (1952 bytes), or nil on iOS < 19 / Swift < 6.2.
+    public var mldsaPublicKeyData: Data? {
+        #if swift(>=6.2)
+        guard #available(iOS 19.0, macOS 26.0, *), let rep = mldsaKeyData else { return nil }
+        return (try? MLDSA65.PrivateKey(rawRepresentation: rep))?.publicKey.rawRepresentation
+        #else
+        return nil
+        #endif
+    }
+
+    /// Sign `data` with the ML-DSA-65 identity key.
+    /// Only callable when compiled with Swift 6.2+ (Xcode 17 / macOS 26 SDK).
+    @available(iOS 19.0, macOS 26.0, *)
+    public func mldsaSign(_ data: Data) throws -> Data {
+        #if swift(>=6.2)
+        guard let rep = mldsaKeyData,
+              let privKey = try? MLDSA65.PrivateKey(rawRepresentation: rep) else {
+            throw SophaxError.keyGenerationFailed
+        }
+        return try privKey.signature(for: data)
+        #else
+        throw SophaxError.keyGenerationFailed
+        #endif
+    }
+
+    /// Raw ML-DSA-65 private key bytes — used only by IdentityExportManager for backup.
+    public func mldsaPrivateKeyData() -> Data? { mldsaKeyData }
 
     // MARK: - Public Identity (safe to share)
 
@@ -115,7 +152,7 @@ public final class IdentityManager: @unchecked Sendable {
             dh:       self.dhPair
         )
 
-        // Post-quantum key (iOS 18+ only). On older OS this is simply nil; the
+        // Post-quantum KEM key (iOS 19+ only). On older OS this is simply nil; the
         // classical X3DH path runs unchanged.
         #if swift(>=6.2)
         if #available(iOS 19.0, macOS 26.0, *) {
@@ -125,6 +162,21 @@ public final class IdentityManager: @unchecked Sendable {
                 let rep = pqKey.integrityCheckedRepresentation
                 try? keychain.savePQIdentityKey(rep)
                 self.pqKeyData = rep
+            }
+        }
+        #endif
+
+        // Post-quantum signing key ML-DSA-65 (iOS 19+ only). Paired with Ed25519 in hybrid mode.
+        // If key generation fails (rare), mldsaKeyData stays nil and only Ed25519 is used.
+        #if swift(>=6.2)
+        if #available(iOS 19.0, macOS 26.0, *) {
+            if let existing = keychain.loadMLDSAIdentityKey() {
+                self.mldsaKeyData = existing
+            } else {
+                let mldsaKey = MLDSA65.PrivateKey()
+                let rep = mldsaKey.rawRepresentation
+                try? keychain.saveMLDSAIdentityKey(rep)
+                self.mldsaKeyData = rep
             }
         }
         #endif

@@ -36,6 +36,10 @@ private struct IdentityPayload: Codable {
     let dhKeyPrivate:      Data   // X25519 raw 32B
     let username:          String
     let exportedAt:        Date
+    /// ML-DSA-65 private key (4032 bytes). nil in backups created before the PQ upgrade.
+    /// If absent on import the device generates a new key — only consequence is a new
+    /// ML-DSA public key visible to peers.
+    var mldsaKeyPrivate:   Data?  = nil
 }
 
 // MARK: - Errors
@@ -83,7 +87,8 @@ public final class IdentityExportManager: Sendable {
             signingKeyPrivate: sigKey,
             dhKeyPrivate:      dhKey,
             username:          uname,
-            exportedAt:        Date()
+            exportedAt:        Date(),
+            mldsaKeyPrivate:   identity.mldsaPrivateKeyData()
         )
 
         let salt  = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
@@ -171,6 +176,11 @@ public final class IdentityExportManager: Sendable {
             try keychain.saveSigningKey(signingKey)
             try keychain.saveDHIdentityKey(dhKey)
             try keychain.saveUsername(payload.username)
+            // Restore ML-DSA-65 key if present. If absent (old backup), IdentityManager
+            // will generate a new one on next launch — peers will see the new ML-DSA pubkey.
+            if let mldsaData = payload.mldsaKeyPrivate {
+                try keychain.saveMLDSAIdentityKey(mldsaData)
+            }
 
             return payload.username
         }
