@@ -578,21 +578,30 @@ public final class KeychainManager {
         let seenAt: Date
     }
 
-    public func saveSeenWipeRequestIDs(_ ids: Set<String>) {
+    /// Persist seen wipe request IDs with their reception timestamps.
+    /// IDs older than 30 days are dropped on save; only new IDs (absent from existing records)
+    /// are appended with the current time so the stored seenAt is always the first-seen time.
+    public func saveSeenWipeRequestIDs(_ ids: [String: Date]) {
         let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
         var records = (loadJSON([WipeRequestRecord].self, account: "wipe.seen_ids") ?? [])
             .filter { $0.seenAt > cutoff }
         let existing = Set(records.map { $0.id })
-        for id in ids where !existing.contains(id) {
-            records.append(WipeRequestRecord(id: id, seenAt: Date()))
+        for (id, seenAt) in ids where !existing.contains(id) {
+            records.append(WipeRequestRecord(id: id, seenAt: seenAt))
         }
         try? saveJSON(records, account: "wipe.seen_ids")
     }
 
-    public func loadSeenWipeRequestIDs() -> Set<String> {
+    /// Load seen wipe request IDs as a dictionary of id → first-seen timestamp.
+    /// IDs older than 30 days are excluded.
+    public func loadSeenWipeRequestIDs() -> [String: Date] {
         let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
         let records = loadJSON([WipeRequestRecord].self, account: "wipe.seen_ids") ?? []
-        return Set(records.filter { $0.seenAt > cutoff }.map { $0.id })
+        return Dictionary(
+            uniqueKeysWithValues: records
+                .filter { $0.seenAt > cutoff }
+                .map { ($0.id, $0.seenAt) }
+        )
     }
 
     // MARK: - Linked Devices

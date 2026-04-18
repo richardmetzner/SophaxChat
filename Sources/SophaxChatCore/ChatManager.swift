@@ -2871,7 +2871,10 @@ public final class ChatManager: @unchecked Sendable {
 
     private static let maxSeenWipeIDs = 200
 
-    private var seenWipeRequestIDs: Set<String> = []
+    /// Maps wipe request ID → first-seen timestamp.
+    /// Using [String: Date] instead of Set<String> so eviction always removes the
+    /// chronologically oldest entry rather than an arbitrary one (Set has no ordering).
+    private var seenWipeRequestIDs: [String: Date] = [:]
 
     public func sendRemoteWipe(toPeerID: String) {
         let payload = RemoteWipeRequest()
@@ -2899,11 +2902,13 @@ public final class ChatManager: @unchecked Sendable {
         // 1. Sender must be a trusted wipe peer
         guard trustedWipePeers.contains(senderID) else { return }
         // 2. Dedup — reject replays including across app restarts
-        guard !seenWipeRequestIDs.contains(req.requestID) else { return }
-        seenWipeRequestIDs.insert(req.requestID)
-        // Cap to prevent unbounded Keychain growth (oldest UUIDs are pruned arbitrarily)
-        if seenWipeRequestIDs.count > Self.maxSeenWipeIDs {
-            seenWipeRequestIDs = Set(seenWipeRequestIDs.dropFirst(seenWipeRequestIDs.count - Self.maxSeenWipeIDs))
+        guard seenWipeRequestIDs[req.requestID] == nil else { return }
+        seenWipeRequestIDs[req.requestID] = Date()
+        // Cap to prevent unbounded Keychain growth; evict the chronologically oldest
+        // entry so replay protection is preserved for the most recent IDs.
+        while seenWipeRequestIDs.count > Self.maxSeenWipeIDs,
+              let oldest = seenWipeRequestIDs.min(by: { $0.value < $1.value }) {
+            seenWipeRequestIDs.removeValue(forKey: oldest.key)
         }
         keychain.saveSeenWipeRequestIDs(seenWipeRequestIDs)
         // 3. Notify delegate on main thread
