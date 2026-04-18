@@ -294,8 +294,11 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     /// Per-peer buckets for `.typing` (10 per 10 s) and `.reaction` (20 per 10 s).
-    private var typingRateLimiters:   [String: TokenBucket] = [:]
-    private var reactionRateLimiters: [String: TokenBucket] = [:]
+    private var typingRateLimiters:              [String: TokenBucket] = [:]
+    private var reactionRateLimiters:            [String: TokenBucket] = [:]
+    /// Rate limiter for channel announcements: max 3 per 5 minutes per peer.
+    /// Prevents a malicious node from flooding the mesh with repeated announcements.
+    private var channelAnnouncementRateLimiters: [String: TokenBucket] = [:]
 
     /// Fires every 60 seconds to purge messages whose expiresAt has passed.
     private var expiryTimer: Timer?
@@ -955,6 +958,14 @@ public final class ChatManager: @unchecked Sendable {
     private func handleChannelAnnouncement(_ announcement: ChannelAnnouncement, fromPeer peerID: String) {
         // Discard stale announcements (older than 5 minutes)
         guard abs(announcement.timestamp.timeIntervalSinceNow) < 300 else { return }
+
+        // Rate-limit per sender: max 3 announcements per 5-minute window.
+        // A legitimate client announces at group-creation time and rarely thereafter;
+        // spamming announcements is a mesh-flooding vector.
+        if channelAnnouncementRateLimiters[peerID] == nil {
+            channelAnnouncementRateLimiters[peerID] = TokenBucket(capacity: 3, windowSeconds: 300)
+        }
+        guard channelAnnouncementRateLimiters[peerID]!.consume() else { return }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
