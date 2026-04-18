@@ -97,14 +97,21 @@ public enum X3DH {
         // If Bob advertised an ML-KEM-768 public key, encapsulate a fresh shared secret.
         // The resulting (pq_shared_secret, encapsulated_key) are mixed into the HKDF IKM
         // so an attacker needs to break BOTH the classical Curve25519 DH AND the PQ KEM.
+        //
+        // Important: when pqPreKeyPublic is non-nil (Bob explicitly advertised PQ support),
+        // we MUST throw on any parse or encapsulation failure rather than silently falling
+        // back to classical-only.  A silent fallback would allow a network attacker to
+        // corrupt the advertised PQ key bytes and force a downgrade without either party
+        // noticing.  (The bundle signature check above provides the primary defence; this
+        // throw is defence-in-depth for any failure mode that bypasses it.)
         var pqSharedSecret: Data? = nil
         var pqEncapKey:     Data? = nil
         var usedPQPreKeyId: UInt32? = nil
         #if swift(>=6.2)
         if #available(iOS 19.0, macOS 26.0, *),
-           let pqPubData = recipientBundle.pqPreKeyPublic,
-           let recipientPQKey = try? MLKEM768.PublicKey(rawRepresentation: pqPubData),
-           let encResult = try? recipientPQKey.encapsulate() {
+           let pqPubData = recipientBundle.pqPreKeyPublic {
+            let recipientPQKey = try MLKEM768.PublicKey(rawRepresentation: pqPubData)
+            let encResult      = try recipientPQKey.encapsulate()
             pqSharedSecret = encResult.sharedSecret.withUnsafeBytes { Data($0) }
             pqEncapKey     = encResult.encapsulated
             usedPQPreKeyId = recipientBundle.pqPreKeyId   // nil for legacy identity-level keys
