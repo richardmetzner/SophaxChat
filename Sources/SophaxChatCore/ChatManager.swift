@@ -2476,7 +2476,13 @@ public final class ChatManager: @unchecked Sendable {
         }
     }
 
-    private func handleGroupMessage(_ payload: GroupWireMessage) {
+    private func handleGroupMessage(_ payload: GroupWireMessage, fromPeer peerID: String) {
+        // The inner payload's claimed senderPeerID MUST match the outer wire senderID whose
+        // Ed25519 signature was already verified by processRelayedInnerMessage.  Without this
+        // check a group member (B) could sign a wire message as themselves but set
+        // senderPeerID = "A" inside the payload, causing the message to be attributed to A.
+        guard payload.senderPeerID == peerID else { return }
+
         // Validate field lengths before any further processing to prevent large
         // in-memory allocations from malicious peers (e.g. 10 MB senderUsername).
         guard payload.senderPeerID.count  <= 64,
@@ -2751,7 +2757,7 @@ public final class ChatManager: @unchecked Sendable {
 
         case .groupMessage:
             let payload = try wireBuilder.decodePayload(GroupWireMessage.self, from: message)
-            handleGroupMessage(payload)
+            handleGroupMessage(payload, fromPeer: message.senderID)
 
         case .sealed:
             // Reject nested sealed messages to prevent recursive DoS (stack overflow / CPU exhaustion).
@@ -3228,7 +3234,7 @@ extension ChatManager: MeshManagerDelegate {
 
             case .groupMessage:
                 let payload = try wireBuilder.decodePayload(GroupWireMessage.self, from: message)
-                handleGroupMessage(payload)
+                handleGroupMessage(payload, fromPeer: message.senderID)
 
             case .groupReaction:
                 let payload = try wireBuilder.decodePayload(GroupReactionMessage.self, from: message)
