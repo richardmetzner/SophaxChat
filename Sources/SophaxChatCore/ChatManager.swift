@@ -1059,16 +1059,22 @@ public final class ChatManager: @unchecked Sendable {
         // For SKv2 groups, wrap each copy in sealed sender so relay nodes cannot correlate
         // the group wire with a specific recipient. MLS groups skip this — epoch keys already
         // provide per-member confidentiality.
+        // No unsealed fallback: if the DH key is unavailable the member is either unknown
+        // (no Hello received yet) or transiently offline. The relay path delivers the message
+        // sealed, or the member can recover via SenderKeyRequest. Never send group frames
+        // in the clear — a plaintext .groupMessage frame leaks membership metadata to relays.
         let useSealedSender = groupCryptoVersions[groupID] != .mls
         var sendError: Error? = nil
         for peerID in members where peerID != myID {
             do {
-                if useSealedSender, let dhKey = knownPeers[peerID]?.dhKeyPublic,
-                   let sealed    = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
-                   let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) {
+                if useSealedSender {
+                    guard let dhKey     = knownPeers[peerID]?.dhKeyPublic,
+                          let sealed    = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
+                          let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) else {
+                        continue   // DH key unavailable — relay or SenderKeyRequest will recover
+                    }
                     try sendOrQueue(sealedWire, toPeerID: peerID, messageID: messageID)
                 } else {
-                    // Fallback: peer not yet known or DH key unavailable — send unsealed
                     try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
                 }
             } catch {
@@ -1208,9 +1214,12 @@ public final class ChatManager: @unchecked Sendable {
         var sendError: Error? = nil
         for peerID in members where peerID != myID {
             do {
-                if useSealedSender, let dhKey = knownPeers[peerID]?.dhKeyPublic,
-                   let sealed    = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
-                   let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) {
+                if useSealedSender {
+                    guard let dhKey     = knownPeers[peerID]?.dhKeyPublic,
+                          let sealed    = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
+                          let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) else {
+                        continue   // DH key unavailable — relay or SenderKeyRequest will recover
+                    }
                     try sendOrQueue(sealedWire, toPeerID: peerID, messageID: messageID)
                 } else {
                     try sendOrQueue(wire, toPeerID: peerID, messageID: messageID)
