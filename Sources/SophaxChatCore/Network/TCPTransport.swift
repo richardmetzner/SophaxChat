@@ -8,6 +8,10 @@
 // encrypted WireMessage objects. The transport is trustless by design.
 //
 // Security properties preserved over TCP:
+//   • Transport encryption: TLS 1.3 with an ephemeral self-signed P-256 cert
+//     — prevents passive observers from seeing message sizes and timing
+//   • Cert pinning: outbound connections verify the peer's cert fingerprint
+//     from their PreKeyBundle — no CA, no trust chain required
 //   • End-to-end encryption: messages are sealed before hitting the wire
 //   • Authentication: every WireMessage carries an Ed25519 signature
 //   • Forward secrecy: Double Ratchet rotates keys per message
@@ -33,6 +37,8 @@
 
 import Foundation
 import Network
+import CryptoKit
+import Security
 
 // MARK: - Errors
 
@@ -125,6 +131,11 @@ public final class TCPTransport: @unchecked Sendable {
     /// ObjectIdentifier → idle timer (fires if no complete frame received within idleTimeout)
     private var idleTimers: [ObjectIdentifier: DispatchSourceTimer] = [:]
 
+    /// Ephemeral TLS identity (key + self-signed cert) from TLSCertManager.
+    /// Set this before calling start(). When nil, TLS still runs but without
+    /// presenting a local certificate (accepted by most peers for inbound paths).
+    public var tlsIdentity: SecIdentity?
+
     public weak var delegate: TCPTransportDelegate?
 
     // MARK: - Init
@@ -136,7 +147,7 @@ public final class TCPTransport: @unchecked Sendable {
     // MARK: - Lifecycle
 
     public func start() {
-        let params = makeNWParameters(isListener: true)
+        let params = makeNWParameters(isListener: true)   // inbound: accept any cert
         guard let listener = try? NWListener(using: params,
                                              on: NWEndpoint.Port(rawValue: config.port) ?? .any) else { return }
         self.listener = listener
@@ -171,13 +182,15 @@ public final class TCPTransport: @unchecked Sendable {
     // MARK: - Outbound connect
 
     /// Connect to a remote peer. Address must be "host:port".
-    /// Completion fires on the main thread with the connected peerID, or nil on failure.
-    public func connect(to address: String) throws {
+    /// Pass `expectedCertFingerprint` (from the peer's PreKeyBundle) to pin the TLS
+    /// connection to the peer's ephemeral certificate — no CA required.
+    public func connect(to address: String, expectedCertFingerprint: Data? = nil) throws {
         guard let (host, port) = parseAddress(address),
               let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw TCPTransportError.invalidAddress
         }
-        let params     = makeNWParameters(isListener: false)
+        let params     = makeNWParameters(isListener: false,
+                                          expectedFingerprint: expectedCertFingerprint)
         let endpoint   = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
         let connection = NWConnection(to: endpoint, using: params)
         let oid        = ObjectIdentifier(connection)
@@ -417,8 +430,49 @@ public final class TCPTransport: @unchecked Sendable {
 
     // MARK: - Private: NWParameters
 
-    private func makeNWParameters(isListener: Bool) -> NWParameters {
-        let params = NWParameters.tcp
+    /// Build NWParameters with TLS 1.3 and optional certificate pinning.
+    ///
+    /// - `isListener`: true for the inbound NWListener, false for outbound NWConnection.
+    /// - `expectedFingerprint`: SHA-256 of the expected remote cert DER (from PreKeyBundle).
+    ///   When non-nil, the TLS verify block rejects any cert that doesn't match.
+    ///   When nil (listener / unknown peer), the verify block accepts any cert — the
+    ///   application-layer Ed25519 signature on every WireMessage provides authentication.
+    private func makeNWParameters(isListener: Bool,
+                                   expectedFingerprint: Data? = nil) -> NWParameters {
+        let tlsOptions = NWProtocolTLS.Options()
+
+        // Present our ephemeral self-signed cert to the peer.
+        if let identity = tlsIdentity,
+           let secId    = sec_identity_create(identity) {
+            sec_protocol_options_set_local_identity(
+                tlsOptions.securityProtocolOptions, secId)
+        }
+
+        // Custom cert verification:
+        //   • Outbound with known fingerprint → pin to expected cert (MITM detection).
+        //   • Inbound or fingerprint unknown  → accept any cert (trust established via
+        //     application-layer Ed25519 signature verification on the first WireMessage).
+        sec_protocol_options_set_verify_block(
+            tlsOptions.securityProtocolOptions,
+            { [expectedFingerprint] _, trust, complete in
+                guard let fp = expectedFingerprint else {
+                    complete(true)   // No pinning required for this connection
+                    return
+                }
+                let secTrust = sec_trust_copy_ref(trust).takeRetainedValue()
+                guard let chain = SecTrustCopyCertificateChain(secTrust) as? [SecCertificate],
+                      let leaf  = chain.first else {
+                    complete(false)
+                    return
+                }
+                let derData = SecCertificateCopyData(leaf) as Data
+                complete(Data(SHA256.hash(data: derData)) == fp)
+            },
+            .global(qos: .userInitiated)
+        )
+
+        let params = NWParameters(tls: tlsOptions, tcp: NWProtocolTCP.Options())
+
         // SOCKS5 proxy (iOS 17+ / macOS 14+): routes connections through Tor or similar.
         if #available(iOS 17.0, macOS 14.0, *),
            let (host, port) = config.proxyComponents,

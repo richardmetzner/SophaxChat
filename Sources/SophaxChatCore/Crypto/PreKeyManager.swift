@@ -69,6 +69,12 @@ public struct PreKeyBundle: Codable, Sendable {
     /// nil = peer uses legacy identity-level PQ key (iOS 18 peers) or has no PQ key.
     public let pqPreKeyId: UInt32?
 
+    /// SHA-256 fingerprint of the peer's ephemeral TLS session certificate (32 bytes).
+    /// nil = peer does not advertise TCP or is running a build without TLS cert pinning.
+    /// When present, TCP connections to this peer MUST verify the remote certificate
+    /// fingerprint matches — mutual pinning with no CA and no trust chain.
+    public let tlsCertFingerprint: Data?
+
     public init(
         signingKeyPublic:      Data,
         dhIdentityKeyPublic:   Data,
@@ -85,7 +91,8 @@ public struct PreKeyBundle: Codable, Sendable {
         pqPreKeyPublic:        Data?   = nil,
         mldsaPublicKey:        Data?   = nil,
         mldsaSPKSignature:     Data?   = nil,
-        pqPreKeyId:            UInt32? = nil
+        pqPreKeyId:            UInt32? = nil,
+        tlsCertFingerprint:    Data?   = nil
     ) {
         self.signingKeyPublic      = signingKeyPublic
         self.dhIdentityKeyPublic   = dhIdentityKeyPublic
@@ -103,6 +110,7 @@ public struct PreKeyBundle: Codable, Sendable {
         self.mldsaPublicKey        = mldsaPublicKey
         self.mldsaSPKSignature     = mldsaSPKSignature
         self.pqPreKeyId            = pqPreKeyId
+        self.tlsCertFingerprint    = tlsCertFingerprint
     }
 
     /// Verifies the signed prekey signature against the identity key.
@@ -194,6 +202,11 @@ public final class PreKeyManager: @unchecked Sendable {
     // Rotates weekly alongside the classical signed prekey for PQ forward secrecy.
     private var pqSignedPreKey:   Data?   // integrityCheckedRepresentation bytes
     private var pqSignedPreKeyId: UInt32?
+
+    /// SHA-256 fingerprint of the local TLS session certificate (32 bytes).
+    /// Set by ChatManager after TLSCertManager.start(). Included in every generated bundle
+    /// so peers can pin outbound TCP connections to our ephemeral cert.
+    public var tlsCertFingerprint: Data?
 
     // MARK: - Init
 
@@ -294,7 +307,8 @@ public final class PreKeyManager: @unchecked Sendable {
             pqPreKeyPublic:        pqPubKeyData,
             mldsaPublicKey:        mldsaPubData,
             mldsaSPKSignature:     mldsaSig,
-            pqPreKeyId:            pqPreKeyIdValue
+            pqPreKeyId:            pqPreKeyIdValue,
+            tlsCertFingerprint:    tlsCertFingerprint
         )
     }
 
