@@ -56,6 +56,12 @@ public struct PreKeyBundle: Codable, Sendable {
     /// session key is quantum-resistant even if the Curve25519 DH is broken by Shor's algorithm.
     public let pqPreKeyPublic: Data?
 
+    /// SHA-256 fingerprint of the peer's ephemeral TLS session certificate (32 bytes).
+    /// nil = peer does not advertise TCP or is running a build without TLS cert pinning.
+    /// When present, TCP connections to this peer MUST verify the remote certificate
+    /// fingerprint matches — mutual pinning with no CA and no trust chain.
+    public let tlsCertFingerprint: Data?
+
     public init(
         signingKeyPublic:      Data,
         dhIdentityKeyPublic:   Data,
@@ -69,7 +75,8 @@ public struct PreKeyBundle: Codable, Sendable {
         tcpAddress:            String? = nil,
         avatarData:            Data?   = nil,
         mlsKeyPackage:         Data?   = nil,
-        pqPreKeyPublic:        Data?   = nil
+        pqPreKeyPublic:        Data?   = nil,
+        tlsCertFingerprint:    Data?   = nil
     ) {
         self.signingKeyPublic      = signingKeyPublic
         self.dhIdentityKeyPublic   = dhIdentityKeyPublic
@@ -84,6 +91,7 @@ public struct PreKeyBundle: Codable, Sendable {
         self.avatarData            = avatarData
         self.mlsKeyPackage         = mlsKeyPackage
         self.pqPreKeyPublic        = pqPreKeyPublic
+        self.tlsCertFingerprint    = tlsCertFingerprint
     }
 
     /// Verifies the signed prekey signature against the identity key.
@@ -143,6 +151,11 @@ public final class PreKeyManager: @unchecked Sendable {
     private var signedPreKeyId: UInt32
     private var oneTimePreKeys: [UInt32: DHKeyPair] = [:]
 
+    /// SHA-256 fingerprint of the local TLS session certificate (32 bytes).
+    /// Set by ChatManager after TLSCertManager.start(). Included in every generated bundle
+    /// so peers can pin outbound TCP connections to our ephemeral cert.
+    public var tlsCertFingerprint: Data?
+
     // MARK: - Init
 
     public init(identity: IdentityManager, keychain: KeychainManager) throws {
@@ -198,7 +211,8 @@ public final class PreKeyManager: @unchecked Sendable {
             timestamp:             timestamp,
             tcpAddress:            tcpAddress,
             avatarData:            identity.loadAvatar(),
-            pqPreKeyPublic:        identity.pqPublicKeyData
+            pqPreKeyPublic:        identity.pqPublicKeyData,
+            tlsCertFingerprint:    tlsCertFingerprint
         )
     }
 

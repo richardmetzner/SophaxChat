@@ -324,6 +324,10 @@ public final class ChatManager: @unchecked Sendable {
     /// Our TCP address advertised in Hello bundles ("host:port"), set by AppState.
     public var myTCPAddress: String?
 
+    /// Generates an ephemeral P-256 TLS certificate for the TCP transport each session.
+    /// The certificate fingerprint is propagated in every PreKeyBundle we emit.
+    private let tlsCertManager = TLSCertManager()
+
     // MARK: - LAN discovery (mDNS/Bonjour — enables iOS ↔ Android on same WiFi)
 
     private var lanDiscovery: LanDiscovery?
@@ -370,10 +374,15 @@ public final class ChatManager: @unchecked Sendable {
 
     /// Start advertising and browsing on the P2P mesh (and TCP if configured).
     public func start() {
+        // Generate ephemeral TLS cert for this session before starting the TCP transport.
+        tlsCertManager.start()
+        preKeys.tlsCertFingerprint = tlsCertManager.certFingerprint
+
         mesh.start()
         if let tcp = tcpTransport {
+            tcp.tlsIdentity   = tlsCertManager.secIdentity
             tcp.helloProvider = { [weak self] in self?.makeTCPHello() }
-            tcp.delegate = self
+            tcp.delegate      = self
             tcp.start()
         }
         // mDNS discovery — auto-connects to iOS and Android peers on the same WiFi
@@ -417,9 +426,10 @@ public final class ChatManager: @unchecked Sendable {
     /// Attach a TCP transport at runtime and start it immediately.
     public func startTCP(_ transport: TCPTransport) {
         tcpTransport?.stop()
-        tcpTransport = transport
+        tcpTransport           = transport
+        transport.tlsIdentity   = tlsCertManager.secIdentity
         transport.helloProvider = { [weak self] in self?.makeTCPHello() }
-        transport.delegate = self
+        transport.delegate      = self
         transport.start()
     }
 
@@ -486,7 +496,11 @@ public final class ChatManager: @unchecked Sendable {
     /// Initiate an outbound TCP connection to `address` ("host:port").
     public func connectViaTCP(address: String) throws {
         guard let tcp = tcpTransport else { return }
-        try tcp.connect(to: address)
+        // Pin to the peer's TLS cert fingerprint when we have their bundle on file.
+        let fingerprint = knownPeers.values
+            .first(where: { $0.tcpAddress == address })?
+            .tlsCertFingerprint
+        try tcp.connect(to: address, expectedCertFingerprint: fingerprint)
     }
 
     // MARK: - DHT send helper
@@ -502,9 +516,12 @@ public final class ChatManager: @unchecked Sendable {
                 try? tcp.send(message, toPeerID: peerID)
             }
         } else {
-            // Queue and connect
+            // Queue and connect (pass cert fingerprint if peer is already known)
             pendingDHTMessages[address, default: []].append(message)
-            try? tcp.connect(to: address)
+            let fp = knownPeers.values
+                .first(where: { $0.tcpAddress == address })?
+                .tlsCertFingerprint
+            try? tcp.connect(to: address, expectedCertFingerprint: fp)
         }
     }
 

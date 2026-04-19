@@ -1045,6 +1045,9 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
     public var avatarData:       Data?
     /// Accept/reject gate. Absent in legacy JSON → `.accepted` (backward compatible).
     public var trustLevel:       PeerTrustLevel
+    /// SHA-256 fingerprint of the peer's ephemeral TLS session certificate (32 bytes).
+    /// nil = peer does not advertise TCP cert pinning. Absent in legacy JSON → nil.
+    public var tlsCertFingerprint: Data?
 
     public init(from bundle: PreKeyBundle, safetyNumber: String, trustLevel: PeerTrustLevel = .pending) {
         self.id                  = bundle.peerID
@@ -1058,6 +1061,7 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         self.tcpAddress          = bundle.tcpAddress
         self.avatarData          = bundle.avatarData
         self.trustLevel          = trustLevel
+        self.tlsCertFingerprint  = bundle.tlsCertFingerprint
     }
 
     /// Construct a KnownPeer directly (used when importing contacts via invite link).
@@ -1101,6 +1105,7 @@ public struct KnownPeer: Codable, Identifiable, Sendable {
         tcpAddress          = try c.decodeIfPresent(String.self, forKey: .tcpAddress)
         avatarData          = try c.decodeIfPresent(Data.self,   forKey: .avatarData)
         trustLevel          = try c.decodeIfPresent(PeerTrustLevel.self, forKey: .trustLevel) ?? .accepted
+        tlsCertFingerprint  = try c.decodeIfPresent(Data.self,   forKey: .tlsCertFingerprint)
     }
 }
 
