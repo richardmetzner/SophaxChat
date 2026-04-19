@@ -1676,7 +1676,7 @@ public final class ChatManager: @unchecked Sendable {
                 id:           UUID().uuidString,
                 targetPeerID: peerID,
                 originPeerID: identity.publicIdentity.peerID,
-                ttl:          RelayEnvelope.maxTTL,
+                ttl:          RelayEnvelope.randomInitialTTL(),
                 hopCount:     0,
                 message:      innerWire
             )

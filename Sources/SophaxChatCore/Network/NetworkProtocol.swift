@@ -22,8 +22,8 @@
 //     B → A: .ack
 //
 //   [Multihop relay — A and B not directly connected]
-//     A → C: .relay (RelayEnvelope targeting B, TTL=5)
-//     C → B: .relay (RelayEnvelope, TTL=4)   [C forwards after checking target]
+//     A → C: .relay (RelayEnvelope targeting B, TTL=random(4..6))
+//     C → B: .relay (RelayEnvelope, TTL decremented)   [C forwards after checking target]
 //     B processes the inner message
 
 import Foundation
@@ -513,6 +513,12 @@ public struct RelayEnvelope: Codable, Sendable {
     public let message:      WireMessage
 
     public static let maxTTL: UInt8 = 6
+
+    /// Random initial TTL in [4, 6] so relay nodes cannot infer sender distance
+    /// from the starting hop count. maxTTL = 6 remains as the validation ceiling.
+    public static func randomInitialTTL() -> UInt8 {
+        UInt8.random(in: 4...6)
+    }
 
     /// Returns a new envelope with TTL decremented and hopCount incremented.
     public func forwarded() -> RelayEnvelope {
