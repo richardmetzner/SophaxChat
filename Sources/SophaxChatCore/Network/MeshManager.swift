@@ -5,7 +5,7 @@
 //
 // Security:
 //   • encryptionPreference: .required  → TLS-level transport encryption (defence-in-depth)
-//   • MCPeerID display name = first 12 chars of identity key hash (no username at transport layer)
+//   • MCPeerID display name = ephemeral random token per session (no stable fingerprint)
 //   • Authentication happens at the application layer (X3DH + Ed25519 signatures)
 //   • Malformed or undecryptable packets are silently dropped
 
@@ -59,7 +59,15 @@ public final class MeshManager: NSObject, @unchecked Sendable {
     // MARK: - Init
 
     public init(localIdentityHash: String) {
-        let mcID = MCPeerID(displayName: "sx-\(localIdentityHash.prefix(12))")
+        // Use a fresh random token each session instead of the identity hash prefix.
+        // The identity hash is stable and would let passive BLE/WiFi observers track a
+        // device across time and space without ever completing a session handshake.
+        // Application-layer identity (X3DH + Ed25519) does not depend on this display name.
+        let sessionToken = UUID().uuidString
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(11)
+            .lowercased()   // "sx-" (3) + 11 chars = 14 ≤ 15-char MPC limit
+        let mcID = MCPeerID(displayName: "sx-\(sessionToken)")
         self.localPeerID = mcID
 
         let sess = MCSession(
