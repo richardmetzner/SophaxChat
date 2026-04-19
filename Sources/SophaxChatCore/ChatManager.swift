@@ -1580,10 +1580,20 @@ public final class ChatManager: @unchecked Sendable {
     }
 
     /// Send a typing indicator to `peerID` (direct path only, best-effort — no relay, no queue).
+    /// Wrapped in sealed sender when the recipient DH key is known so directly-connected peers
+    /// cannot distinguish a typing frame from any other sealed message by type alone.
+    /// Fire-and-forget: silently skipped if the DH key is not yet available (pre-Hello).
     public func sendTypingIndicator(toPeerID peerID: String, isTyping: Bool) {
         guard mesh.isConnected(peerID: peerID) else { return }
         guard let wire = try? wireBuilder.build(.typing, payload: TypingMessage(isTyping: isTyping)) else { return }
-        try? mesh.send(wire, toPeerID: peerID)
+        if let dhKey      = knownPeers[peerID]?.dhKeyPublic,
+           let sealed     = try? sealWireMessage(wire, recipientDHPublicKey: dhKey),
+           let sealedWire = try? wireBuilder.build(.sealed, payload: sealed) {
+            try? mesh.send(sealedWire, toPeerID: peerID)
+        } else {
+            // DH key not yet established (pre-Hello exchange) — send unsealed best-effort.
+            try? mesh.send(wire, toPeerID: peerID)
+        }
     }
 
     /// All peers with a verified identity (online or offline).
