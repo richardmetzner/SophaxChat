@@ -13,7 +13,9 @@ struct CreateGroupView: View {
 
     @State private var groupName:        String = ""
     @State private var selectedPeerIDs:  Set<String> = []
-    @State private var useMLS:           Bool = false
+    /// Defaults to true — MLS is preferred when all members support it.
+    /// Auto-updated as the member selection changes.
+    @State private var useMLS:           Bool = true
     @FocusState private var nameFocused: Bool
 
     private var allSelectedPeersHaveKeyPackage: Bool {
@@ -48,14 +50,14 @@ struct CreateGroupView: View {
                 } footer: {
                     if useMLS {
                         if allSelectedPeersHaveKeyPackage || selectedPeerIDs.isEmpty {
-                            Text("MLS provides post-compromise security per epoch. All members must have exchanged keys with you at least once.")
+                            Text("MLS (RFC 9420) is the default — provides post-compromise security per epoch. All members must have exchanged keys with you at least once.")
                                 .foregroundStyle(.secondary)
                         } else {
-                            Text("One or more selected members have not yet exchanged MLS keys. Ask them to open SophaxChat while nearby.")
+                            Text("One or more selected members have not yet exchanged MLS keys. The group will use Sender Keys v2 instead. Ask them to open SophaxChat while nearby, then upgrade later.")
                                 .foregroundStyle(.orange)
                         }
                     } else {
-                        Text("Standard uses Signal-style Sender Keys v2. Enable MLS for RFC 9420 post-compromise security.")
+                        Text("Sender Keys v2 — Signal-style per-sender chains. Enable MLS for RFC 9420 post-compromise security.")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -109,6 +111,13 @@ struct CreateGroupView: View {
             }
             .navigationTitle("New Group")
             .navigationBarTitleDisplayMode(.inline)
+            // Auto-select MLS when all chosen members support it; fall back to SKv2 when not.
+            // The user can still override the toggle manually.
+            .onChange(of: selectedPeerIDs) {
+                if !selectedPeerIDs.isEmpty {
+                    useMLS = allSelectedPeersHaveKeyPackage
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
