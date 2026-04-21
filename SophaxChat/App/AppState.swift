@@ -193,6 +193,7 @@ final class AppState: ObservableObject {
 
         loadSavedPeers()
         loadPendingRequests()
+        loadGroupJoinRequests()
         loadBlockedPeers()
         loadAliases()
         loadGroups()
@@ -499,6 +500,7 @@ final class AppState: ObservableObject {
         pendingGroupJoinRequests.removeAll {
             $0.groupID == request.groupID && $0.requesterPeerID == request.requesterPeerID
         }
+        saveGroupJoinRequests()
     }
 
     var myPeerID: String? { chatManager?.identity.publicIdentity.peerID }
@@ -1076,16 +1078,17 @@ final class AppState: ObservableObject {
 
     /// Zero out all in-memory conversation/peer state. Called on both lock and wipe.
     private func clearInMemoryState() {
-        peers                  = []
-        pendingContactRequests = []
-        linkedDevices          = []
-        messages               = [:]
-        groups                 = []
-        peerAvatars            = [:]
-        onlinePeers            = []
-        unreadCounts           = [:]
-        typingPeers            = []
-        keyChangeAlerts        = []
+        peers                    = []
+        pendingContactRequests   = []
+        pendingGroupJoinRequests = []
+        linkedDevices            = []
+        messages                 = [:]
+        groups                   = []
+        peerAvatars              = [:]
+        onlinePeers              = []
+        unreadCounts             = [:]
+        typingPeers              = []
+        keyChangeAlerts          = []
     }
 
     func tryUnlock() {
@@ -1429,8 +1432,9 @@ final class AppState: ObservableObject {
 
     // MARK: - Peer persistence
 
-    private let peersDefaultsKey    = "com.sophax.knownPeers"
-    private let pendingRequestsKey  = "com.sophax.pendingRequests"
+    private let peersDefaultsKey         = "com.sophax.knownPeers"
+    private let pendingRequestsKey       = "com.sophax.pendingRequests"
+    private let groupJoinRequestsKey     = "com.sophax.groupJoinRequests"
 
     private func loadSavedPeers() {
         guard let data = UserDefaults.standard.data(forKey: peersDefaultsKey),
@@ -1462,6 +1466,23 @@ final class AppState: ObservableObject {
     private func savePendingRequests() {
         if let data = try? JSONEncoder().encode(pendingContactRequests) {
             UserDefaults.standard.set(data, forKey: pendingRequestsKey)
+        }
+    }
+
+    // MARK: - Group join request persistence
+
+    func loadGroupJoinRequests() {
+        guard let data  = UserDefaults.standard.data(forKey: groupJoinRequestsKey),
+              let saved = try? JSONDecoder().decode([ChannelJoinRequestMessage].self, from: data)
+        else { return }
+        // Drop stale requests (>48 h) on load so they don't clog up the list
+        let cutoff = Date().addingTimeInterval(-172_800)
+        pendingGroupJoinRequests = saved.filter { $0.timestamp > cutoff }
+    }
+
+    func saveGroupJoinRequests() {
+        if let data = try? JSONEncoder().encode(pendingGroupJoinRequests) {
+            UserDefaults.standard.set(data, forKey: groupJoinRequestsKey)
         }
     }
 
@@ -2005,6 +2026,7 @@ extension AppState: @preconcurrency ChatManagerDelegate {
             $0.groupID + ":" + $0.requesterPeerID == key
         }) {
             pendingGroupJoinRequests.append(request)
+            saveGroupJoinRequests()
         }
     }
 }

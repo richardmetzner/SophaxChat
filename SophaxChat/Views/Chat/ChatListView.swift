@@ -659,7 +659,7 @@ struct GroupJoinRequestRow: View {
     let request: ChannelJoinRequestMessage
 
     private var requesterPeer: KnownPeer? {
-        appState.knownPeers.first { $0.id == request.requesterPeerID }
+        appState.peers.first { $0.id == request.requesterPeerID }
     }
 
     var body: some View {
