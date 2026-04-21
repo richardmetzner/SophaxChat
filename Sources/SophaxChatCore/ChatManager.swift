@@ -146,6 +146,10 @@ public protocol ChatManagerDelegate: AnyObject {
 
     /// Called when a trusted peer requests remote account wipe.
     func chatManagerDidReceiveRemoteWipeRequest(_ manager: ChatManager)
+
+    /// A peer sent a join request for a group the local user created.
+    /// The delegate should present an approval UI (approve via `addMemberToGroup`).
+    func chatManager(_ manager: ChatManager, didReceiveGroupJoinRequest request: ChannelJoinRequestMessage)
 }
 
 // MARK: - ChatManager
@@ -980,7 +984,102 @@ public final class ChatManager: @unchecked Sendable {
         try? mesh.broadcast(wire)
     }
 
-    // MARK: - Private: Channel announcement handler
+    // MARK: - Public: Channel join requests
+
+    /// Send a DR-encrypted join request to the group creator.
+    /// The request is queued if the creator is currently offline and delivered when
+    /// they reconnect — no server required, fully P2P.
+    ///
+    /// - Parameters:
+    ///   - announcement: The ChannelAnnouncement the user wants to join.
+    public func sendChannelJoinRequest(for announcement: ChannelAnnouncement) {
+        let myID = identity.publicIdentity.peerID
+        // Don't request to join a group we're already in
+        guard joinedGroups[announcement.groupID] == nil,
+              announcement.creatorID != myID else { return }
+        let payload = ChannelJoinRequestMessage(
+            groupID:           announcement.groupID,
+            groupName:         announcement.groupName,
+            requesterPeerID:   myID,
+            requesterUsername: identity.publicIdentity.username
+        )
+        guard let wire = try? wireBuilder.build(.channelJoinRequest, payload: payload) else { return }
+        try? sendOrQueue(wire, toPeerID: announcement.creatorID, messageID: UUID().uuidString)
+    }
+
+    /// Add a new member to an existing group (creator-only).
+    ///
+    /// - SKv2 groups: sends a fresh GroupInvitePayload to `newMemberPeerID` with the
+    ///   updated member list and the creator's current sender chain key. The new member
+    ///   self-announces their own sender key to existing members via the normal
+    ///   SenderKeyDistribution flow.
+    /// - MLS groups: sends an `.mlsCommitRequest` action `.add` to self (as coordinator),
+    ///   which triggers addMember → Commit + unicast Welcome.
+    ///
+    /// No-op if called by a non-creator or if the peer is already a member.
+    public func addMemberToGroup(_ group: GroupInfo, newMemberPeerID: String) {
+        let myID = identity.publicIdentity.peerID
+        guard group.creatorID == myID,
+              !group.memberIDs.contains(newMemberPeerID) else { return }
+
+        if group.cryptoVersion == .mls {
+            // MLS path: request coordinator (ourselves) to issue an Add Commit.
+            guard let keyPackage = peerBundles[newMemberPeerID]?.mlsKeyPackage else {
+                delegate?.chatManager(self, didEncounterError:
+                    SophaxError.invalidMessageFormat("Peer \(newMemberPeerID) has no MLS KeyPackage"))
+                return
+            }
+            let req = MLSCommitRequestMessage(
+                groupID:    group.id,
+                action:     .add,
+                keyPackage: keyPackage,
+                targetPeerID: newMemberPeerID
+            )
+            // Call the commit-request handler directly — we are the coordinator
+            handleMLSCommitRequest(req, fromPeer: myID)
+        } else {
+            // SKv2 path: send a GroupInvitePayload to the new member with the current chain key.
+            guard let myState = keychain.loadMySenderKeyState(groupID: group.id) else { return }
+            let updatedMembers = group.memberIDs + [newMemberPeerID]
+            let invite = GroupInvitePayload(
+                groupID:         group.id,
+                groupName:       group.name,
+                memberIDs:       updatedMembers,
+                creatorID:       myID,
+                senderChainKey:  myState.chainKey,
+                senderIteration: myState.messageCount ?? 0
+            )
+            guard let inviteData = try? JSONEncoder().encode(invite) else { return }
+            let content = MessageContent(body: group.name, type: .groupInvite, groupInviteData: inviteData)
+            if let wire = try? buildOutboundWire(content: content, messageID: UUID().uuidString, toPeerID: newMemberPeerID) {
+                try? sendOrQueue(wire, toPeerID: newMemberPeerID, messageID: UUID().uuidString)
+            }
+        }
+    }
+
+    // MARK: - Private: Channel announcement + join-request handlers
+
+    private func handleChannelJoinRequest(_ payload: ChannelJoinRequestMessage, fromPeer senderID: String) {
+        // Sender's claimed peerID must match the DR sender we already verified
+        guard payload.requesterPeerID == senderID else { return }
+        // Field-length guards
+        guard payload.groupID.count   <= 64,
+              payload.groupName.count <= 64,
+              payload.requesterPeerID.count     <= 64,
+              payload.requesterUsername.count   <= 64 else { return }
+        // We must be the creator of this group to be the right recipient
+        guard groupCreators[payload.groupID] == identity.publicIdentity.peerID else { return }
+        // Requester must not already be a member
+        guard joinedGroups[payload.groupID]?.contains(payload.requesterPeerID) != true else { return }
+        // Stale requests (>48 h) are silently dropped
+        guard abs(payload.timestamp.timeIntervalSinceNow) < 172_800 else { return }
+
+        let req = payload
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.chatManager(self, didReceiveGroupJoinRequest: req)
+        }
+    }
 
     private func handleChannelAnnouncement(_ announcement: ChannelAnnouncement, fromPeer peerID: String) {
         // Discard stale announcements (older than 5 minutes)
@@ -2927,6 +3026,9 @@ public final class ChatManager: @unchecked Sendable {
         case .channelAnnouncement:
             break   // Channel announcements are broadcast-only; not forwarded via relay
 
+        case .channelJoinRequest:
+            break   // DR-encrypted unicast; the outer relay layer already sealed it
+
         case .deadDrop:
             if let drop = try? wireBuilder.decodePayload(DeadDropEnvelope.self, from: message) {
                 handleDeadDrop(drop)
@@ -3397,6 +3499,10 @@ extension ChatManager: MeshManagerDelegate {
                 // They are signed so we can verify the creator's identity.
                 let payload = try wireBuilder.decodePayload(ChannelAnnouncement.self, from: message)
                 handleChannelAnnouncement(payload, fromPeer: message.senderID)
+
+            case .channelJoinRequest:
+                let payload = try wireBuilder.decodePayload(ChannelJoinRequestMessage.self, from: message)
+                handleChannelJoinRequest(payload, fromPeer: message.senderID)
 
             case .relay:
                 let envelope = try wireBuilder.decodePayload(RelayEnvelope.self, from: message)

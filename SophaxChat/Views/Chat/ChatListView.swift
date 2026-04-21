@@ -207,6 +207,20 @@ struct ChatListView: View {
                 }
             }
 
+            // Pending join requests — someone wants to join a group we created
+            if !appState.pendingGroupJoinRequests.isEmpty {
+                Section {
+                    ForEach(appState.pendingGroupJoinRequests, id: \.requesterPeerID) { req in
+                        GroupJoinRequestRow(request: req)
+                    }
+                } header: {
+                    Text("Join Requests")
+                } footer: {
+                    Text("Peers who want to join your group. Invite them or dismiss.")
+                        .font(.caption2)
+                }
+            }
+
             // Nearby channels — groups announced by peers the local user hasn't joined
             let nearbyChannels = Array(appState.discoveredChannels.values)
                 .sorted { $0.groupName < $1.groupName }
@@ -218,7 +232,7 @@ struct ChatListView: View {
                 } header: {
                     Text("Nearby Channels")
                 } footer: {
-                    Text("Groups advertised by nearby peers. Contact the creator to request an invite.")
+                    Text("Groups advertised by nearby peers. Tap a channel to request an invite.")
                         .font(.caption2)
                 }
             }
@@ -583,39 +597,120 @@ struct GroupConversationRow: View {
 // MARK: - Nearby Channel Row
 
 /// Row shown for groups announced by nearby peers that the local user hasn't joined.
+/// Tap to send a DR-encrypted join request to the creator (queued if they're offline).
 struct NearbyChannelRow: View {
     @EnvironmentObject var appState: AppState
     let channel: ChannelAnnouncement
 
-    /// The peer that created the channel, so the user can tap to open a DM.
-    private var creatorPeer: KnownPeer? {
-        appState.peers.first { $0.id == channel.creatorID }
+    @State private var showingRequestConfirm = false
+    @State private var requestSent = false
+
+    var body: some View {
+        Button { showingRequestConfirm = true } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange.opacity(0.15))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "megaphone.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.orange)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(channel.groupName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(requestSent
+                         ? "Request sent · waiting for creator"
+                         : "\(channel.memberCount) member\(channel.memberCount == 1 ? "" : "s") · Tap to request invite")
+                        .font(.caption2)
+                        .foregroundStyle(requestSent ? .green : .secondary)
+                }
+                Spacer()
+                Image(systemName: requestSent ? "checkmark.circle" : "arrow.right.circle")
+                    .foregroundStyle(requestSent ? .green : .tertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+        .disabled(requestSent)
+        .confirmationDialog(
+            "Request to join "\(channel.groupName)"?",
+            isPresented: $showingRequestConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Send Join Request") {
+                appState.sendChannelJoinRequest(for: channel)
+                requestSent = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A join request will be sent to the group creator. They'll receive it even if they're currently offline.")
+        }
+    }
+}
+
+// MARK: - Group Join Request Row
+
+/// Row shown for each pending join request received from a peer who wants to join our group.
+struct GroupJoinRequestRow: View {
+    @EnvironmentObject var appState: AppState
+    let request: ChannelJoinRequestMessage
+
+    private var requesterPeer: KnownPeer? {
+        appState.knownPeers.first { $0.id == request.requesterPeerID }
     }
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.orange.opacity(0.15))
-                    .frame(width: 48, height: 48)
-                Image(systemName: "megaphone.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.orange)
+            // Avatar or generic icon
+            if let peer = requesterPeer {
+                PeerAvatar(peer: peer, size: 44)
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "person.badge.plus")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.blue)
+                }
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(channel.groupName)
-                    .font(.subheadline.weight(.semibold))
-                Text("\(channel.memberCount) member\(channel.memberCount == 1 ? "" : "s") · Contact creator to join")
+                Text(requesterPeer.map { appState.displayName(for: $0) } ?? request.requesterUsername)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text("Wants to join \"\(request.groupName)\"")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+
             Spacer()
-            Image(systemName: "arrow.right.circle")
-                .foregroundStyle(.tertiary)
+
+            // Approve / dismiss buttons
+            HStack(spacing: 8) {
+                Button {
+                    appState.approveGroupJoinRequest(request)
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.green)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    appState.dismissGroupJoinRequest(request)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.vertical, 4)
-        .contentShape(Rectangle())
     }
 }
 
