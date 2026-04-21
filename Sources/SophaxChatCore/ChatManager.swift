@@ -545,6 +545,16 @@ public final class ChatManager: @unchecked Sendable {
 
     // MARK: - Public: Identity broadcast
 
+    /// Send our Hello (PreKeyBundle) to a single peer via the normal send/queue path.
+    /// Used to proactively initiate bundle exchange with group members we haven't met directly.
+    /// Internal so ChatManager extensions (ChatManager+MLS.swift) can call it too.
+    func sendHelloToPeer(_ peerID: String) {
+        guard let bundle = try? preKeys.generateBundle(tcpAddress: myTCPAddress) else { return }
+        let hello = HelloMessage(bundle: bundle)
+        guard let wire = try? wireBuilder.build(.hello, payload: hello) else { return }
+        try? sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+    }
+
     /// Re-broadcast our Hello (PreKeyBundle) to all currently-connected peers (mesh + TCP).
     /// Call after a username change so peers pick up the new display name.
     public func broadcastHello() {
@@ -1260,11 +1270,27 @@ public final class ChatManager: @unchecked Sendable {
         let myID = identity.publicIdentity.peerID
         let remaining = group.memberIDs.filter { $0 != myID }
 
-        // Notify all remaining members before deleting local crypto state
+        // MLS: if we're the current coordinator, hand off before leaving so the group
+        // isn't left leaderless (no one could issue Remove/Add commits otherwise).
+        // Pick the alphabetically first remaining member for determinism — the same
+        // election rule is applied on the receiver side, ensuring convergence even if
+        // the `.mlsCoordinatorHandoff` message and this leave message race each other.
+        var pendingCoordinatorID: String? = nil
+        if group.cryptoVersion == .mls,
+           groupCoordinators[group.id] == myID,
+           let newCoordinator = remaining.sorted().first {
+            pendingCoordinatorID = newCoordinator
+            handoffCoordinator(group: group, newCoordinatorID: newCoordinator)
+        }
+
+        // Notify all remaining members before deleting local crypto state.
+        // pendingCoordinatorID (set above) lets the new coordinator issue a Remove
+        // Commit atomically, without waiting for the separate handoff message.
         let leaveMsg = GroupMemberLeftMessage(
-            groupID:            group.id,
-            leavingPeerID:      myID,
-            remainingMemberIDs: remaining
+            groupID:             group.id,
+            leavingPeerID:       myID,
+            remainingMemberIDs:  remaining,
+            pendingCoordinatorID: pendingCoordinatorID
         )
         if let wire = try? wireBuilder.build(.groupMemberLeft, payload: leaveMsg) {
             for peerID in remaining {
@@ -2422,6 +2448,48 @@ public final class ChatManager: @unchecked Sendable {
                 try? sendOrQueue(wire, toPeerID: memberID, messageID: UUID().uuidString)
             }
         }
+
+        // MLS: as coordinator, issue a Remove Commit so the epoch advances and the
+        // leaver's epoch key is revoked (post-compromise security on member leave).
+        //
+        // pendingCoordinatorID handles the race where the leaving member was the old
+        // coordinator and sent `.mlsCoordinatorHandoff` alongside this message: if that
+        // field names us, we apply the coordinator update immediately (idempotent once
+        // the separate handoff message also arrives) and then issue the Commit.
+        if groupCryptoVersions[groupID] == .mls {
+            // Apply pending coordinator promotion if needed (order-independent of handoff msg)
+            if let pending = payload.pendingCoordinatorID, pending == myID {
+                groupCoordinators[groupID] = myID
+            }
+            if groupCoordinators[groupID] == myID {
+                let leaving = leavingPeerID
+                let remain  = remaining
+                Task { [weak self] in
+                    guard let self else { return }
+                    do {
+                        let mls       = try self.requireMLSManager()
+                        let commitOut = try await mls.removeMember(groupID: groupID, peerID: leaving)
+                        let commitMsg = MLSCommitMessage(
+                            groupID:       groupID,
+                            epoch:         commitOut.newEpoch,
+                            commitBytes:   commitOut.commitBytes,
+                            coordinatorID: myID
+                        )
+                        if let wire = try? self.wireBuilder.build(.mlsCommit, payload: commitMsg) {
+                            for peerID in remain where peerID != myID {
+                                try? self.sendOrQueue(wire, toPeerID: peerID, messageID: UUID().uuidString)
+                            }
+                        }
+                    } catch {
+                        // Non-fatal — peer may not have an MLS leaf (e.g. joined via Welcome
+                        // from a different epoch). Log in DEBUG only.
+                        #if DEBUG
+                        print("[ChatManager][MLS] Remove Commit failed for \(leaving): \(error)")
+                        #endif
+                    }
+                }
+            }
+        }
     }
 
     private func handleGroupDeleted(_ payload: GroupDeletedMessage, senderID: String) {
@@ -2517,6 +2585,15 @@ public final class ChatManager: @unchecked Sendable {
         joinedGroups[invite.groupID] = Set(dedupedMembers)
         groupCreators[invite.groupID] = invite.creatorID
         groupCoordinators[invite.groupID] = invite.creatorID
+
+        // Proactively exchange Hellos with members we haven't met directly.
+        // Group-only contacts (no prior DM) never send a Hello, so we'd never
+        // receive their bundle — and never see their avatar or MLS KeyPackage.
+        // Sending our Hello triggers a reciprocal Hello from them, closing the gap.
+        for memberID in invite.memberIDs where memberID != myID && peerBundles[memberID] == nil {
+            sendHelloToPeer(memberID)
+        }
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.delegate?.chatManager(self, didJoinGroup: group)
