@@ -38,6 +38,14 @@ extension ChatManager {
                 self.groupCreators[msg.groupID] = msg.creatorID
                 self.groupCoordinators[msg.groupID] = msg.creatorID
 
+                // Proactively exchange Hellos with group members we haven't met directly,
+                // so avatar and MLS KeyPackage data propagates for group-only contacts.
+                let myID = self.identity.publicIdentity.peerID
+                for memberID in msg.memberIDs where memberID != myID
+                                                && self.peerBundles[memberID] == nil {
+                    self.sendHelloToPeer(memberID)
+                }
+
                 DispatchQueue.main.async {
                     self.delegate?.chatManager(self, didJoinGroup: group)
                 }

@@ -953,11 +953,19 @@ public struct GroupMemberLeftMessage: Codable, Sendable {
     public let leavingPeerID:     String
     /// Remaining member peerIDs (does NOT include the leaver).
     public let remainingMemberIDs: [String]
+    /// For MLS groups: when the *coordinator* is leaving, this is pre-elected new
+    /// coordinator peerID. Receivers whose ID matches should issue a Remove Commit
+    /// (advancing the epoch) and update their local coordinator record — order-independent
+    /// of the separate `.mlsCoordinatorHandoff` message that may race this one.
+    /// nil = leaver is not the coordinator, or group is SKv2.
+    public let pendingCoordinatorID: String?
 
-    public init(groupID: String, leavingPeerID: String, remainingMemberIDs: [String]) {
-        self.groupID            = groupID
-        self.leavingPeerID      = leavingPeerID
-        self.remainingMemberIDs = remainingMemberIDs
+    public init(groupID: String, leavingPeerID: String, remainingMemberIDs: [String],
+                pendingCoordinatorID: String? = nil) {
+        self.groupID              = groupID
+        self.leavingPeerID        = leavingPeerID
+        self.remainingMemberIDs   = remainingMemberIDs
+        self.pendingCoordinatorID = pendingCoordinatorID
     }
 }
 
