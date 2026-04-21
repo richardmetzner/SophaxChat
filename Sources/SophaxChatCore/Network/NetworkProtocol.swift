@@ -177,6 +177,41 @@ public enum WireMessageType: String, Codable, Sendable {
     case dhtFindValue
     /// Response to dhtFindValue — contains the bundle (if found) or closest nodes.
     case dhtFindValueResp
+
+    // MARK: Channel join
+
+    /// A peer requests to be invited to a group they discovered via ChannelAnnouncement.
+    /// DR-encrypted unicast to the group creator — queued until creator is online.
+    case channelJoinRequest
+}
+
+// MARK: - Channel Join Request
+
+/// Sent by a prospective member to the group creator to request an invite.
+/// The creator receives this as a `didReceiveGroupJoinRequest` delegate callback.
+///
+/// Security model: DR-encrypted unicast (creator's identity verified via X3DH).
+/// The creator's approval step (add/invite) is a separate explicit action.
+public struct ChannelJoinRequestMessage: Codable, Sendable {
+    /// Group the requester wants to join.
+    public let groupID:            String
+    /// Snapshot of the group name (so the creator's UI can show it without a lookup).
+    public let groupName:          String
+    /// peerID of the person making the request.
+    public let requesterPeerID:    String
+    /// Human-readable username for the creator's approval UI.
+    public let requesterUsername:  String
+    /// When the request was created — stale requests (>48 h) should be auto-dismissed.
+    public let timestamp:          Date
+
+    public init(groupID: String, groupName: String,
+                requesterPeerID: String, requesterUsername: String) {
+        self.groupID           = groupID
+        self.groupName         = groupName
+        self.requesterPeerID   = requesterPeerID
+        self.requesterUsername = requesterUsername
+        self.timestamp         = Date()
+    }
 }
 
 // MARK: - MLS Wire Messages

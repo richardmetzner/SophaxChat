@@ -50,6 +50,10 @@ final class AppState: ObservableObject {
     /// Keyed by groupID; stale entries (>5 min old) are replaced on each announcement.
     @Published var discoveredChannels: [String: ChannelAnnouncement] = [:]
 
+    /// Pending channel join requests received from peers who want to join a group we created.
+    /// Keyed by groupID + ":" + requesterPeerID for deduplication.
+    @Published var pendingGroupJoinRequests: [ChannelJoinRequestMessage] = []
+
     /// Safety Number pinning: peerID → safety number at time of verification.
     /// Nil entry = never verified. Different value = key changed warning.
     @Published var verifiedPeers: [String: String] = [:]
@@ -459,6 +463,42 @@ final class AppState: ObservableObject {
 
     func handoffGroupCoordinator(_ group: GroupInfo, to newCoordinatorID: String) {
         chatManager?.handoffCoordinator(group: group, newCoordinatorID: newCoordinatorID)
+    }
+
+    // MARK: - Channel join requests
+
+    /// Send a join request to the creator of a channel we discovered nearby.
+    func sendChannelJoinRequest(for channel: ChannelAnnouncement) {
+        chatManager?.sendChannelJoinRequest(for: channel)
+    }
+
+    /// Approve a pending join request — invites the requester to the group.
+    func approveGroupJoinRequest(_ request: ChannelJoinRequestMessage) {
+        guard let group = groups.first(where: { $0.id == request.groupID }) else { return }
+        chatManager?.addMemberToGroup(group, newMemberPeerID: request.requesterPeerID)
+        dismissGroupJoinRequest(request)
+        // Update local group membership so the UI reflects the new member immediately
+        if let idx = groups.firstIndex(where: { $0.id == group.id }) {
+            var updated = group
+            let newMembers = group.memberIDs + [request.requesterPeerID]
+            updated = GroupInfo(
+                id:                  group.id,
+                name:                group.name,
+                memberIDs:           newMembers,
+                creatorID:           group.creatorID,
+                cryptoVersion:       group.cryptoVersion,
+                currentCoordinatorID: group.currentCoordinatorID
+            )
+            groups[idx] = updated
+            saveGroups()
+        }
+    }
+
+    /// Dismiss (decline) a pending join request without inviting the requester.
+    func dismissGroupJoinRequest(_ request: ChannelJoinRequestMessage) {
+        pendingGroupJoinRequests.removeAll {
+            $0.groupID == request.groupID && $0.requesterPeerID == request.requesterPeerID
+        }
     }
 
     var myPeerID: String? { chatManager?.identity.publicIdentity.peerID }
@@ -1956,6 +1996,16 @@ extension AppState: @preconcurrency ChatManagerDelegate {
 
     func chatManagerDidReceiveRemoteWipeRequest(_ manager: ChatManager) {
         wipeAccount()
+    }
+
+    func chatManager(_ manager: ChatManager, didReceiveGroupJoinRequest request: ChannelJoinRequestMessage) {
+        // Deduplicate: one pending request per (group, requester) pair
+        let key = request.groupID + ":" + request.requesterPeerID
+        if !pendingGroupJoinRequests.contains(where: {
+            $0.groupID + ":" + $0.requesterPeerID == key
+        }) {
+            pendingGroupJoinRequests.append(request)
+        }
     }
 }
 
