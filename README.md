@@ -22,6 +22,7 @@
   </p>
 
   <p>
+    <a href="PHILOSOPHY.md">Philosophy</a> •
     <a href="#protocol">Protocol</a> •
     <a href="#cryptography">Cryptography</a> •
     <a href="#features">Features</a> •
@@ -89,6 +90,8 @@ SophaxChat is built around three principles that cannot be traded away:
 2. **No identity leakage.** No phone number, no email, no account. Your identity is a Curve25519 key pair, generated on your device, never transmitted to any server. The app doesn't even know your name unless you choose to set one.
 
 3. **Maximum cryptographic protection, not just "good enough".** X3DH gives each session unique key material. Double Ratchet rotates keys every message. Header Encryption hides routing metadata from relay nodes. Sealed Sender hides who is talking to whom. These are not features — they are the baseline.
+
+Read the full manifesto: [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ### Why does it exist?
 
@@ -715,7 +718,7 @@ If this project receives a grant, the funds will be used for: Apple Developer Pr
 
 ## Contributing
 
-Pull requests are welcome. Before contributing:
+Pull requests are welcome. Before contributing, read [PHILOSOPHY.md](PHILOSOPHY.md) — contributors agree to its principles by submitting a PR.
 
 1. Read [SECURITY.md](SECURITY.md) — especially if touching crypto code
 2. Open an issue to discuss significant changes before writing code
