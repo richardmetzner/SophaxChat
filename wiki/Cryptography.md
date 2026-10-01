@@ -1,7 +1,7 @@
 # Cryptography
 
-Full audit-ready summary: [`docs/CRYPTO_SUMMARY.md`](https://github.com/sophaxtechnologies/SophaxChat/blob/main/docs/CRYPTO_SUMMARY.md)  
-Threat model: [`SECURITY.md`](https://github.com/sophaxtechnologies/SophaxChat/blob/main/SECURITY.md)
+Full audit-ready summary: [`docs/CRYPTO_SUMMARY.md`](https://github.com/richardmetzner/SophaxChat/blob/main/docs/CRYPTO_SUMMARY.md)  
+Threat model: [`SECURITY.md`](https://github.com/richardmetzner/SophaxChat/blob/main/SECURITY.md)
 
 All primitives are from Apple's **CryptoKit** (audited, hardware-accelerated via Secure Enclave where available). No third-party cryptographic libraries for core operations.
 
@@ -123,6 +123,6 @@ Every identity key change is appended to a local HMAC-SHA256 verified log (appen
 
 ## Known limitations
 
-- **No independent security audit** — highest priority before v1.0. See [`SECURITY.md`](https://github.com/sophaxtechnologies/SophaxChat/blob/main/SECURITY.md).
+- **No independent security audit** — highest priority before v1.0. See [`SECURITY.md`](https://github.com/richardmetzner/SophaxChat/blob/main/SECURITY.md).
 - **No post-quantum cryptography** — X25519 and Ed25519 are classical. Harvest-now-decrypt-later attacks are a long-term concern. MLS (RFC 9420) is designed to support PQC algorithm negotiation in future.
 - **Metadata on local network** — BLE/WiFi Direct presence reveals that the app is running to nearby devices. Tor mode eliminates IP-level metadata for TCP connections.

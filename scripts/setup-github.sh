@@ -14,8 +14,8 @@
 
 set -euo pipefail
 
-REPO="sophaxtechnologies/SophaxChat"
-OWNER="sophaxtechnologies"
+REPO="richardmetzner/SophaxChat"
+OWNER="richardmetzner"
 REPO_NAME="SophaxChat"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI_DIR="$SCRIPT_DIR/../wiki"

@@ -291,6 +291,6 @@ CryptoKit's `SharedSecret` does not expose a public zeroing API. Deferred until 
 
 Please **do not open public GitHub issues** for security vulnerabilities.
 
-Use **[GitHub Security Advisories](https://github.com/sophaxtechnologies/SophaxChat/security/advisories/new)** — private, end-to-end encrypted between reporter and maintainers, no central server involved.
+Use **[GitHub Security Advisories](https://github.com/richardmetzner/SophaxChat/security/advisories/new)** — private, end-to-end encrypted between reporter and maintainers, no central server involved.
 
 We aim to respond within 72 hours. Coordinated disclosure window: 90 days.

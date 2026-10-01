@@ -14,7 +14,7 @@ Your identity is a Curve25519 key pair generated on your device. Nothing is ever
 
 ```bash
 brew install xcodegen
-git clone https://github.com/sophaxtechnologies/SophaxChat
+git clone https://github.com/richardmetzner/SophaxChat
 cd SophaxChat
 xcodegen generate
 open SophaxChat.xcodeproj   # then ⌘R on a physical device
@@ -33,7 +33,7 @@ cd android
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-See [`android/README.md`](https://github.com/sophaxtechnologies/SophaxChat/blob/main/android/README.md) for full instructions.
+See [`android/README.md`](https://github.com/richardmetzner/SophaxChat/blob/main/android/README.md) for full instructions.
 
 ---
 
@@ -48,11 +48,11 @@ See [`android/README.md`](https://github.com/sophaxtechnologies/SophaxChat/blob/
 
 ## Key links
 
-- [README](https://github.com/sophaxtechnologies/SophaxChat#readme) — full feature list, architecture, getting started
-- [SECURITY.md](https://github.com/sophaxtechnologies/SophaxChat/blob/main/SECURITY.md) — threat model, responsible disclosure
-- [CONTRIBUTING.md](https://github.com/sophaxtechnologies/SophaxChat/blob/main/.github/CONTRIBUTING.md) — how to contribute
-- [CHANGELOG](https://github.com/sophaxtechnologies/SophaxChat/blob/main/CHANGELOG.md) — release history
-- [Open issues](https://github.com/sophaxtechnologies/SophaxChat/issues)
+- [README](https://github.com/richardmetzner/SophaxChat#readme) — full feature list, architecture, getting started
+- [SECURITY.md](https://github.com/richardmetzner/SophaxChat/blob/main/SECURITY.md) — threat model, responsible disclosure
+- [CONTRIBUTING.md](https://github.com/richardmetzner/SophaxChat/blob/main/.github/CONTRIBUTING.md) — how to contribute
+- [CHANGELOG](https://github.com/richardmetzner/SophaxChat/blob/main/CHANGELOG.md) — release history
+- [Open issues](https://github.com/richardmetzner/SophaxChat/issues)
 
 ---
 

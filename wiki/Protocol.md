@@ -1,6 +1,6 @@
 # Protocol
 
-Full specification: [`docs/protocol.md`](https://github.com/sophaxtechnologies/SophaxChat/blob/main/docs/protocol.md)
+Full specification: [`docs/protocol.md`](https://github.com/richardmetzner/SophaxChat/blob/main/docs/protocol.md)
 
 ---
 

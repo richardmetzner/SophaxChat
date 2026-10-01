@@ -13,11 +13,11 @@
     <img src="https://img.shields.io/badge/License-MIT-blue" />
     <img src="https://img.shields.io/badge/Status-Alpha-orange" />
     <img src="https://img.shields.io/badge/Cryptography-CryptoKit-34C759?logo=apple" />
-    <a href="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/swift.yml">
-      <img src="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/swift.yml/badge.svg" alt="Swift build" />
+    <a href="https://github.com/richardmetzner/SophaxChat/actions/workflows/swift.yml">
+      <img src="https://github.com/richardmetzner/SophaxChat/actions/workflows/swift.yml/badge.svg" alt="Swift build" />
     </a>
-    <a href="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/android-ci.yml">
-      <img src="https://github.com/sophaxtechnologies/SophaxChat/actions/workflows/android-ci.yml/badge.svg" alt="Android CI" />
+    <a href="https://github.com/richardmetzner/SophaxChat/actions/workflows/android-ci.yml">
+      <img src="https://github.com/richardmetzner/SophaxChat/actions/workflows/android-ci.yml/badge.svg" alt="Android CI" />
     </a>
   </p>
 
@@ -39,7 +39,7 @@
 
   <br />
 
-  **[TestFlight beta — coming soon](https://github.com/sophaxtechnologies/SophaxChat/issues)** &nbsp;·&nbsp; **[Mac: works today with a free Apple ID](#run-on-mac-catalyst)** &nbsp;·&nbsp; **[Android](android/README.md)**
+  **[TestFlight beta — coming soon](https://github.com/richardmetzner/SophaxChat/issues)** &nbsp;·&nbsp; **[Mac: works today with a free Apple ID](#run-on-mac-catalyst)** &nbsp;·&nbsp; **[Android](android/README.md)**
 
 </div>
 
@@ -514,7 +514,7 @@ See [`android/README.md`](android/README.md) for build instructions and architec
 
 ```sh
 # 1. Clone
-git clone https://github.com/sophaxtechnologies/SophaxChat.git
+git clone https://github.com/richardmetzner/SophaxChat.git
 cd SophaxChat
 
 # 2. Generate Xcode project
@@ -702,7 +702,7 @@ Do not open public issues for security bugs.
 ### Up next
 
 - [ ] **TestFlight public beta** — applying for [NLnet NGI Assure](https://nlnet.nl/assure/) grant to cover Apple Developer Program and independent audit
-- [ ] **Independent third-party security audit** — highest-priority before v1.0. Open a [GitHub Security Advisory](https://github.com/sophaxtechnologies/SophaxChat/security/advisories/new) if you are interested in auditing
+- [ ] **Independent third-party security audit** — highest-priority before v1.0. Open a [GitHub Security Advisory](https://github.com/richardmetzner/SophaxChat/security/advisories/new) if you are interested in auditing
 - [ ] **DHT peer discovery** — opt-in BitTorrent DHT announce of `.onion` address; no server, no IP leak
 - [ ] **Hardware security key binding** — Secure Enclave identity key + FIDO2 external key (post-audit)
 

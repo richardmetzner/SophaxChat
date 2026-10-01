@@ -46,7 +46,7 @@ None. SophaxChat has zero third-party dependencies. It uses only Apple's own sys
 
 SophaxChat is fully open source. You can verify every claim in this policy by reading the source code:
 
-**[github.com/sophaxtechnologies/SophaxChat](https://github.com/sophaxtechnologies/SophaxChat)**
+**[github.com/richardmetzner/SophaxChat](https://github.com/richardmetzner/SophaxChat)**
 
 ## Changes to this policy
 
@@ -54,6 +54,6 @@ If this policy changes in any way that reduces your privacy, it will be announce
 
 ## Contact
 
-Security vulnerabilities: [GitHub Security Advisories](https://github.com/sophaxtechnologies/SophaxChat/security/advisories/new)
+Security vulnerabilities: [GitHub Security Advisories](https://github.com/richardmetzner/SophaxChat/security/advisories/new)
 
-General questions: [GitHub Issues](https://github.com/sophaxtechnologies/SophaxChat/issues)
+General questions: [GitHub Issues](https://github.com/richardmetzner/SophaxChat/issues)

@@ -78,5 +78,5 @@ First tagged release. The cryptographic core is complete and has passed three in
 
 ---
 
-[Unreleased]: https://github.com/sophaxtechnologies/SophaxChat/compare/v0.1.0-alpha...HEAD
-[0.1.0-alpha]: https://github.com/sophaxtechnologies/SophaxChat/releases/tag/v0.1.0-alpha
+[Unreleased]: https://github.com/richardmetzner/SophaxChat/compare/v0.1.0-alpha...HEAD
+[0.1.0-alpha]: https://github.com/richardmetzner/SophaxChat/releases/tag/v0.1.0-alpha
