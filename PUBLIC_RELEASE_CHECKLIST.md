@@ -101,7 +101,7 @@
 - [x] **Background operation** ✅ — `bluetooth-central`/`bluetooth-peripheral` modes + `BGAppRefreshTask` for periodic mesh restart. MPC stays alive minutes after backgrounding; BGTask extends coverage after full suspension.
 - [x] **Channel discovery** ✅ — `ChannelAnnouncement` wire type; creators broadcast signed announcements; non-members see "Nearby Channels" in the list.
 - [x] **Pluggable transport adapter** ✅ — `MessageTransport` protocol defined; `MeshManager` is the reference implementation; LoRa/audio stubs documented.
-- [ ] **Independent third-party security audit** — target NLnet / NGI Zero funding; highest-priority external item
+- [ ] **Independent third-party security audit** — highest-priority external item
 - [ ] **MLS (Messaging Layer Security)** — replace Sender Keys with standards-track group protocol
 - [ ] **Hardware security key binding** — FIDO2 / Secure Enclave for identity key protection (SE migration path needed)
 - [ ] **iPad-optimized layout** — sidebar + detail view on larger screens

@@ -73,8 +73,6 @@ In both modes: **no phone number, no email, no account**. Your identity is a Cur
 
 ### Who is SophaxChat for?
 
-**Journalists and activists** — communicate without leaving traces tied to a phone number or account. Combine with Tor (Orbot VPN mode) for transport anonymity.
-
 **Disaster responders and field workers** — no internet? Bluetooth and WiFi mesh still work. Devices relay messages across the network automatically, up to 6 hops.
 
 **Privacy-conscious users** — tired of surrendering your phone number to chat apps. Here, your identity is a cryptographic key pair, generated locally, never shared with any server.
@@ -95,48 +93,13 @@ Read the full manifesto: [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ### Why does it exist?
 
-| Scenario | Signal | Telegram | WhatsApp | bitchat | SophaxChat |
-|---|:---:|:---:|:---:|:---:|:---:|
-| No internet connection (BLE/WiFi mesh) | ❌ | ❌ | ❌ | ✅ | ✅ |
-| LAN auto-discovery (same WiFi, no pairing) | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Internet reach (TCP, peer-to-peer) | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Tor / anonymity network support | ⚠️ | ❌ | ❌ | ❌ | ✅ |
-| No phone number required | ❌ | ⚠️¹ | ❌ | ✅ | ✅ |
-| Signal-grade forward secrecy | ✅ | ⚠️² | ✅ | ❌ | ✅ |
-| Per-session unique keys (X3DH) | ✅ | ⚠️² | ✅ | ❌ | ✅ |
-| Header encryption (relay metadata) | ✅ | ❌ | ❌ | ❌ | ✅ |
-| Sealed sender (hides sender from relay) | ✅ | ❌ | ❌ | ❌ | ✅ |
-| No server dependency | ❌ | ❌ | ❌ | ✅ | ✅ |
-| No metadata collection | ❌ | ❌ | ❌³ | ✅ | ✅ |
-| End-to-end encrypted groups | ✅ | ⚠️² | ✅ | ❌ | ✅ |
-| Open-source | ⚠️ | ⚠️⁴ | ❌ | ✅ | ✅ |
-| Multihop relay (mesh routing) | ❌ | ❌ | ❌ | ✅ | ✅ |
-| iOS + Android cross-platform | ✅ | ✅ | ✅ | ❌ | ✅ |
-| macOS support | ✅ | ✅ | ✅ | ❌ | ✅ |
+Most messengers need a server and the internet. Mesh messengers like bitchat and Briar work without the internet, but each makes different trade-offs in platforms, protocol and reach. SophaxChat's goal is to combine three things in one app:
 
-<sub>¹ Telegram requires a phone number to register; usernames added in 2023 do not replace this requirement. ² Telegram's MTProto E2EE applies only to "Secret Chats" — regular chats, groups, and channels are server-side encrypted (Telegram holds the keys). ³ WhatsApp uses Signal Protocol for message content but collects extensive metadata: who you talk to, when, how often, your IP address, device fingerprint, and contact graph — all shared with Meta. ⁴ Telegram clients are open-source; the server is closed-source and proprietary.</sub>
+- **No server at all** — devices talk to each other directly, nearby over Bluetooth/WiFi or far away over Tor.
+- **No phone number, email or account** — your identity is a key made on your device.
+- **The Signal Protocol design** (X3DH, Double Ratchet, sealed sender) for 1:1 chats, and MLS for groups on Apple devices.
 
-**Compared to privacy-focused alternatives:**
-
-| Feature | Briar | Session | SimpleX | SophaxChat |
-|---|:---:|:---:|:---:|:---:|
-| Bluetooth / WiFi mesh (no internet) | ✅ | ❌ | ❌ | ✅ |
-| iOS support | ❌ | ✅ | ✅ | ✅ |
-| No server dependency | ✅ | ❌¹ | ❌² | ✅ |
-| No phone number / email required | ✅ | ✅ | ✅ | ✅ |
-| X3DH + Double Ratchet (Signal spec) | ❌³ | ❌⁴ | ✅ | ✅ |
-| Header Encryption (hides routing metadata) | ❌ | ❌ | ❌ | ✅ |
-| Sealed Sender (hides sender from relay) | ❌ | ❌ | ❌ | ✅ |
-| MLS (RFC 9420) group encryption | ❌ | ❌ | ❌ | ✅ |
-| Tor integration | ✅ | ❌ | ❌ | ✅ |
-| macOS support | ❌ | ✅ | ✅ | ✅ |
-| Full open-source (client + protocol) | ✅ | ✅ | ✅ | ✅ |
-
-<sub>¹ Session routes messages through the decentralized Oxen network — not truly serverless, nodes hold messages until delivery. ² SimpleX uses relay servers for delivery; users can self-host but cannot eliminate the relay dependency. ³ Briar uses the custom Bramble protocol; per-message forward secrecy is achieved differently, without the X3DH session-setup guarantees. ⁴ Session removed X3DH to enable async account creation; sessions lack the session-setup forward-secrecy properties of Signal's full handshake.</sub>
-
-SophaxChat occupies a specific niche: **Signal-grade cryptography, zero infrastructure**. Ideal for journalists, activists, protesters, disaster responders, or anyone in an environment where internet access is unavailable, monitored, or untrusted.
-
-> **No server means no one to betray you.**
+It's meant for situations where the internet is down — a power cut, a disaster, a crowded event — and for people who would rather not hand over a phone number. Until an independent audit has been done, it should not be relied on where being identified would put someone in danger.
 
 ---
 
@@ -282,6 +245,8 @@ All private keys and session states are stored in the **iOS Keychain** with `kSe
 |---|---|
 | Create group (multi-peer picker) | ✅ |
 | Signal-style Sender Keys (per-member KDF chain) | ✅ |
+| MLS (RFC 9420) groups — default on iPhone/iPad/Mac when all members have exchanged MLS keys; otherwise Sender Keys | ✅ |
+| MLS on Android | ❌ (Android groups use Sender Keys only) |
 | Group invite via Double Ratchet channel | ✅ |
 | Sender Key Distribution to all members | ✅ |
 | Per-message forward secrecy (per-member) | ✅ |
@@ -701,18 +666,10 @@ Do not open public issues for security bugs.
 
 ### Up next
 
-- [ ] **TestFlight public beta** — applying for [NLnet NGI Assure](https://nlnet.nl/assure/) grant to cover Apple Developer Program and independent audit
+- [ ] **TestFlight public beta** — requires an Apple Developer Program membership
 - [ ] **Independent third-party security audit** — highest-priority before v1.0. Open a [GitHub Security Advisory](https://github.com/richardmetzner/SophaxChat/security/advisories/new) if you are interested in auditing
 - [ ] **DHT peer discovery** — opt-in BitTorrent DHT announce of `.onion` address; no server, no IP leak
 - [ ] **Hardware security key binding** — Secure Enclave identity key + FIDO2 external key (post-audit)
-
----
-
-## Funding
-
-SophaxChat is applying for funding through [NLnet Foundation](https://nlnet.nl) / [NGI Zero Core](https://nlnet.nl/core/). NLnet supports open internet projects focused on privacy, security, and decentralization.
-
-If this project receives a grant, the funds will be used for: Apple Developer Program membership (required for TestFlight distribution) and an independent third-party security audit.
 
 ---
 
