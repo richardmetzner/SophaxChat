@@ -13,12 +13,6 @@
     <img src="https://img.shields.io/badge/License-MIT-blue" />
     <img src="https://img.shields.io/badge/Status-Alpha-orange" />
     <img src="https://img.shields.io/badge/Cryptography-CryptoKit-34C759?logo=apple" />
-    <a href="https://github.com/richardmetzner/SophaxChat/actions/workflows/swift.yml">
-      <img src="https://github.com/richardmetzner/SophaxChat/actions/workflows/swift.yml/badge.svg" alt="Swift build" />
-    </a>
-    <a href="https://github.com/richardmetzner/SophaxChat/actions/workflows/android-ci.yml">
-      <img src="https://github.com/richardmetzner/SophaxChat/actions/workflows/android-ci.yml/badge.svg" alt="Android CI" />
-    </a>
   </p>
 
   <p>
