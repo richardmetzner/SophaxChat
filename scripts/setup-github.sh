@@ -95,7 +95,7 @@ warn "Phase field must be added manually in the project UI (GitHub API limitatio
 # Add draft items for each milestone
 declare -a MILESTONES=(
   "v0.1 Alpha — crypto complete, first tagged release"
-  "TestFlight Beta — apply for NLnet grant, obtain Apple Developer account"
+  "TestFlight Beta — obtain Apple Developer account"
   "Independent Audit — engage third-party security auditor (required before v1.0)"
   "v1.0 — MLS stable, DHT peer discovery, post-audit hardening"
 )
