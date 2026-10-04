@@ -48,8 +48,8 @@
 
 ### Security
 
-- [ ] **Safety Number pinning persistence**
-  The app lets users verify Safety Numbers via QR scan, but does not persist the "verified" state. After re-launching the app, verification is lost. Store a flag (keyed by peerID + key fingerprint) in UserDefaults or Keychain.
+- [x] **Safety Number pinning persistence** ✅
+  Fixed: verified state is stored in the Keychain (`saveVerifiedPeers`) and survives relaunch.
 
 - [ ] **Sender Key Distribution delivery confirmation (M-2)**
   In high-traffic scenarios, a new group member's first messages may arrive before their SKD is received by peers. Implement a hold-and-retry or buffering mechanism, or include the chain state in a resent SKD.
@@ -82,8 +82,8 @@
 
 ### Code Quality
 
-- [ ] **L-3: `ISO8601DateFormatter` allocation per `signingBytes()` call**
-  Minor performance issue. Cache the formatter as a static or injected dependency.
+- [x] **L-3: `ISO8601DateFormatter` allocation per `signingBytes()` call** ✅
+  Fixed: `WireMessage` uses a single cached static `ISO8601DateFormatter`.
 
 - [ ] **Swift 6 strict concurrency warnings**
   Audit all `@unchecked Sendable` conformances (`ChatManager`, `DoubleRatchet`). Document or enforce the caller-must-serialize contract.
@@ -102,7 +102,7 @@
 - [x] **Channel discovery** ✅ — `ChannelAnnouncement` wire type; creators broadcast signed announcements; non-members see "Nearby Channels" in the list.
 - [x] **Pluggable transport adapter** ✅ — `MessageTransport` protocol defined; `MeshManager` is the reference implementation; LoRa/audio stubs documented.
 - [ ] **Independent third-party security audit** — highest-priority external item
-- [ ] **MLS (Messaging Layer Security)** — replace Sender Keys with standards-track group protocol
+- [x] **MLS (Messaging Layer Security)** ✅ — default for new groups on iPhone/iPad/Mac when all members have exchanged MLS keys; Sender Keys remain the fallback and the only option on Android
 - [ ] **Hardware security key binding** — FIDO2 / Secure Enclave for identity key protection (SE migration path needed)
 - [ ] **iPad-optimized layout** — sidebar + detail view on larger screens
 - [ ] **App Clip / Share Extension** — quick-reply without opening the full app
