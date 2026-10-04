@@ -65,8 +65,8 @@
 - [x] **Offline store-and-forward** ✅
   Fixed: When a relay peer is the only path to the target, the sealed message is also broadcast as a `StoreAndForwardRequest`. Relay peers cache up to 300 items with a 48-hour TTL and deliver them in a batch (`StoreAndForwardDelivery`) when the target peer next connects (triggered from `handleHello`).
 
-- [ ] **Group reply and reactions**
-  Currently reply-to and emoji reactions are 1:1 only. Group conversations are missing these features.
+- [x] **Group reply and reactions** ✅
+  Fixed: group conversations support reply-to and emoji reactions (`sendGroupReaction`, `replyToID`).
 
 - [ ] **Message delivery status in groups**
   There is no "delivered to all members" or "read by N members" indication in group conversations.
@@ -74,8 +74,8 @@
 - [ ] **Peer reconnect notification**
   No indication when a previously offline peer comes back online (relevant for draining the offline queue).
 
-- [ ] **Username change**
-  Once set, the username cannot be changed without wiping the app. Add a rename flow that re-broadcasts the new name to all active sessions.
+- [x] **Username change** ✅
+  Fixed: rename from Identity settings; the new name is re-broadcast via Hello.
 
 - [ ] **Localization**
   The app ships English only. At minimum, support the most common languages in the target user base (activists, journalists in non-English regions).
@@ -113,8 +113,8 @@
 
 | Category | Total | Done | Remaining |
 |---|---|---|---|
-| 🔴 Blockers | 7 | 6 (H-1, M-1, M-4, PrivacyInfo, key-change, send-errors, session-recovery) | 3 (App Store metadata, privacy policy, TestFlight) |
-| 🟡 Important | 10 | 1 (store-and-forward) | 9 |
-| 🟢 Nice to have | 8 | 3 (background, channels, transport) | 5 |
+| 🔴 Blockers | 10 | 7 | 3 (App Store metadata, privacy policy, TestFlight) |
+| 🟡 Important | 14 | 5 | 9 |
+| 🟢 Nice to have | 8 | 4 | 4 |
 
 **Remaining blockers before App Store submission**: App Store metadata (screenshots, description, keywords), privacy policy hosted at a public URL, and TestFlight beta run. No further code blockers.
