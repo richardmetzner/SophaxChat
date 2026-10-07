@@ -12,7 +12,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - MLS (RFC 9420) is the default for new groups on iPhone, iPad and Mac when every member has exchanged MLS keys; otherwise the group falls back to Sender Keys v2. Android groups use Sender Keys v2 only.
 
-### In progress
+### Planned (not started)
 - Demo GIF / screen recording for README
 - Independent third-party security audit
 
