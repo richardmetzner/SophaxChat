@@ -33,7 +33,7 @@
 
   <br />
 
-  **[TestFlight beta — coming soon](https://github.com/richardmetzner/SophaxChat/issues)** &nbsp;·&nbsp; **[Mac: works today with a free Apple ID](#run-on-mac-catalyst)** &nbsp;·&nbsp; **[Android](android/README.md)**
+  **[iPhone: build from source](#run-on-iphone)** &nbsp;·&nbsp; **[Mac: works today with a free Apple ID](#run-on-mac-catalyst)** &nbsp;·&nbsp; **[Android](android/README.md)**
 
 </div>
 
